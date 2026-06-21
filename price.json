@@ -1,0 +1,188 @@
+[
+  {
+    "Nama Produk": "Apel Hijau",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 45000
+  },
+  {
+    "Nama Produk": "Biji Selasih",
+    "Ukuran": 100,
+    "Satuan": "gr",
+    "Harga Jual": 12000
+  },
+  {
+    "Nama Produk": "Blacktea Goalpara",
+    "Ukuran": 250,
+    "Satuan": "gr",
+    "Harga Jual": 17000
+  },
+  {
+    "Nama Produk": "Bunga Telang",
+    "Ukuran": 20,
+    "Satuan": "gr",
+    "Harga Jual": 15000
+  },
+  {
+    "Nama Produk": "Coklat Nestle",
+    "Ukuran": 1000,
+    "Satuan": "gr",
+    "Harga Jual": 109000
+  },
+  {
+    "Nama Produk": "Cup Hot 8oz",
+    "Ukuran": 1,
+    "Satuan": "psc",
+    "Harga Jual": 1680
+  },
+  {
+    "Nama Produk": "Cup Ice Starrindo 14oz",
+    "Ukuran": 1,
+    "Satuan": "psc",
+    "Harga Jual": 1600
+  },
+  {
+    "Nama Produk": "FO Hazelnut",
+    "Ukuran": 700,
+    "Satuan": "ml",
+    "Harga Jual": 105000
+  },
+  {
+    "Nama Produk": "FO Lychee",
+    "Ukuran": 700,
+    "Satuan": "ml",
+    "Harga Jual": 105000
+  },
+  {
+    "Nama Produk": "FO Mint",
+    "Ukuran": 700,
+    "Satuan": "ml",
+    "Harga Jual": 105000
+  },
+  {
+    "Nama Produk": "Fructose",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 21000
+  },
+  {
+    "Nama Produk": "Gula Aren Stick",
+    "Ukuran": 1,
+    "Satuan": "pack",
+    "Harga Jual": 95000
+  },
+  {
+    "Nama Produk": "Gula Merah Cair",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 65000
+  },
+  {
+    "Nama Produk": "Gula Putih Stick",
+    "Ukuran": 1,
+    "Satuan": "pack",
+    "Harga Jual": 75000
+  },
+  {
+    "Nama Produk": "Gulare",
+    "Ukuran": 1300,
+    "Satuan": "gr",
+    "Harga Jual": 75000
+  },
+  {
+    "Nama Produk": "Handgloves",
+    "Ukuran": 1,
+    "Satuan": "box",
+    "Harga Jual": 56000
+  },
+  {
+    "Nama Produk": "Herring Lychee",
+    "Ukuran": 567,
+    "Satuan": "gr",
+    "Harga Jual": 28000
+  },
+  {
+    "Nama Produk": "Krimer",
+    "Ukuran": 1000,
+    "Satuan": "gr",
+    "Harga Jual": 55000
+  },
+  {
+    "Nama Produk": "Le Minerale",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 52000
+  },
+  {
+    "Nama Produk": "Madu Quickfresh",
+    "Ukuran": 1000,
+    "Satuan": "gr",
+    "Harga Jual": 89000
+  },
+  {
+    "Nama Produk": "Milo Active Go",
+    "Ukuran": 990,
+    "Satuan": "gr",
+    "Harga Jual": 102000
+  },
+  {
+    "Nama Produk": "Nata De Coco Kara",
+    "Ukuran": 1,
+    "Satuan": "pack",
+    "Harga Jual": 16000
+  },
+  {
+    "Nama Produk": "Paper Bowl",
+    "Ukuran": 1,
+    "Satuan": "psc",
+    "Harga Jual": 2180
+  },
+  {
+    "Nama Produk": "Paper Box M",
+    "Ukuran": 1,
+    "Satuan": "psc",
+    "Harga Jual": 1750
+  },
+  {
+    "Nama Produk": "Paper Box S",
+    "Ukuran": 1,
+    "Satuan": "psc",
+    "Harga Jual": 1650
+  },
+  {
+    "Nama Produk": "SKM",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 13000
+  },
+  {
+    "Nama Produk": "Soda Fanta",
+    "Ukuran": 250,
+    "Satuan": "ml",
+    "Harga Jual": 6000
+  },
+  {
+    "Nama Produk": "Sunbay Evaporasi",
+    "Ukuran": 380,
+    "Satuan": "gr",
+    "Harga Jual": 16500
+  },
+  {
+    "Nama Produk": "Sunkist",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 45000
+  },
+  {
+    "Nama Produk": "Susu UHT",
+    "Ukuran": null,
+    "Satuan": null,
+    "Harga Jual": 23000
+  },
+  {
+    "Nama Produk": "Thaitea Chatramue",
+    "Ukuran": 400,
+    "Satuan": "gr",
+    "Harga Jual": 58000
+  }
+]

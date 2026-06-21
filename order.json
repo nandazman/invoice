@@ -1,0 +1,281 @@
+{
+  "Orders": [
+    {
+      "Tanggal": "1 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Milo Active Go",
+          "Kuantitas": 4,
+          "Harga Satuan": 102000,
+          "Total Harga": 408000
+        },
+        {
+          "Nama Produk": "Lidah buaya",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Marjan melon",
+          "Kuantitas": 1,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        }
+      ],
+      "Total Tanggal": 408000
+    },
+    {
+      "Tanggal": "3 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Susu UHT",
+          "Kuantitas": 8,
+          "Harga Satuan": 23000,
+          "Total Harga": 184000
+        }
+      ],
+      "Total Tanggal": 184000
+    },
+    {
+      "Tanggal": "4 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "FO Lychee",
+          "Kuantitas": 3,
+          "Harga Satuan": 105000,
+          "Total Harga": 315000
+        },
+        {
+          "Nama Produk": "FO Mint",
+          "Kuantitas": 3,
+          "Harga Satuan": 105000,
+          "Total Harga": 315000
+        },
+        {
+          "Nama Produk": "Yakult",
+          "Kuantitas": 10,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Gula Merah Cair",
+          "Kuantitas": 2,
+          "Harga Satuan": 65000,
+          "Total Harga": 130000
+        },
+        {
+          "Nama Produk": "Biji Selasih",
+          "Kuantitas": 1,
+          "Harga Satuan": 12000,
+          "Total Harga": 12000
+        }
+      ],
+      "Total Tanggal": 772000
+    },
+    {
+      "Tanggal": "7 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Soda Fanta",
+          "Kuantitas": 24,
+          "Harga Satuan": 6000,
+          "Total Harga": 144000
+        },
+        {
+          "Nama Produk": "Madu Quickfresh",
+          "Kuantitas": 3,
+          "Harga Satuan": 89000,
+          "Total Harga": 267000
+        },
+        {
+          "Nama Produk": "Blacktea Goalpara",
+          "Kuantitas": 20,
+          "Harga Satuan": 17000,
+          "Total Harga": 340000
+        },
+        {
+          "Nama Produk": "Herring Lychee",
+          "Kuantitas": 1,
+          "Harga Satuan": 28000,
+          "Total Harga": 28000
+        },
+        {
+          "Nama Produk": "Marjan cocopandan",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Krimer",
+          "Kuantitas": 2,
+          "Harga Satuan": 55000,
+          "Total Harga": 110000
+        },
+        {
+          "Nama Produk": "FO Lychee",
+          "Kuantitas": 3,
+          "Harga Satuan": 105000,
+          "Total Harga": 315000
+        },
+        {
+          "Nama Produk": "Nata De Coco Kara",
+          "Kuantitas": 1,
+          "Harga Satuan": 16000,
+          "Total Harga": 16000
+        },
+        {
+          "Nama Produk": "Houseblend",
+          "Kuantitas": 3,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        }
+      ],
+      "Total Tanggal": 1220000
+    },
+    {
+      "Tanggal": "8 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Cup Ice Starrindo 14oz",
+          "Kuantitas": 250,
+          "Harga Satuan": 1600,
+          "Total Harga": 400000
+        }
+      ],
+      "Total Tanggal": 400000
+    },
+    {
+      "Tanggal": "11 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Handgloves",
+          "Kuantitas": 2,
+          "Harga Satuan": 56000,
+          "Total Harga": 112000
+        },
+        {
+          "Nama Produk": "Milo Active Go",
+          "Kuantitas": 2,
+          "Harga Satuan": 102000,
+          "Total Harga": 204000
+        },
+        {
+          "Nama Produk": "Lidah buaya",
+          "Kuantitas": 3,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Kurma",
+          "Kuantitas": 1,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Butter",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Marjan melon",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        },
+        {
+          "Nama Produk": "Marjan cocopandan",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        }
+      ],
+      "Total Tanggal": 316000
+    },
+    {
+      "Tanggal": "14 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Gula Merah Cair",
+          "Kuantitas": 2,
+          "Harga Satuan": 65000,
+          "Total Harga": 130000
+        },
+        {
+          "Nama Produk": "Bunga Telang",
+          "Kuantitas": 0.5,
+          "Harga Satuan": 15000,
+          "Total Harga": 7500
+        },
+        {
+          "Nama Produk": "Thaitea Chatramue",
+          "Kuantitas": 1,
+          "Harga Satuan": 58000,
+          "Total Harga": 58000
+        }
+      ],
+      "Total Tanggal": 195500
+    },
+    {
+      "Tanggal": "15 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Blacktea Goalpara",
+          "Kuantitas": 16,
+          "Harga Satuan": 17000,
+          "Total Harga": 272000
+        },
+        {
+          "Nama Produk": "Krimer",
+          "Kuantitas": 4,
+          "Harga Satuan": 55000,
+          "Total Harga": 220000
+        },
+        {
+          "Nama Produk": "Herring Lychee",
+          "Kuantitas": 10,
+          "Harga Satuan": 28000,
+          "Total Harga": 280000
+        },
+        {
+          "Nama Produk": "FO Lychee",
+          "Kuantitas": 3,
+          "Harga Satuan": 105000,
+          "Total Harga": 315000
+        },
+        {
+          "Nama Produk": "FO Mint",
+          "Kuantitas": 1,
+          "Harga Satuan": 105000,
+          "Total Harga": 105000
+        },
+        {
+          "Nama Produk": "Yakult",
+          "Kuantitas": 10,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        }
+      ],
+      "Total Tanggal": 1192000
+    },
+    {
+      "Tanggal": "17 Juni 2026",
+      "Items": [
+        {
+          "Nama Produk": "Susu UHT",
+          "Kuantitas": 1,
+          "Harga Satuan": 23000,
+          "Total Harga": 23000
+        },
+        {
+          "Nama Produk": "Shineroad",
+          "Kuantitas": 2,
+          "Harga Satuan": 0,
+          "Total Harga": 0
+        }
+      ],
+      "Total Tanggal": 23000
+    }
+  ],
+  "Total Keseluruhan": 4710500
+}
