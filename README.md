@@ -8,9 +8,8 @@ TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
 Semua data disimpan di **localStorage browser** dan dapat di-**ekspor/impor
 sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 
-> **Status:** UI (Harga + Pesanan) sudah **selesai**. Langkah berikutnya:
-> **ekspor XLSX** (menyamai logika `python/create_excel.py`) dan **generator
-> Invoice PDF** — lihat [Langkah berikutnya](#langkah-berikutnya-rencana).
+> **Status:** Lima halaman sudah **selesai** — Harga, Pesanan, Ekspor Excel,
+> Desain Template, dan Buat Invoice.
 
 ---
 
@@ -39,6 +38,36 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 - **Filter**: rentang tanggal (dari/sampai), tanggal spesifik, dan nama produk.
 - **Impor / Ekspor JSON** (format `order.json` lama: `Orders[]` per tanggal +
   `Total Keseluruhan`).
+
+### Halaman Ekspor Excel (`/excel`)
+- Ekspor pesanan ke **`order.xlsx`** langsung di browser (memakai `exceljs`),
+  menyamai tata letak `python/create_excel.py`.
+- Kolom: **Tanggal, Nama Produk, Kuantitas, Harga Satuan, Total Harga**, dengan
+  **formula** `Kuantitas × Harga Satuan` per baris, **subtotal** per tanggal,
+  dan **Total Keseluruhan**.
+- Styling: header berwarna, baris subtotal/grand-total, border, sel tanggal
+  di-merge per kelompok, dan `freeze_panes`.
+- Filter rentang/tanggal/produk/status dan **toggle kolom** sebelum ekspor.
+
+### Halaman Desain Template (`/template`)
+- **Perancang template drag-and-drop** untuk tata letak invoice di kanvas
+  ukuran A4: tarik, ubah ukuran, dan susun elemen dengan snap.
+- Jenis elemen: **Teks** (dengan token `{{business.nama}}`, `{{customer.nama}}`,
+  dst.), **Field** dinamis (no. invoice, tanggal terbit, jatuh tempo),
+  **Gambar**, **Logo**, **Item Pesanan** (tabel berkolom), **Total**, dan **Garis**.
+- Inspector untuk gaya teks (ukuran, perataan, warna, tebal/miring), urutan
+  lapisan (ke depan/belakang), duplikat, dan hapus.
+- **Pengaturan template**: nama template, data bisnis (nama, alamat, telepon,
+  logo via unggah atau URL), dan data pelanggan contoh.
+- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z), hapus via Delete, dan **simpan
+  otomatis** ke localStorage. Buat, duplikat, dan hapus template.
+
+### Halaman Buat Invoice (`/invoice`)
+- Pilih template, isi **data invoice** (nomor, tanggal terbit, jatuh tempo).
+- Pilih item pesanan lewat filter (rentang/tanggal/produk/status), **tambah**
+  atau **ganti semua**, lalu hapus baris terpilih.
+- **Pratinjau langsung** invoice sesuai template, dengan total otomatis.
+- **Cetak / simpan PDF** lewat dialog cetak browser (`window.print()`).
 
 ---
 
@@ -104,7 +133,7 @@ Jika nama repo bukan `invoice`, ubah `base` di `vite.config.ts` agar cocok.
 ```
 src/
   main.tsx              # entry
-  router.tsx            # rute (hash history): /harga, /pesanan
+  router.tsx            # rute (hash history): /harga, /pesanan, /excel, /template, /invoice
   styles.css            # @import "tailwindcss"
   lib/
     types.ts            # tipe data
@@ -113,16 +142,31 @@ src/
     store.ts            # state global (useSyncExternalStore) + addType
     io.ts               # serialisasi & impor/ekspor JSON, unduh berkas
     seed.ts             # data awal dari src/data/seed-price.json
+    columns.ts          # definisi & toggle kolom tabel
+    excel.ts            # ekspor order.xlsx (exceljs)
+    template-types.ts   # tipe template, elemen, & data invoice
+    template-store.ts   # state template (localStorage) + create/duplicate/save
+    image.ts            # downscale gambar & baca dimensi
+    snap.ts             # snapping drag/resize di kanvas
   components/
     Button.tsx          # Button / PrimaryButton / DangerButton / GhostButton
     Input.tsx, Select.tsx, Panel.tsx, Field.tsx
     TypeSelect.tsx      # combobox tipe (pilih / buat baru)
     ProductDialog.tsx   # form tambah/ubah produk + konversi
     AddItemForm.tsx     # form tambah item pesanan
+    ColumnToggle.tsx    # toggle visibilitas kolom
+    template/
+      Canvas.tsx        # kanvas drag-and-drop A4
+      ElementContent.tsx# render isi tiap elemen
+      Inspector.tsx     # panel properti template/elemen
+      Preview.tsx       # render template + data invoice
   routes/
     RootLayout.tsx      # sidebar + outlet
     PricesPage.tsx      # halaman Harga
     OrdersPage.tsx      # halaman Pesanan
+    ExcelPage.tsx       # halaman Ekspor Excel
+    TemplatePage.tsx    # halaman Desain Template
+    InvoicePage.tsx     # halaman Buat Invoice
 python/                 # skrip Python lama (referensi, di-gitignore)
 ```
 
@@ -134,30 +178,9 @@ Folder `python/` berisi skrip asli yang menjadi acuan: `build_order.py`
 
 ## Langkah berikutnya (rencana)
 
-UI sudah selesai; dua fitur ekspor berikut menjadi fokus berikutnya.
+Semua fitur inti sudah selesai. Ide pengembangan lanjutan:
 
-### 1. Ekspor XLSX (menyamai `python/create_excel.py`)
-Hasilkan `order.xlsx` di browser dengan tata letak yang sama seperti skrip
-Python:
-
-- Kolom: **Tanggal, Nama Produk, Kuantitas, Harga Satuan, Total Harga**.
-- `Total Harga` per baris = **formula** `Kuantitas * Harga Satuan`.
-- **Subtotal** per tanggal (`SUM` rentang baris tanggal tsb.).
-- **Total Keseluruhan** = jumlah seluruh subtotal.
-- Sel `Tanggal` di-merge vertikal untuk tiap kelompok tanggal.
-- Styling: header biru, baris subtotal & grand-total berwarna, border tipis,
-  lebar kolom diset, `freeze_panes` di baris pertama.
-- Kandidat library client-side: `exceljs` (mendukung formula, merge, styling,
-  number format) — paling dekat dengan `openpyxl`. `SheetJS (xlsx)` lebih
-  ringan tetapi dukungan styling/formula terbatas.
-
-### 2. Generator Invoice PDF
-Buat invoice PDF langsung di browser (tetap offline), dari pesanan yang
-sudah difilter / per tanggal.
-
-- Kandidat library client-side: `jspdf` + `jspdf-autotable`, atau
-  `@react-pdf/renderer` (komponen React → PDF).
-- Isi invoice: header bisnis, nomor & tanggal invoice, tabel item
-  (Produk, Satuan, Qty, Harga Satuan, Total), subtotal per tanggal,
-  total keseluruhan dalam Rupiah.
-- Tombol **"Unduh Invoice PDF"** di halaman Pesanan, menghormati filter aktif.
+- **Ekspor PDF asli** (mis. `@react-pdf/renderer`) sebagai alternatif dialog
+  cetak browser, untuk hasil yang lebih konsisten antar-perangkat.
+- **Lebih banyak field dinamis** di template (mis. catatan, pajak/PPN, diskon).
+- **Status pembayaran & rekap** invoice yang sudah dibuat.
