@@ -24,6 +24,12 @@
     "Harga Jual": 15000
   },
   {
+    "Nama Produk": "Butter",
+    "Ukuran": 1,
+    "Satuan": null,
+    "Harga Jual": 58000
+  },
+  {
     "Nama Produk": "Coklat Nestle",
     "Ukuran": 1000,
     "Satuan": "gr",
@@ -102,10 +108,22 @@
     "Harga Jual": 28000
   },
   {
+    "Nama Produk": "Houseblend",
+    "Ukuran": 1000,
+    "Satuan": "gr",
+    "Harga Jual": 205000
+  },
+  {
     "Nama Produk": "Krimer",
     "Ukuran": 1000,
     "Satuan": "gr",
     "Harga Jual": 55000
+  },
+  {
+    "Nama Produk": "Kurma",
+    "Ukuran": 1000,
+    "Satuan": "gr",
+    "Harga Jual": 60000
   },
   {
     "Nama Produk": "Le Minerale",
@@ -114,10 +132,28 @@
     "Harga Jual": 52000
   },
   {
+    "Nama Produk": "Lidah Buaya",
+    "Ukuran": 1,
+    "Satuan": "pouch",
+    "Harga Jual": 26000
+  },
+  {
     "Nama Produk": "Madu Quickfresh",
     "Ukuran": 1000,
     "Satuan": "gr",
     "Harga Jual": 89000
+  },
+  {
+    "Nama Produk": "Marjan Cocopandan",
+    "Ukuran": 1,
+    "Satuan": "btl",
+    "Harga Jual": 29000
+  },
+  {
+    "Nama Produk": "Marjan Melon",
+    "Ukuran": 1,
+    "Satuan": "btl",
+    "Harga Jual": 29000
   },
   {
     "Nama Produk": "Milo Active Go",
@@ -148,6 +184,12 @@
     "Ukuran": 1,
     "Satuan": "psc",
     "Harga Jual": 1650
+  },
+  {
+    "Nama Produk": "Shineroad",
+    "Ukuran": 1000,
+    "Satuan": "ml",
+    "Harga Jual": 55000
   },
   {
     "Nama Produk": "SKM",
@@ -184,5 +226,11 @@
     "Ukuran": 400,
     "Satuan": "gr",
     "Harga Jual": 58000
+  },
+  {
+    "Nama Produk": "Yakult",
+    "Ukuran": 1,
+    "Satuan": "pcs",
+    "Harga Jual": 2700
   }
 ]
