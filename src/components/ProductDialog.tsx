@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Product, Conversion } from "../lib/types";
-import { uid, formatRupiah } from "../lib/format";
+import { uid, nowISO, formatRupiah } from "../lib/format";
 import { addType } from "../lib/store";
 import { Button, PrimaryButton, GhostButton } from "./Button";
 import { Input } from "./Input";
@@ -54,6 +54,7 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
         const jumlah = Number(k.jumlah) || 0;
         return { nama: k.nama.trim(), jumlah, harga: jumlah * harga };
       });
+    const now = nowISO();
     onSave({
       id: product?.id ?? uid(),
       namaProduk: namaProduk.trim(),
@@ -62,6 +63,8 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
       satuan: satuan.trim() === "" ? null : satuan.trim(),
       hargaJual: harga,
       konversi: cleanKonv,
+      createdAt: product?.createdAt ?? now,
+      updatedAt: now,
     });
   }
 

@@ -46,3 +46,20 @@ export function todayISO(): string {
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
+
+// Full ISO datetime stamp for createdAt/updatedAt.
+export function nowISO(): string {
+  return new Date().toISOString();
+}
+
+// "2026-06-27T08:30:00.000Z" -> "27 Jun 2026, 15.30" (best effort, local time)
+export function formatDateTimeID(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const dd = d.getDate();
+  const mon = BULAN[d.getMonth()]?.slice(0, 3) ?? "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${dd} ${mon} ${d.getFullYear()}, ${hh}.${mm}`;
+}

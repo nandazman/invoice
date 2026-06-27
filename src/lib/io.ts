@@ -1,6 +1,7 @@
-import type { Product, OrderItem, Conversion } from "./types";
+import type { Product, OrderItem, Conversion, OrderStatus } from "./types";
 import {
   uid,
+  nowISO,
   formatTanggalID,
   parseTanggalID,
   todayISO,
@@ -20,6 +21,8 @@ interface RawProduct {
   Satuan?: string | null;
   "Harga Jual"?: number;
   Konversi?: RawConversion[];
+  CreatedAt?: string;
+  UpdatedAt?: string;
 }
 
 export function serializeProducts(products: Product[]): string {
@@ -34,6 +37,8 @@ export function serializeProducts(products: Product[]): string {
       Jumlah: c.jumlah,
       Harga: c.harga,
     })),
+    CreatedAt: p.createdAt,
+    UpdatedAt: p.updatedAt,
   }));
   return JSON.stringify(out, null, 2);
 }
@@ -49,6 +54,7 @@ export function parseProducts(text: string): Product[] {
           harga: Number(c.Harga ?? 0),
         }))
       : [];
+    const now = nowISO();
     return {
       id: uid(),
       namaProduk: String(p["Nama Produk"] ?? ""),
@@ -57,6 +63,8 @@ export function parseProducts(text: string): Product[] {
       satuan: p.Satuan ?? null,
       hargaJual: Number(p["Harga Jual"] ?? 0),
       konversi,
+      createdAt: p.CreatedAt ?? now,
+      updatedAt: p.UpdatedAt ?? p.CreatedAt ?? now,
     };
   });
 }
@@ -69,6 +77,9 @@ interface RawItem {
   Kuantitas?: number;
   "Harga Satuan"?: number;
   "Total Harga"?: number;
+  Status?: string;
+  CreatedAt?: string;
+  UpdatedAt?: string;
 }
 interface RawOrderGroup {
   Tanggal?: string;
@@ -100,6 +111,9 @@ export function serializeOrders(items: OrderItem[]): string {
         Kuantitas: i.kuantitas,
         "Harga Satuan": i.hargaSatuan,
         "Total Harga": i.totalHarga,
+        Status: i.status,
+        CreatedAt: i.createdAt,
+        UpdatedAt: i.updatedAt,
       })),
       "Total Tanggal": totalTanggal,
     };
@@ -120,6 +134,8 @@ export function parseOrders(text: string): OrderItem[] {
     for (const it of g.Items ?? []) {
       const kuantitas = Number(it.Kuantitas ?? 0);
       const hargaSatuan = Number(it["Harga Satuan"] ?? 0);
+      const now = nowISO();
+      const status: OrderStatus = it.Status === "paid" ? "paid" : "pending";
       items.push({
         id: uid(),
         tanggal: iso,
@@ -128,6 +144,9 @@ export function parseOrders(text: string): OrderItem[] {
         kuantitas,
         hargaSatuan,
         totalHarga: Number(it["Total Harga"] ?? kuantitas * hargaSatuan),
+        status,
+        createdAt: it.CreatedAt ?? now,
+        updatedAt: it.UpdatedAt ?? it.CreatedAt ?? now,
       });
     }
   }

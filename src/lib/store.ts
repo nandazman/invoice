@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import type { Product, OrderItem } from "./types";
+import type { Product, OrderItem, OrderStatus } from "./types";
+import { nowISO } from "./format";
 import {
   loadProducts,
   saveProducts,
@@ -54,6 +55,58 @@ export function addType(name: string): string {
     emit();
   }
   return t;
+}
+
+// ---------- Timestamp-aware product mutations ----------
+
+// Insert or update a product, stamping createdAt/updatedAt automatically.
+export function upsertProduct(p: Product): void {
+  const now = nowISO();
+  const exists = products.some((x) => x.id === p.id);
+  if (exists) {
+    setProducts(
+      products.map((x) =>
+        x.id === p.id ? { ...p, createdAt: x.createdAt, updatedAt: now } : x,
+      ),
+    );
+  } else {
+    setProducts([...products, { ...p, createdAt: now, updatedAt: now }]);
+  }
+}
+
+export function deleteProduct(id: string): void {
+  setProducts(products.filter((p) => p.id !== id));
+}
+
+// ---------- Timestamp-aware order mutations ----------
+
+// Add an order item, stamping status/timestamps if not already set.
+export function addOrder(item: OrderItem): void {
+  const now = nowISO();
+  setOrders([
+    ...orders,
+    {
+      ...item,
+      status: item.status ?? "pending",
+      createdAt: item.createdAt ?? now,
+      updatedAt: item.updatedAt ?? now,
+    },
+  ]);
+}
+
+export function setOrderStatus(id: string, status: OrderStatus): void {
+  const now = nowISO();
+  setOrders(
+    orders.map((o) => (o.id === id ? { ...o, status, updatedAt: now } : o)),
+  );
+}
+
+export function deleteOrder(id: string): void {
+  setOrders(orders.filter((o) => o.id !== id));
+}
+
+export function deleteOrders(ids: Set<string>): void {
+  setOrders(orders.filter((o) => !ids.has(o.id)));
 }
 
 export function getProducts(): Product[] {

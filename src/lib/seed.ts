@@ -1,5 +1,5 @@
 import type { Product } from "./types";
-import { uid } from "./format";
+import { uid, nowISO } from "./format";
 import rawPrices from "../data/seed-price.json";
 
 interface RawPrice {
@@ -11,6 +11,7 @@ interface RawPrice {
 
 // Initial product catalogue, mapped from the original price.json shape.
 export function seedProducts(): Product[] {
+  const now = nowISO();
   return (rawPrices as RawPrice[]).map((p) => ({
     id: uid(),
     namaProduk: p["Nama Produk"],
@@ -19,5 +20,7 @@ export function seedProducts(): Product[] {
     satuan: p.Satuan ?? null,
     hargaJual: p["Harga Jual"],
     konversi: [],
+    createdAt: now,
+    updatedAt: now,
   }));
 }

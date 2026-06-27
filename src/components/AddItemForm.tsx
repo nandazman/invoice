@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Product, OrderItem } from "../lib/types";
-import { formatRupiah, todayISO, uid } from "../lib/format";
+import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
 import { PrimaryButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
@@ -55,6 +55,7 @@ export function AddItemForm({ products, onAdd }: Props) {
       return;
     }
     const cleanUnit = unit.label.replace(/\s*\(.*\)\s*$/, "").trim();
+    const now = nowISO();
     onAdd({
       id: uid(),
       tanggal,
@@ -63,6 +64,9 @@ export function AddItemForm({ products, onAdd }: Props) {
       kuantitas: qtyNum,
       hargaSatuan: unit.harga,
       totalHarga: total,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
     });
     setKuantitas("1");
   }

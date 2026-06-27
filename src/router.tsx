@@ -8,6 +8,7 @@ import {
 import { RootLayout } from "./routes/RootLayout";
 import { PricesPage } from "./routes/PricesPage";
 import { OrdersPage } from "./routes/OrdersPage";
+import { ExcelPage } from "./routes/ExcelPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -31,10 +32,17 @@ const ordersRoute = createRoute({
   component: OrdersPage,
 });
 
+const excelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/excel",
+  component: ExcelPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   pricesRoute,
   ordersRoute,
+  excelRoute,
 ]);
 
 export const router = createRouter({

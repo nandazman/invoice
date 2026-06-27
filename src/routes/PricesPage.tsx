@@ -9,19 +9,42 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import type { Product } from "../lib/types";
-import { useProducts, setProducts, useTypes, addType } from "../lib/store";
-import { formatRupiah, formatAngka } from "../lib/format";
+import {
+  useProducts,
+  setProducts,
+  useTypes,
+  addType,
+  upsertProduct,
+  deleteProduct,
+} from "../lib/store";
+import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
 import {
   serializeProducts,
   parseProducts,
   downloadJSON,
   pickJSONFile,
 } from "../lib/io";
+import { usePersistentVisibility } from "../lib/columns";
 import { ProductDialog } from "../components/ProductDialog";
+import { ColumnToggle } from "../components/ColumnToggle";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
+
+const TOGGLE_COLUMNS = [
+  { id: "namaProduk", label: "Nama Produk" },
+  { id: "tipe", label: "Tipe" },
+  { id: "ukuran", label: "Ukuran" },
+  { id: "hargaJual", label: "Harga Satuan" },
+  { id: "konversi", label: "Konversi" },
+  { id: "createdAt", label: "Dibuat" },
+  { id: "updatedAt", label: "Diperbarui" },
+];
+
+const COLUMN_DEFAULTS = Object.fromEntries(
+  TOGGLE_COLUMNS.map((c) => [c.id, true]),
+);
 
 const col = createColumnHelper<Product>();
 
@@ -38,19 +61,18 @@ export function PricesPage() {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "namaProduk", desc: false },
   ]);
+  const [visible, toggleColumn] = usePersistentVisibility(
+    "invoice.harga.cols.v1",
+    COLUMN_DEFAULTS,
+  );
 
   function removeProduct(id: string) {
     if (!confirm("Hapus produk ini?")) return;
-    setProducts(products.filter((p) => p.id !== id));
+    deleteProduct(id);
   }
 
   function upsert(product: Product) {
-    const exists = products.some((p) => p.id === product.id);
-    setProducts(
-      exists
-        ? products.map((p) => (p.id === product.id ? product : p))
-        : [...products, product],
-    );
+    upsertProduct(product);
     setEditing(null);
     setCreating(false);
   }
@@ -114,9 +136,26 @@ export function PricesPage() {
           ));
         },
       }),
+      col.accessor("createdAt", {
+        header: "Dibuat",
+        cell: (c) => (
+          <span className="text-slate-400 text-xs">
+            {formatDateTimeID(c.getValue())}
+          </span>
+        ),
+      }),
+      col.accessor("updatedAt", {
+        header: "Diperbarui",
+        cell: (c) => (
+          <span className="text-slate-400 text-xs">
+            {formatDateTimeID(c.getValue())}
+          </span>
+        ),
+      }),
       col.display({
         id: "aksi",
         header: "",
+        enableHiding: false,
         cell: (c) => (
           <div className="flex gap-1 justify-end">
             <Button size="sm" onClick={() => setEditing(c.row.original)}>
@@ -138,7 +177,7 @@ export function PricesPage() {
   const table = useReactTable({
     data: products,
     columns,
-    state: { sorting, globalFilter: filter },
+    state: { sorting, globalFilter: filter, columnVisibility: visible },
     onSortingChange: setSorting,
     onGlobalFilterChange: setFilter,
     getCoreRowModel: getCoreRowModel(),
@@ -173,6 +212,11 @@ export function PricesPage() {
           >
             Ekspor JSON
           </Button>
+          <ColumnToggle
+            columns={TOGGLE_COLUMNS}
+            visible={visible}
+            onToggle={toggleColumn}
+          />
         </div>
 
         <div className="overflow-x-auto">

@@ -14,7 +14,11 @@ export interface Product {
   satuan: string | null; // base unit label (may be null in source data)
   hargaJual: number; // base price per single unit
   konversi: Conversion[];
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
 }
+
+export type OrderStatus = "pending" | "paid";
 
 export interface OrderItem {
   id: string;
@@ -24,4 +28,7 @@ export interface OrderItem {
   kuantitas: number;
   hargaSatuan: number; // price of the chosen unit
   totalHarga: number; // kuantitas x hargaSatuan
+  status: OrderStatus; // payment status
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
 }

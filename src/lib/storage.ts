@@ -1,5 +1,6 @@
 import type { Product, OrderItem } from "./types";
 import { seedProducts } from "./seed";
+import { nowISO } from "./format";
 
 const PRODUCTS_KEY = "invoice.products.v1";
 const ORDERS_KEY = "invoice.orders.v1";
@@ -26,10 +27,13 @@ export function loadProducts(): Product[] {
     write(PRODUCTS_KEY, seeded);
     return seeded;
   }
-  // Migrate older records that predate the `tipe` field.
+  // Migrate older records that predate the `tipe` / timestamp fields.
+  const now = nowISO();
   return read<Product[]>(PRODUCTS_KEY, []).map((p) => ({
     ...p,
     tipe: p.tipe ?? "Bar",
+    createdAt: p.createdAt ?? now,
+    updatedAt: p.updatedAt ?? p.createdAt ?? now,
   }));
 }
 
@@ -50,7 +54,14 @@ export function saveTypes(types: string[]): void {
 }
 
 export function loadOrders(): OrderItem[] {
-  return read<OrderItem[]>(ORDERS_KEY, []);
+  // Migrate older records that predate the status / timestamp fields.
+  const now = nowISO();
+  return read<OrderItem[]>(ORDERS_KEY, []).map((o) => ({
+    ...o,
+    status: o.status ?? "pending",
+    createdAt: o.createdAt ?? now,
+    updatedAt: o.updatedAt ?? o.createdAt ?? now,
+  }));
 }
 
 export function saveOrders(orders: OrderItem[]): void {
