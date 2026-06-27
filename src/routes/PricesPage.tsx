@@ -42,8 +42,10 @@ const TOGGLE_COLUMNS = [
   { id: "updatedAt", label: "Diperbarui" },
 ];
 
+// createdAt/updatedAt are hidden by default; users can re-enable them.
+const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
 const COLUMN_DEFAULTS = Object.fromEntries(
-  TOGGLE_COLUMNS.map((c) => [c.id, true]),
+  TOGGLE_COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
 
 const col = createColumnHelper<Product>();
@@ -62,7 +64,7 @@ export function PricesPage() {
     { id: "namaProduk", desc: false },
   ]);
   const [visible, toggleColumn] = usePersistentVisibility(
-    "invoice.harga.cols.v1",
+    "invoice.harga.cols.v2",
     COLUMN_DEFAULTS,
   );
 

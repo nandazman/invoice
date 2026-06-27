@@ -60,8 +60,10 @@ const COLUMNS = [
   { id: "updatedAt", label: "Diperbarui" },
 ];
 
+// createdAt/updatedAt are hidden by default; users can re-enable them.
+const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
 const COLUMN_DEFAULTS = Object.fromEntries(
-  COLUMNS.map((c) => [c.id, true]),
+  COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
 
 // Colored badge feel for the inline status dropdown.
@@ -76,7 +78,7 @@ export function OrdersPage() {
   const orders = useOrders();
 
   const [visible, toggle] = usePersistentVisibility(
-    "invoice.pesanan.cols.v1",
+    "invoice.pesanan.cols.v2",
     COLUMN_DEFAULTS,
   );
 

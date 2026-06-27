@@ -9,6 +9,8 @@ import { RootLayout } from "./routes/RootLayout";
 import { PricesPage } from "./routes/PricesPage";
 import { OrdersPage } from "./routes/OrdersPage";
 import { ExcelPage } from "./routes/ExcelPage";
+import { TemplatePage } from "./routes/TemplatePage";
+import { InvoicePage } from "./routes/InvoicePage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -38,11 +40,25 @@ const excelRoute = createRoute({
   component: ExcelPage,
 });
 
+const templateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/template",
+  component: TemplatePage,
+});
+
+const invoiceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invoice",
+  component: InvoicePage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   pricesRoute,
   ordersRoute,
   excelRoute,
+  templateRoute,
+  invoiceRoute,
 ]);
 
 export const router = createRouter({

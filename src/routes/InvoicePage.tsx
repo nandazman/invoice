@@ -1,0 +1,285 @@
+import { useMemo, useState } from "react";
+import type { OrderItem, OrderStatus } from "../lib/types";
+import type { InvoiceData } from "../lib/template-types";
+import { useOrders } from "../lib/store";
+import { useTemplates } from "../lib/template-store";
+import { formatRupiah, formatAngka, todayISO } from "../lib/format";
+import { Preview } from "../components/template/Preview";
+import { Panel } from "../components/Panel";
+import { Input } from "../components/Input";
+import { Select } from "../components/Select";
+import { Field } from "../components/Field";
+import { Button, PrimaryButton, DangerButton } from "../components/Button";
+
+type StatusFilter = "semua" | OrderStatus;
+
+const thClass =
+  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
+const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
+
+export function InvoicePage() {
+  const orders = useOrders();
+  const templates = useTemplates();
+
+  const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
+  const template = templates.find((t) => t.id === templateId) ?? templates[0] ?? null;
+
+  // Dynamic invoice fields.
+  const [number, setNumber] = useState("INV-0001");
+  const [issued, setIssued] = useState(todayISO());
+  const [due, setDue] = useState("");
+
+  // Order filter (same shape as the Excel page).
+  const [exact, setExact] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [produk, setProduk] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("semua");
+  const [staged, setStaged] = useState<OrderItem[]>([]);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
+  function clearFilters() {
+    setExact("");
+    setFrom("");
+    setTo("");
+    setProduk("");
+    setStatus("semua");
+  }
+
+  const filtered = useMemo(() => {
+    const q = produk.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (exact && o.tanggal !== exact) return false;
+      if (!exact) {
+        if (from && o.tanggal < from) return false;
+        if (to && o.tanggal > to) return false;
+      }
+      if (q && !o.namaProduk.toLowerCase().includes(q)) return false;
+      if (status !== "semua" && o.status !== status) return false;
+      return true;
+    });
+  }, [orders, exact, from, to, produk, status]);
+
+  function appendFiltered() {
+    setStaged((prev) => {
+      const seen = new Set(prev.map((p) => p.id));
+      return [...prev, ...filtered.filter((f) => !seen.has(f.id))];
+    });
+  }
+  function replaceFiltered() {
+    setStaged(filtered);
+    setSelectedRows(new Set());
+  }
+  function toggleRow(id: string) {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelectedRows((prev) =>
+      prev.size === staged.length ? new Set() : new Set(staged.map((s) => s.id)),
+    );
+  }
+  function removeSelected() {
+    setStaged((prev) => prev.filter((s) => !selectedRows.has(s.id)));
+    setSelectedRows(new Set());
+  }
+
+  const stagedSorted = useMemo(
+    () => [...staged].sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
+    [staged],
+  );
+  const total = staged.reduce((s, i) => s + i.totalHarga, 0);
+  const hasFilter = exact || from || to || produk || status !== "semua";
+
+  const data: InvoiceData = {
+    number,
+    issued,
+    due,
+    items: stagedSorted,
+    total,
+  };
+
+  if (!template) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-4">Buat Invoice</h1>
+        <Panel>
+          <p className="text-slate-500">
+            Belum ada template. Buat dulu di halaman <b>Desain Template</b>.
+          </p>
+        </Panel>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 flex-wrap mb-4 no-print">
+        <h1 className="text-2xl font-bold mr-2">Buat Invoice</h1>
+        <Select
+          value={template.id}
+          onChange={(e) => setTemplateId(e.target.value)}
+          className="w-auto"
+        >
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.nama}
+            </option>
+          ))}
+        </Select>
+        <PrimaryButton className="ml-auto" onClick={() => window.print()}>
+          Cetak / PDF
+        </PrimaryButton>
+      </div>
+
+      <div className="flex gap-4 items-start no-print">
+        <div className="w-80 shrink-0 space-y-4">
+          <Panel>
+            <h3 className="font-bold text-sm text-slate-700 mb-2">Data Invoice</h3>
+            <div className="space-y-2">
+              <Field label="No. Invoice">
+                <Input value={number} onChange={(e) => setNumber(e.target.value)} />
+              </Field>
+              <Field label="Tanggal Terbit">
+                <Input type="date" value={issued} onChange={(e) => setIssued(e.target.value)} />
+              </Field>
+              <Field label="Jatuh Tempo">
+                <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+              </Field>
+            </div>
+          </Panel>
+
+          <Panel>
+            <h3 className="font-bold text-sm text-slate-700 mb-2">Pilih Item Pesanan</h3>
+            <div className="space-y-2">
+              <Field label="Tanggal spesifik">
+                <Input type="date" value={exact} onChange={(e) => setExact(e.target.value)} />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Dari">
+                  <Input
+                    type="date"
+                    value={from}
+                    disabled={!!exact}
+                    onChange={(e) => setFrom(e.target.value)}
+                  />
+                </Field>
+                <Field label="Sampai">
+                  <Input
+                    type="date"
+                    value={to}
+                    disabled={!!exact}
+                    onChange={(e) => setTo(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="Cari produk">
+                <Input
+                  value={produk}
+                  onChange={(e) => setProduk(e.target.value)}
+                  placeholder="Nama produk…"
+                />
+              </Field>
+              <Field label="Status">
+                <Select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+                  <option value="semua">Semua</option>
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                </Select>
+              </Field>
+              <div className="flex gap-2 items-center pt-1">
+                <span className="text-xs text-slate-400">{filtered.length} cocok</span>
+                {hasFilter && (
+                  <Button size="sm" onClick={clearFilters}>
+                    Reset
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={appendFiltered} className="flex-1">
+                  Tambah
+                </Button>
+                <Button size="sm" onClick={replaceFiltered} className="flex-1">
+                  Ganti semua
+                </Button>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-slate-700">{formatRupiah(total)}</span>
+              <span className="text-xs text-slate-400">{staged.length} item</span>
+            </div>
+            {staged.length > 0 && (
+              <div className="mb-2">
+                <DangerButton
+                  size="sm"
+                  onClick={removeSelected}
+                  disabled={selectedRows.size === 0}
+                >
+                  Hapus terpilih ({selectedRows.size})
+                </DangerButton>
+              </div>
+            )}
+            {staged.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-3">Belum ada item.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <th className={`${thClass} w-8`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRows.size === staged.length}
+                          onChange={toggleAll}
+                        />
+                      </th>
+                      <th className={thClass}>Produk</th>
+                      <th className={`${thClass} text-right`}>Qty</th>
+                      <th className={`${thClass} text-right`}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stagedSorted.map((it) => (
+                      <tr key={it.id} className="hover:bg-slate-50">
+                        <td className={tdClass}>
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(it.id)}
+                            onChange={() => toggleRow(it.id)}
+                          />
+                        </td>
+                        <td className={tdClass}>{it.namaProduk}</td>
+                        <td className={`${tdClass} text-right tabular-nums`}>
+                          {formatAngka(it.kuantitas)}
+                        </td>
+                        <td className={`${tdClass} text-right tabular-nums`}>
+                          {formatRupiah(it.totalHarga)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <div className="flex-1 min-w-0 bg-slate-100 rounded-xl p-4">
+          <Preview template={template} data={data} />
+        </div>
+      </div>
+
+      {/* Full-size page used only for printing */}
+      <div className="print-area">
+        <Preview template={template} data={data} fit={false} />
+      </div>
+    </div>
+  );
+}

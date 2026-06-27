@@ -81,6 +81,32 @@ export function RootLayout() {
             <span className="text-base">📊</span>
             {!collapsed && "Ekspor Excel"}
           </Link>
+          <Link
+            to="/template"
+            title="Desain Template"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
+            activeProps={{
+              className: `${linkBase} ${linkActive} ${
+                collapsed ? "justify-center px-0" : ""
+              }`,
+            }}
+          >
+            <span className="text-base">🎨</span>
+            {!collapsed && "Desain Template"}
+          </Link>
+          <Link
+            to="/invoice"
+            title="Buat Invoice"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
+            activeProps={{
+              className: `${linkBase} ${linkActive} ${
+                collapsed ? "justify-center px-0" : ""
+              }`,
+            }}
+          >
+            <span className="text-base">🧾</span>
+            {!collapsed && "Buat Invoice"}
+          </Link>
         </nav>
 
         {!collapsed && (
