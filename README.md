@@ -8,20 +8,26 @@ TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
 Semua data disimpan di **localStorage browser** dan dapat di-**ekspor/impor
 sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 
+> **Status:** UI (Harga + Pesanan) sudah **selesai**. Langkah berikutnya:
+> **ekspor XLSX** (menyamai logika `python/create_excel.py`) dan **generator
+> Invoice PDF** — lihat [Langkah berikutnya](#langkah-berikutnya-rencana).
+
 ---
 
 ## Fitur saat ini
 
 ### Halaman Harga (`/harga`)
-- Daftar produk: `Nama Produk`, `Ukuran`, `Satuan`, `Harga Satuan`.
+- Daftar produk: `Nama Produk`, `Tipe`, `Ukuran`, `Satuan`, `Harga Satuan`.
+- **Tipe produk** (mis. `Bar`, `Dapur`) dipilih lewat combobox ala GitHub
+  "create branch": pilih tipe yang ada atau ketik nama baru untuk
+  **membuat tipe** — langsung tersimpan dan tersedia di semua dropdown.
 - **Konversi kemasan** per produk, sebagai array yang bisa ditambah bebas.
-  Setiap konversi memiliki **harganya sendiri**, contoh:
-  - 1 produk dasar = Rp 10.000 / unit
-  - 1 `box` = 12 unit, harga box = Rp 110.000 (mis. ada diskon grosir)
+  Harga tiap konversi **dihitung otomatis** dari `Harga Satuan × jumlah`,
+  contoh: harga satuan Rp 10.000, `1 box = 12 unit` → harga box = Rp 120.000.
 - Tabel dengan pencarian & pengurutan (TanStack Table).
 - Tambah / ubah / hapus produk.
 - **Impor / Ekspor JSON** (kompatibel dengan format `price.json` lama,
-  ditambah field `Konversi`).
+  ditambah field `Tipe` & `Konversi`).
 
 ### Halaman Pesanan (`/pesanan`)
 - **Tambah item**: pilih produk dari daftar harga, pilih tanggal, masukkan
@@ -40,13 +46,14 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 
 ```ts
 // Produk (price.json)
-interface Conversion { nama: string; jumlah: number; harga: number }
+interface Conversion { nama: string; jumlah: number; harga: number } // harga = jumlah × hargaJual (otomatis)
 interface Product {
   namaProduk: string;
+  tipe: string;               // kategori, mis. "Bar"
   ukuran: number | null;
   satuan: string | null;
   hargaJual: number;          // harga per satuan dasar
-  konversi: Conversion[];     // tiap konversi punya harga sendiri
+  konversi: Conversion[];     // harga tiap konversi dihitung dari hargaJual
 }
 
 // Item pesanan (order.json, dikelompokkan per tanggal saat diekspor)
@@ -102,12 +109,14 @@ src/
   lib/
     types.ts            # tipe data
     format.ts           # rupiah, tanggal Indonesia, uid
-    storage.ts          # baca/tulis localStorage
-    store.ts            # state global (useSyncExternalStore)
+    storage.ts          # baca/tulis localStorage (produk, pesanan, tipe)
+    store.ts            # state global (useSyncExternalStore) + addType
     io.ts               # serialisasi & impor/ekspor JSON, unduh berkas
     seed.ts             # data awal dari src/data/seed-price.json
-    ui.ts               # kelas Tailwind bersama (tombol, input, dll.)
   components/
+    Button.tsx          # Button / PrimaryButton / DangerButton / GhostButton
+    Input.tsx, Select.tsx, Panel.tsx, Field.tsx
+    TypeSelect.tsx      # combobox tipe (pilih / buat baru)
     ProductDialog.tsx   # form tambah/ubah produk + konversi
     AddItemForm.tsx     # form tambah item pesanan
   routes/
@@ -125,18 +134,9 @@ Folder `python/` berisi skrip asli yang menjadi acuan: `build_order.py`
 
 ## Langkah berikutnya (rencana)
 
-### 1. Generator Invoice PDF
-Buat invoice PDF langsung di browser (tetap offline), dari pesanan yang
-sudah difilter / per tanggal.
+UI sudah selesai; dua fitur ekspor berikut menjadi fokus berikutnya.
 
-- Kandidat library client-side: `jspdf` + `jspdf-autotable`, atau
-  `@react-pdf/renderer` (komponen React → PDF).
-- Isi invoice: header bisnis, nomor & tanggal invoice, tabel item
-  (Produk, Satuan, Qty, Harga Satuan, Total), subtotal per tanggal,
-  total keseluruhan dalam Rupiah.
-- Tombol **"Unduh Invoice PDF"** di halaman Pesanan, menghormati filter aktif.
-
-### 2. Ekspor XLSX (menyamai `python/create_excel.py`)
+### 1. Ekspor XLSX (menyamai `python/create_excel.py`)
 Hasilkan `order.xlsx` di browser dengan tata letak yang sama seperti skrip
 Python:
 
@@ -150,3 +150,14 @@ Python:
 - Kandidat library client-side: `exceljs` (mendukung formula, merge, styling,
   number format) — paling dekat dengan `openpyxl`. `SheetJS (xlsx)` lebih
   ringan tetapi dukungan styling/formula terbatas.
+
+### 2. Generator Invoice PDF
+Buat invoice PDF langsung di browser (tetap offline), dari pesanan yang
+sudah difilter / per tanggal.
+
+- Kandidat library client-side: `jspdf` + `jspdf-autotable`, atau
+  `@react-pdf/renderer` (komponen React → PDF).
+- Isi invoice: header bisnis, nomor & tanggal invoice, tabel item
+  (Produk, Satuan, Qty, Harga Satuan, Total), subtotal per tanggal,
+  total keseluruhan dalam Rupiah.
+- Tombol **"Unduh Invoice PDF"** di halaman Pesanan, menghormati filter aktif.

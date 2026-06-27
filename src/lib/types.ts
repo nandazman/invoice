@@ -9,6 +9,7 @@ export interface Conversion {
 export interface Product {
   id: string;
   namaProduk: string;
+  tipe: string; // category, e.g. "Bar"
   ukuran: number | null;
   satuan: string | null; // base unit label (may be null in source data)
   hargaJual: number; // base price per single unit

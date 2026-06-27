@@ -9,7 +9,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import type { Product } from "../lib/types";
-import { useProducts, setProducts } from "../lib/store";
+import { useProducts, setProducts, useTypes, addType } from "../lib/store";
 import { formatRupiah, formatAngka } from "../lib/format";
 import {
   serializeProducts,
@@ -18,7 +18,7 @@ import {
   pickJSONFile,
 } from "../lib/io";
 import { ProductDialog } from "../components/ProductDialog";
-import { Button } from "../components/Button";
+import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
@@ -31,6 +31,7 @@ const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 export function PricesPage() {
   const products = useProducts();
+  const types = useTypes();
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
@@ -65,6 +66,7 @@ export function PricesPage() {
       )
         return;
       setProducts(imported);
+      for (const p of imported) addType(p.tipe);
     } catch (e) {
       alert("Gagal impor: " + (e as Error).message);
     }
@@ -73,6 +75,14 @@ export function PricesPage() {
   const columns = useMemo(
     () => [
       col.accessor("namaProduk", { header: "Nama Produk" }),
+      col.accessor("tipe", {
+        header: "Tipe",
+        cell: (c) => (
+          <span className="inline-block bg-slate-100 text-slate-600 rounded-md px-2 py-0.5 text-xs font-semibold">
+            {c.getValue()}
+          </span>
+        ),
+      }),
       col.display({
         id: "ukuran",
         header: "Ukuran",
@@ -112,13 +122,12 @@ export function PricesPage() {
             <Button size="sm" onClick={() => setEditing(c.row.original)}>
               Ubah
             </Button>
-            <Button
-              variant="danger"
+            <DangerButton
               size="sm"
               onClick={() => removeProduct(c.row.original.id)}
             >
               Hapus
-            </Button>
+            </DangerButton>
           </div>
         ),
       }),
@@ -153,9 +162,9 @@ export function PricesPage() {
               placeholder="Ketik nama produk…"
             />
           </Field>
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <PrimaryButton onClick={() => setCreating(true)}>
             + Tambah Produk
-          </Button>
+          </PrimaryButton>
           <Button onClick={doImport}>Impor JSON</Button>
           <Button
             onClick={() =>
@@ -235,6 +244,7 @@ export function PricesPage() {
       {(creating || editing) && (
         <ProductDialog
           product={editing}
+          types={types}
           onSave={upsert}
           onClose={() => {
             setEditing(null);

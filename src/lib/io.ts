@@ -15,6 +15,7 @@ interface RawConversion {
 }
 interface RawProduct {
   "Nama Produk"?: string;
+  Tipe?: string;
   Ukuran?: number | null;
   Satuan?: string | null;
   "Harga Jual"?: number;
@@ -24,6 +25,7 @@ interface RawProduct {
 export function serializeProducts(products: Product[]): string {
   const out = products.map((p) => ({
     "Nama Produk": p.namaProduk,
+    Tipe: p.tipe,
     Ukuran: p.ukuran,
     Satuan: p.satuan,
     "Harga Jual": p.hargaJual,
@@ -50,6 +52,7 @@ export function parseProducts(text: string): Product[] {
     return {
       id: uid(),
       namaProduk: String(p["Nama Produk"] ?? ""),
+      tipe: String(p.Tipe ?? "Bar"),
       ukuran: p.Ukuran ?? null,
       satuan: p.Satuan ?? null,
       hargaJual: Number(p["Harga Jual"] ?? 0),

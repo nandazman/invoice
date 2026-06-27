@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Product, OrderItem } from "../lib/types";
 import { formatRupiah, todayISO, uid } from "../lib/format";
-import { Button } from "./Button";
+import { PrimaryButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Panel } from "./Panel";
@@ -124,9 +124,7 @@ export function AddItemForm({ products, onAdd }: Props) {
             tabIndex={-1}
           />
         </Field>
-        <Button variant="primary" onClick={submit}>
-          + Tambah
-        </Button>
+        <PrimaryButton onClick={submit}>+ Tambah</PrimaryButton>
       </div>
     </Panel>
   );

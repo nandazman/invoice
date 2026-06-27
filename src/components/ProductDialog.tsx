@@ -1,18 +1,22 @@
 import { useState } from "react";
 import type { Product, Conversion } from "../lib/types";
-import { uid } from "../lib/format";
-import { Button } from "./Button";
+import { uid, formatRupiah } from "../lib/format";
+import { addType } from "../lib/store";
+import { Button, PrimaryButton, GhostButton } from "./Button";
 import { Input } from "./Input";
 import { Field } from "./Field";
+import { TypeSelect } from "./TypeSelect";
 
 interface Props {
   product: Product | null; // null = creating new
+  types: string[]; // existing type names for the dropdown
   onSave: (p: Product) => void;
   onClose: () => void;
 }
 
-export function ProductDialog({ product, onSave, onClose }: Props) {
+export function ProductDialog({ product, types, onSave, onClose }: Props) {
   const [namaProduk, setNama] = useState(product?.namaProduk ?? "");
+  const [tipe, setTipe] = useState(product?.tipe ?? "Bar");
   const [ukuran, setUkuran] = useState(
     product?.ukuran != null ? String(product.ukuran) : "",
   );
@@ -46,14 +50,14 @@ export function ProductDialog({ product, onSave, onClose }: Props) {
     }
     const cleanKonv = konversi
       .filter((k) => k.nama.trim())
-      .map((k) => ({
-        nama: k.nama.trim(),
-        jumlah: Number(k.jumlah) || 0,
-        harga: Number(k.harga) || 0,
-      }));
+      .map((k) => {
+        const jumlah = Number(k.jumlah) || 0;
+        return { nama: k.nama.trim(), jumlah, harga: jumlah * harga };
+      });
     onSave({
       id: product?.id ?? uid(),
       namaProduk: namaProduk.trim(),
+      tipe: tipe.trim() || "Bar",
       ukuran: ukuran.trim() === "" ? null : Number(ukuran),
       satuan: satuan.trim() === "" ? null : satuan.trim(),
       hargaJual: harga,
@@ -74,13 +78,23 @@ export function ProductDialog({ product, onSave, onClose }: Props) {
           {product ? "Ubah Produk" : "Tambah Produk"}
         </h2>
 
-        <Field label="Nama Produk *" className="mb-3">
-          <Input
-            value={namaProduk}
-            onChange={(e) => setNama(e.target.value)}
-            autoFocus
-          />
-        </Field>
+        <div className="flex gap-3 flex-wrap mb-3">
+          <Field label="Nama Produk *" className="flex-[2] min-w-[200px]">
+            <Input
+              value={namaProduk}
+              onChange={(e) => setNama(e.target.value)}
+              autoFocus
+            />
+          </Field>
+          <Field label="Tipe" className="flex-1 min-w-[140px]">
+            <TypeSelect
+              value={tipe}
+              options={types}
+              onChange={setTipe}
+              onCreate={addType}
+            />
+          </Field>
+        </div>
 
         <div className="flex gap-3 flex-wrap mb-3">
           <Field label="Ukuran" className="flex-1 min-w-[120px]">
@@ -116,8 +130,8 @@ export function ProductDialog({ product, onSave, onClose }: Props) {
           </Button>
         </div>
         <p className="text-xs text-slate-500 mt-0 mb-3">
-          Setiap konversi punya harga sendiri. Mis. 1 box = 12 unit, harga box Rp
-          110.000.
+          Harga tiap konversi dihitung otomatis dari Harga Satuan × jumlah. Mis.
+          1 box = 12 unit → harga box = 12 × harga satuan.
         </p>
 
         {konversi.length === 0 && (
@@ -142,30 +156,26 @@ export function ProductDialog({ product, onSave, onClose }: Props) {
                 }
               />
             </Field>
-            <Field label="Harga unit" className="flex-[1.2] min-w-[110px]">
+            <Field label="Harga unit (otomatis)" className="flex-[1.2] min-w-[110px]">
               <Input
-                type="number"
-                value={k.harga}
-                onChange={(e) =>
-                  updateKonversi(i, { harga: Number(e.target.value) })
-                }
+                value={formatRupiah((Number(k.jumlah) || 0) * (Number(hargaJual) || 0))}
+                readOnly
+                tabIndex={-1}
+                className="bg-slate-50 text-slate-500"
               />
             </Field>
-            <Button
-              variant="ghost"
+            <GhostButton
               onClick={() => removeKonversi(i)}
               title="Hapus konversi"
             >
               ✕
-            </Button>
+            </GhostButton>
           </div>
         ))}
 
         <div className="flex gap-3 justify-end mt-5">
           <Button onClick={onClose}>Batal</Button>
-          <Button variant="primary" onClick={submit}>
-            Simpan
-          </Button>
+          <PrimaryButton onClick={submit}>Simpan</PrimaryButton>
         </div>
       </div>
     </div>

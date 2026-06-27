@@ -14,6 +14,7 @@ export function seedProducts(): Product[] {
   return (rawPrices as RawPrice[]).map((p) => ({
     id: uid(),
     namaProduk: p["Nama Produk"],
+    tipe: "Bar",
     ukuran: p.Ukuran ?? null,
     satuan: p.Satuan ?? null,
     hargaJual: p["Harga Jual"],

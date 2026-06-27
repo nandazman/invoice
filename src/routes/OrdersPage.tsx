@@ -9,7 +9,7 @@ import {
   pickJSONFile,
 } from "../lib/io";
 import { AddItemForm } from "../components/AddItemForm";
-import { Button } from "../components/Button";
+import { Button, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
@@ -227,14 +227,13 @@ function GroupRows({
             {formatRupiah(it.totalHarga)}
           </td>
           <td className={`${tdClass} text-right`}>
-            <Button
-              variant="danger"
+            <DangerButton
               size="sm"
               onClick={() => onRemove(it.id)}
               title="Hapus item"
             >
               ✕
-            </Button>
+            </DangerButton>
           </td>
         </tr>
       ))}

@@ -5,10 +5,13 @@ import {
   saveProducts,
   loadOrders,
   saveOrders,
+  loadTypes,
+  saveTypes,
 } from "./storage";
 
 let products: Product[] = loadProducts();
 let orders: OrderItem[] = loadOrders();
+let types: string[] = loadTypes();
 
 const listeners = new Set<() => void>();
 function emit() {
@@ -27,6 +30,9 @@ export function useProducts(): Product[] {
 export function useOrders(): OrderItem[] {
   return useSyncExternalStore(subscribe, () => orders);
 }
+export function useTypes(): string[] {
+  return useSyncExternalStore(subscribe, () => types);
+}
 
 export function setProducts(next: Product[]): void {
   products = next;
@@ -37,6 +43,17 @@ export function setOrders(next: OrderItem[]): void {
   orders = next;
   saveOrders(next);
   emit();
+}
+
+// Add a type if new, persist, and notify. Returns the trimmed name.
+export function addType(name: string): string {
+  const t = name.trim();
+  if (t && !types.some((x) => x.toLowerCase() === t.toLowerCase())) {
+    types = [...types, t].sort((a, b) => a.localeCompare(b));
+    saveTypes(types);
+    emit();
+  }
+  return t;
 }
 
 export function getProducts(): Product[] {
