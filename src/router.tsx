@@ -7,11 +7,13 @@ import {
 } from "@tanstack/react-router";
 import { RootLayout } from "./routes/RootLayout";
 import { PricesPage } from "./routes/PricesPage";
+import { ProductDetailPage } from "./routes/ProductDetailPage";
 import { OrdersPage } from "./routes/OrdersPage";
 import { ExcelPage } from "./routes/ExcelPage";
 import { TemplatePage } from "./routes/TemplatePage";
 import { InvoicePage } from "./routes/InvoicePage";
 import { StockPage } from "./routes/StockPage";
+import { HistoryPage } from "./routes/HistoryPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -27,6 +29,12 @@ const pricesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/harga",
   component: PricesPage,
+});
+
+const productDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/produk/$id",
+  component: ProductDetailPage,
 });
 
 const ordersRoute = createRoute({
@@ -59,14 +67,22 @@ const invoiceRoute = createRoute({
   component: InvoicePage,
 });
 
+const historyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/riwayat",
+  component: HistoryPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   pricesRoute,
+  productDetailRoute,
   ordersRoute,
   stockRoute,
   excelRoute,
   templateRoute,
   invoiceRoute,
+  historyRoute,
 ]);
 
 export const router = createRouter({

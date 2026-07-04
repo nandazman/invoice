@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import type { OrderItem, OrderStatus } from "../lib/types";
 import {
   useProducts,
@@ -311,7 +312,19 @@ function GroupRows({
       {group.items.map((it) => (
         <tr key={it.id} className="hover:bg-slate-50">
           {visible.namaProduk !== false && (
-            <td className={tdClass}>{it.namaProduk}</td>
+            <td className={tdClass}>
+              {it.productId ? (
+                <Link
+                  to="/produk/$id"
+                  params={{ id: it.productId }}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  {it.namaProduk}
+                </Link>
+              ) : (
+                it.namaProduk
+              )}
+            </td>
           )}
           {visible.satuan !== false && (
             <td className={tdClass}>{it.satuan}</td>

@@ -1,19 +1,14 @@
 import { useMemo, useState } from "react";
-import type { Product, StockMovement, StockReason } from "../lib/types";
+import { Link } from "@tanstack/react-router";
+import type { Product, StockMovement } from "../lib/types";
 import {
   useProducts,
   useStock,
   addMovement,
-  deleteMovement,
   setStock,
 } from "../lib/store";
 import { computeFifo } from "../lib/stock";
-import {
-  formatRupiah,
-  formatAngka,
-  formatTanggalID,
-  formatDateTimeID,
-} from "../lib/format";
+import { formatRupiah, formatAngka } from "../lib/format";
 import {
   serializeStock,
   parseStock,
@@ -21,7 +16,7 @@ import {
   pickJSONFile,
 } from "../lib/io";
 import { AddMovementForm } from "../components/AddMovementForm";
-import { Button, DangerButton, GhostButton } from "../components/Button";
+import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
@@ -30,36 +25,18 @@ const thClass =
   "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
 const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
-const REASON_LABEL: Record<StockReason, string> = {
-  purchase: "Pembelian",
-  return: "Retur",
-  sale: "Penjualan",
-  adjustment: "Penyesuaian",
-};
-
 interface Row {
   product: Product;
   qty: number; // current stock, base units
   unitCost: number; // effective FIFO cost per base unit on hand
   value: number; // remaining inventory value (FIFO)
   low: boolean;
-  movements: StockMovement[]; // newest first
-  movementValue: Map<string, number>; // signed money in/out per movement id
 }
 
 export function StockPage() {
   const products = useProducts();
   const stock = useStock();
   const [cari, setCari] = useState("");
-  const [open, setOpen] = useState<Set<string>>(new Set());
-
-  function toggleOpen(id: string) {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
 
   function addMovements(ms: StockMovement[]) {
     for (const m of ms) addMovement(m);
@@ -82,7 +59,7 @@ export function StockPage() {
   }
 
   const rows = useMemo<Row[]>(() => {
-    // Group movements by product, newest first, and derive per-product totals.
+    // Group movements by product to derive per-product FIFO totals.
     const byProduct = new Map<string, StockMovement[]>();
     for (const m of stock) {
       const arr = byProduct.get(m.productId) ?? [];
@@ -106,8 +83,6 @@ export function StockPage() {
           unitCost: fifo.unitCost,
           value: fifo.value,
           low: p.stokMin > 0 && fifo.qty <= p.stokMin,
-          movements,
-          movementValue: fifo.movementValue,
         };
       })
       .sort((a, b) => a.product.namaProduk.localeCompare(b.product.namaProduk));
@@ -166,7 +141,6 @@ export function StockPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className={thClass}></th>
                   <th className={thClass}>Produk</th>
                   <th className={`${thClass} text-right`}>Stok</th>
                   <th className={thClass}>Satuan</th>
@@ -176,131 +150,56 @@ export function StockPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <ProductRows
-                    key={r.product.id}
-                    row={r}
-                    expanded={open.has(r.product.id)}
-                    onToggle={() => toggleOpen(r.product.id)}
-                    onDeleteMovement={deleteMovement}
-                  />
-                ))}
+                {rows.map((r) => {
+                  const satuan = r.product.satuan ?? "satuan";
+                  return (
+                    <tr
+                      key={r.product.id}
+                      className={`hover:bg-slate-50 ${r.low ? "bg-amber-50" : ""}`}
+                    >
+                      <td className={tdClass}>
+                        <Link
+                          to="/produk/$id"
+                          params={{ id: r.product.id }}
+                          className="text-blue-600 hover:underline font-medium"
+                        >
+                          {r.product.namaProduk}
+                        </Link>
+                        {r.low && (
+                          <span className="ml-2 text-xs font-semibold text-amber-600">
+                            ⚠ menipis
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`${tdClass} text-right tabular-nums font-semibold ${
+                          r.qty < 0 ? "text-red-600" : ""
+                        }`}
+                      >
+                        {formatAngka(r.qty)}
+                      </td>
+                      <td className={tdClass}>{satuan}</td>
+                      <td
+                        className={`${tdClass} text-right tabular-nums text-slate-400`}
+                      >
+                        {r.product.stokMin > 0
+                          ? formatAngka(r.product.stokMin)
+                          : "—"}
+                      </td>
+                      <td className={`${tdClass} text-right tabular-nums`}>
+                        {r.qty > 0 ? formatRupiah(r.unitCost) : "—"}
+                      </td>
+                      <td className={`${tdClass} text-right tabular-nums`}>
+                        {formatRupiah(r.value)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Panel>
     </div>
-  );
-}
-
-function ProductRows({
-  row,
-  expanded,
-  onToggle,
-  onDeleteMovement,
-}: {
-  row: Row;
-  expanded: boolean;
-  onToggle: () => void;
-  onDeleteMovement: (id: string) => void;
-}) {
-  const { product, qty, unitCost, value, low, movements, movementValue } = row;
-  const satuan = product.satuan ?? "satuan";
-  return (
-    <>
-      <tr className={`hover:bg-slate-50 ${low ? "bg-amber-50" : ""}`}>
-        <td className={`${tdClass} w-8`}>
-          {movements.length > 0 && (
-            <GhostButton
-              size="sm"
-              onClick={onToggle}
-              title={expanded ? "Tutup riwayat" : "Lihat riwayat"}
-            >
-              {expanded ? "▾" : "▸"}
-            </GhostButton>
-          )}
-        </td>
-        <td className={tdClass}>
-          {product.namaProduk}
-          {low && (
-            <span className="ml-2 text-xs font-semibold text-amber-600">
-              ⚠ menipis
-            </span>
-          )}
-        </td>
-        <td
-          className={`${tdClass} text-right tabular-nums font-semibold ${
-            qty < 0 ? "text-red-600" : ""
-          }`}
-        >
-          {formatAngka(qty)}
-        </td>
-        <td className={tdClass}>{satuan}</td>
-        <td className={`${tdClass} text-right tabular-nums text-slate-400`}>
-          {product.stokMin > 0 ? formatAngka(product.stokMin) : "—"}
-        </td>
-        <td className={`${tdClass} text-right tabular-nums`}>
-          {qty > 0 ? formatRupiah(unitCost) : "—"}
-        </td>
-        <td className={`${tdClass} text-right tabular-nums`}>
-          {formatRupiah(value)}
-        </td>
-      </tr>
-      {expanded &&
-        movements.map((m) => {
-          const mv = movementValue.get(m.id) ?? 0;
-          return (
-            <tr key={m.id} className="bg-slate-50/60">
-              <td className={tdClass}></td>
-              <td className={`${tdClass}`}>
-                <span className="text-sm">{product.namaProduk}</span>
-                <span className="block text-xs text-slate-500">
-                  {formatTanggalID(m.tanggal)} · {REASON_LABEL[m.reason]}
-                  {m.orderId && " (dari pesanan)"}
-                  {m.note && ` · ${m.note}`}
-                </span>
-                <span className="block text-xs text-slate-400">
-                  {formatDateTimeID(m.createdAt)}
-                </span>
-              </td>
-              <td
-                className={`${tdClass} text-right tabular-nums text-sm font-semibold align-top ${
-                  m.qty < 0 ? "text-red-600" : "text-emerald-600"
-                }`}
-              >
-                {m.qty > 0 ? `+${formatAngka(m.qty)}` : formatAngka(m.qty)}
-              </td>
-              <td className={`${tdClass} align-top`}></td>
-              <td className={`${tdClass} align-top`}></td>
-              <td className={`${tdClass} text-right tabular-nums text-slate-500 align-top`}>
-                {m.hargaModal != null ? formatRupiah(m.hargaModal) : "—"}
-              </td>
-              <td className={`${tdClass} align-top`}>
-                <div className="flex items-center justify-end gap-2">
-                  <span
-                    className={`tabular-nums text-sm ${
-                      mv < 0 ? "text-red-600" : "text-emerald-600"
-                    }`}
-                  >
-                    {mv > 0
-                      ? `+${formatRupiah(mv)}`
-                      : mv < 0
-                        ? `−${formatRupiah(-mv)}`
-                        : formatRupiah(0)}
-                  </span>
-                  <DangerButton
-                    size="sm"
-                    onClick={() => onDeleteMovement(m.id)}
-                    title="Hapus pergerakan"
-                  >
-                    ✕
-                  </DangerButton>
-                </div>
-              </td>
-            </tr>
-          );
-        })}
-    </>
   );
 }

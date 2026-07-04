@@ -1,4 +1,4 @@
-import type { Product, OrderItem, StockMovement } from "./types";
+import type { Product, OrderItem, StockMovement, AuditEntry } from "./types";
 import { seedProducts } from "./seed";
 import { nowISO } from "./format";
 
@@ -6,6 +6,7 @@ const PRODUCTS_KEY = "invoice.products.v1";
 const ORDERS_KEY = "invoice.orders.v1";
 const TYPES_KEY = "invoice.types.v1";
 const STOCK_KEY = "invoice.stock.v1";
+const AUDIT_KEY = "invoice.audit.v1";
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -57,10 +58,16 @@ export function saveTypes(types: string[]): void {
 }
 
 export function loadOrders(): OrderItem[] {
-  // Migrate older records that predate the status / timestamp fields.
+  // Migrate older records that predate the status / timestamp / productId fields.
   const now = nowISO();
+  // Backfill productId for legacy rows by matching namaProduk against products.
+  const byName = new Map<string, string>();
+  for (const p of loadProducts()) {
+    if (!byName.has(p.namaProduk)) byName.set(p.namaProduk, p.id);
+  }
   return read<OrderItem[]>(ORDERS_KEY, []).map((o) => ({
     ...o,
+    productId: o.productId ?? byName.get(o.namaProduk) ?? "",
     status: o.status ?? "pending",
     affectsStock: o.affectsStock ?? false,
     createdAt: o.createdAt ?? now,
@@ -86,4 +93,12 @@ export function loadStock(): StockMovement[] {
 
 export function saveStock(movements: StockMovement[]): void {
   write(STOCK_KEY, movements);
+}
+
+export function loadAudit(): AuditEntry[] {
+  return read<AuditEntry[]>(AUDIT_KEY, []);
+}
+
+export function saveAudit(entries: AuditEntry[]): void {
+  write(AUDIT_KEY, entries);
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   createColumnHelper,
   flexRender,
@@ -100,7 +101,18 @@ export function PricesPage() {
 
   const columns = useMemo(
     () => [
-      col.accessor("namaProduk", { header: "Nama Produk" }),
+      col.accessor("namaProduk", {
+        header: "Nama Produk",
+        cell: (c) => (
+          <Link
+            to="/produk/$id"
+            params={{ id: c.row.original.id }}
+            className="text-blue-600 hover:underline font-medium"
+          >
+            {c.getValue()}
+          </Link>
+        ),
+      }),
       col.accessor("tipe", {
         header: "Tipe",
         cell: (c) => (

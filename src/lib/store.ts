@@ -6,6 +6,7 @@ import type {
   StockMovement,
 } from "./types";
 import { nowISO, uid } from "./format";
+import { logAudit, diff } from "./audit";
 import {
   loadProducts,
   saveProducts,
@@ -69,29 +70,71 @@ export function addType(name: string): string {
     types = [...types, t].sort((a, b) => a.localeCompare(b));
     saveTypes(types);
     emit();
+    logAudit({
+      entity: "type",
+      entityId: t,
+      action: "create",
+      label: `Tipe "${t}" ditambahkan`,
+    });
   }
   return t;
 }
+
+// Fields worth diffing when a product is updated, with human labels.
+const PRODUCT_FIELDS: (keyof Product)[] = [
+  "namaProduk",
+  "tipe",
+  "ukuran",
+  "satuan",
+  "hargaDasar",
+  "hargaJual",
+  "stokMin",
+];
 
 // ---------- Timestamp-aware product mutations ----------
 
 // Insert or update a product, stamping createdAt/updatedAt automatically.
 export function upsertProduct(p: Product): void {
   const now = nowISO();
-  const exists = products.some((x) => x.id === p.id);
-  if (exists) {
+  const prev = products.find((x) => x.id === p.id);
+  if (prev) {
     setProducts(
       products.map((x) =>
         x.id === p.id ? { ...p, createdAt: x.createdAt, updatedAt: now } : x,
       ),
     );
+    const changes = diff(prev, p, PRODUCT_FIELDS);
+    if (changes.length > 0) {
+      logAudit({
+        entity: "product",
+        entityId: p.id,
+        action: "update",
+        label: `${p.namaProduk}: ${changes
+          .map((c) => `${c.field} ${c.from} → ${c.to}`)
+          .join(", ")}`,
+        changes,
+      });
+    }
   } else {
     setProducts([...products, { ...p, createdAt: now, updatedAt: now }]);
+    logAudit({
+      entity: "product",
+      entityId: p.id,
+      action: "create",
+      label: `Produk "${p.namaProduk}" dibuat`,
+    });
   }
 }
 
 export function deleteProduct(id: string): void {
+  const prev = products.find((p) => p.id === id);
   setProducts(products.filter((p) => p.id !== id));
+  logAudit({
+    entity: "product",
+    entityId: id,
+    action: "delete",
+    label: `Produk "${prev?.namaProduk ?? id}" dihapus`,
+  });
 }
 
 // ---------- Timestamp-aware order mutations ----------
@@ -118,9 +161,18 @@ export function addOrder(item: OrderItem): void {
     updatedAt: item.updatedAt ?? now,
   };
   setOrders([...orders, filled]);
+  logAudit({
+    entity: "order",
+    entityId: filled.id,
+    action: "create",
+    label: `Pesanan: ${filled.kuantitas} ${filled.satuan} ${filled.namaProduk}`,
+  });
 
   if (filled.affectsStock) {
-    const product = products.find((p) => p.namaProduk === filled.namaProduk);
+    // Resolve by productId first; fall back to name for legacy rows.
+    const product =
+      products.find((p) => p.id === filled.productId) ??
+      products.find((p) => p.namaProduk === filled.namaProduk);
     if (product) {
       const baseQty = filled.kuantitas * baseUnitsFor(product, filled.satuan);
       addMovement({
@@ -142,23 +194,48 @@ export function addOrder(item: OrderItem): void {
 
 export function setOrderStatus(id: string, status: OrderStatus): void {
   const now = nowISO();
+  const prev = orders.find((o) => o.id === id);
   setOrders(
     orders.map((o) => (o.id === id ? { ...o, status, updatedAt: now } : o)),
   );
+  if (prev && prev.status !== status) {
+    logAudit({
+      entity: "order",
+      entityId: id,
+      action: "update",
+      label: `${prev.namaProduk}: status ${prev.status} → ${status}`,
+      changes: [{ field: "status", from: prev.status, to: status }],
+    });
+  }
 }
 
 export function deleteOrder(id: string): void {
+  const prev = orders.find((o) => o.id === id);
   setOrders(orders.filter((o) => o.id !== id));
   // Drop any stock movement that was auto-generated from this order.
   if (stock.some((m) => m.orderId === id)) {
     setStock(stock.filter((m) => m.orderId !== id));
   }
+  logAudit({
+    entity: "order",
+    entityId: id,
+    action: "delete",
+    label: `Pesanan ${prev?.namaProduk ?? id} dihapus`,
+  });
 }
 
 export function deleteOrders(ids: Set<string>): void {
   setOrders(orders.filter((o) => !ids.has(o.id)));
   if (stock.some((m) => m.orderId && ids.has(m.orderId))) {
     setStock(stock.filter((m) => !(m.orderId && ids.has(m.orderId))));
+  }
+  for (const id of ids) {
+    logAudit({
+      entity: "order",
+      entityId: id,
+      action: "delete",
+      label: `Pesanan dihapus (massal)`,
+    });
   }
 }
 
@@ -174,10 +251,30 @@ export function addMovement(m: StockMovement): void {
       updatedAt: m.updatedAt ?? now,
     },
   ]);
+  const name = products.find((p) => p.id === m.productId)?.namaProduk ?? m.productId;
+  const sign = m.qty > 0 ? "+" : "";
+  logAudit({
+    entity: "stock",
+    entityId: m.id,
+    action: "create",
+    label: `Stok ${name}: ${sign}${m.qty} (${m.reason})${
+      m.orderId ? " dari pesanan" : ""
+    }`,
+  });
 }
 
 export function deleteMovement(id: string): void {
+  const prev = stock.find((m) => m.id === id);
   setStock(stock.filter((m) => m.id !== id));
+  const name = prev
+    ? products.find((p) => p.id === prev.productId)?.namaProduk ?? prev.productId
+    : id;
+  logAudit({
+    entity: "stock",
+    entityId: id,
+    action: "delete",
+    label: `Pergerakan stok ${name} dihapus`,
+  });
 }
 
 export function getProducts(): Product[] {

@@ -25,6 +25,7 @@ export type OrderStatus = "pending" | "paid";
 export interface OrderItem {
   id: string;
   tanggal: string; // ISO date, yyyy-mm-dd (used for filtering/sorting)
+  productId: string; // links to Product.id ("" for unmatched legacy rows)
   namaProduk: string;
   satuan: string; // chosen unit label (base satuan or a conversion nama)
   kuantitas: number;
@@ -34,6 +35,18 @@ export interface OrderItem {
   affectsStock: boolean; // if true, adding this item deducts stock (a "sale" movement)
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
+}
+
+// One append-only entry in the global audit log. Never rewritten; a Restore
+// replaces the whole log. entityId may dangle after the entity is deleted.
+export interface AuditEntry {
+  id: string;
+  timestamp: string; // ISO datetime
+  entity: "product" | "order" | "stock" | "type";
+  entityId: string;
+  action: "create" | "update" | "delete";
+  label: string; // human summary, e.g. "Harga Jual 12.000 → 13.000"
+  changes?: { field: string; from: unknown; to: unknown }[]; // field-level diff
 }
 
 // Why a movement is recorded. purchase/return add stock, sale/adjustment remove

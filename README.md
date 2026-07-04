@@ -8,8 +8,15 @@ TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
 Semua data disimpan di **localStorage browser** dan dapat di-**ekspor/impor
 sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 
-> **Status:** Lima halaman sudah **selesai** — Harga, Pesanan, Ekspor Excel,
-> Desain Template, dan Buat Invoice.
+> **Status:** Tujuh halaman sudah **selesai** — Harga, Pesanan, Stok, Ekspor
+> Excel, Desain Template, Buat Invoice, dan Riwayat. Setiap produk juga punya
+> **halaman detail** (`/produk/:id`).
+
+> **Cadangan data:** Gunakan **Backup semua / Pulihkan** di footer sidebar untuk
+> mencadangkan/memulihkan SELURUH data dengan **ID dipertahankan**. Ekspor/impor
+> JSON per-halaman adalah format **pertukaran** — ia me-*regenerasi* ID, jadi
+> **bukan** cadangan yang aman (memutus tautan stok ↔ produk). Untuk round-trip
+> yang aman, pakai Backup semua.
 
 ---
 
@@ -40,6 +47,22 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 - **Filter**: rentang tanggal (dari/sampai), tanggal spesifik, dan nama produk.
 - **Impor / Ekspor JSON** (format `order.json` lama: `Orders[]` per tanggal +
   `Total Keseluruhan`).
+
+### Halaman Detail Produk (`/produk/:id`)
+- Buka lewat klik **nama produk** di halaman Harga, Stok, atau Pesanan.
+- Menggabungkan semua info satu produk: header (nama, tipe, ukuran, satuan) +
+  tombol **Ubah**, tabel harga & konversi, **stok** saat ini + riwayat
+  pergerakan (memakai valuasi FIFO), **pesanan** yang memuat produk ini, dan
+  **riwayat audit** khusus produk tersebut.
+- Menangani id tak dikenal (tautan rusak/produk terhapus) dengan status
+  "produk tidak ditemukan".
+
+### Halaman Riwayat (`/riwayat`)
+- **Log audit append-only** untuk seluruh entitas (produk, pesanan, stok, tipe).
+- Setiap perubahan (buat/ubah/hapus) dicatat otomatis di dalam mutasi
+  `store.ts`, termasuk **diff per-field** saat mengubah produk.
+- Daftar urut terbaru dengan filter: entitas, aksi, rentang tanggal, dan
+  pencarian teks bebas pada ringkasan.
 
 ### Halaman Ekspor Excel (`/excel`)
 - Ekspor pesanan ke **`order.xlsx`** langsung di browser (memakai `exceljs`),
@@ -98,13 +121,29 @@ interface Product {
 // Item pesanan (order.json, dikelompokkan per tanggal saat diekspor)
 interface OrderItem {
   tanggal: string;            // ISO yyyy-mm-dd
+  productId: string;          // tautan ke Product.id ("" untuk baris lama tak cocok)
   namaProduk: string;
   satuan: string;             // satuan/konversi yang dipilih
   kuantitas: number;
   hargaSatuan: number;        // snapshot harga unit terpilih
   totalHarga: number;
 }
+
+// Entri log audit (append-only, disimpan di invoice.audit.v1)
+interface AuditEntry {
+  timestamp: string;                                   // ISO datetime
+  entity: "product" | "order" | "stock" | "type";
+  entityId: string;
+  action: "create" | "update" | "delete";
+  label: string;                                       // ringkasan, mis. "Harga Jual 12.000 → 13.000"
+  changes?: { field: string; from: unknown; to: unknown }[];
+}
 ```
+
+> **Backup vs. ekspor per-halaman.** `exportAll()` (`src/lib/backup.ts`)
+> menulis bentuk internal mentah **dengan ID dipertahankan** — satu-satunya
+> round-trip yang aman. Ekspor JSON per-halaman (`io.ts`) me-regenerasi ID saat
+> diimpor sehingga cocok untuk **pertukaran**, bukan cadangan.
 
 ---
 
@@ -143,13 +182,16 @@ Jika nama repo bukan `invoice`, ubah `base` di `vite.config.ts` agar cocok.
 ```
 src/
   main.tsx              # entry
-  router.tsx            # rute (hash history): /harga, /pesanan, /excel, /template, /invoice
+  router.tsx            # rute (hash history): /harga, /produk/:id, /pesanan, /stok, /riwayat, /excel, /template, /invoice
   styles.css            # @import "tailwindcss"
   lib/
-    types.ts            # tipe data
+    types.ts            # tipe data (termasuk AuditEntry)
     format.ts           # rupiah, tanggal Indonesia, uid
-    storage.ts          # baca/tulis localStorage (produk, pesanan, tipe)
-    store.ts            # state global (useSyncExternalStore) + addType
+    storage.ts          # baca/tulis localStorage (produk, pesanan, tipe, stok, audit)
+    store.ts            # state global (useSyncExternalStore) + mutasi + hook audit
+    audit.ts            # log audit append-only: logAudit, useAudit, diff()
+    backup.ts           # cadangan menyeluruh: exportAll / importAll (ID dipertahankan)
+    stock.ts            # valuasi FIFO stok (computeFifo)
     io.ts               # serialisasi & impor/ekspor JSON, unduh berkas
     seed.ts             # data awal dari src/data/seed-price.json
     columns.ts          # definisi & toggle kolom tabel

@@ -85,6 +85,7 @@ export function parseProducts(text: string): Product[] {
 // ---------- Orders (order.json, grouped by date) ----------
 
 interface RawItem {
+  "Produk ID"?: string;
   "Nama Produk"?: string;
   Satuan?: string;
   Kuantitas?: number;
@@ -120,6 +121,7 @@ export function serializeOrders(items: OrderItem[]): string {
     return {
       Tanggal: formatTanggalID(iso),
       Items: group.map((i) => ({
+        "Produk ID": i.productId,
         "Nama Produk": i.namaProduk,
         Satuan: i.satuan,
         Kuantitas: i.kuantitas,
@@ -154,6 +156,7 @@ export function parseOrders(text: string): OrderItem[] {
       items.push({
         id: uid(),
         tanggal: iso,
+        productId: String(it["Produk ID"] ?? ""),
         namaProduk: String(it["Nama Produk"] ?? ""),
         satuan: String(it.Satuan ?? ""),
         kuantitas,

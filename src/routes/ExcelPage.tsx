@@ -3,6 +3,8 @@ import type { OrderItem, OrderStatus } from "../lib/types";
 import { useOrders } from "../lib/store";
 import { formatRupiah, formatAngka, formatTanggalID } from "../lib/format";
 import { downloadOrdersXLSX } from "../lib/excel";
+import { copyOrdersImage, downloadOrdersImage } from "../lib/orderImage";
+import { copyOrdersText } from "../lib/orderText";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
@@ -26,6 +28,12 @@ export function ExcelPage() {
 
   const [staged, setStaged] = useState<OrderItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+  const [textState, setTextState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
 
   function clearFilters() {
     setExact("");
@@ -77,6 +85,28 @@ export function ExcelPage() {
   function removeSelected() {
     setStaged((prev) => prev.filter((s) => !selected.has(s.id)));
     setSelected(new Set());
+  }
+
+  async function copyImage() {
+    try {
+      await copyOrdersImage(stagedSorted);
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("error");
+      setTimeout(() => setCopyState("idle"), 2500);
+    }
+  }
+
+  async function copyText() {
+    try {
+      await copyOrdersText(stagedSorted);
+      setTextState("copied");
+      setTimeout(() => setTextState("idle"), 2000);
+    } catch {
+      setTextState("error");
+      setTimeout(() => setTextState("idle"), 2500);
+    }
   }
 
   // Show staging sorted by date ascending (matches export grouping).
@@ -158,6 +188,26 @@ export function ExcelPage() {
           <DangerButton onClick={removeSelected} disabled={selected.size === 0}>
             Hapus terpilih
           </DangerButton>
+          <Button onClick={copyText} disabled={staged.length === 0}>
+            {textState === "copied"
+              ? "✓ Tersalin"
+              : textState === "error"
+                ? "Gagal menyalin"
+                : "Salin teks"}
+          </Button>
+          <Button onClick={copyImage} disabled={staged.length === 0}>
+            {copyState === "copied"
+              ? "✓ Tersalin"
+              : copyState === "error"
+                ? "Gagal menyalin"
+                : "Salin gambar"}
+          </Button>
+          <Button
+            onClick={() => downloadOrdersImage(stagedSorted)}
+            disabled={staged.length === 0}
+          >
+            Unduh gambar
+          </Button>
           <PrimaryButton
             onClick={() => downloadOrdersXLSX(stagedSorted)}
             disabled={staged.length === 0}

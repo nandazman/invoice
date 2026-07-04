@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, Outlet } from "@tanstack/react-router";
+import { exportAll, importAll } from "../lib/backup";
+import { downloadJSON, pickJSONFile } from "../lib/io";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
 
@@ -18,6 +20,28 @@ export function RootLayout() {
       localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
       return next;
     });
+  }
+
+  function doBackup() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadJSON(`invoice-backup-${stamp}.json`, exportAll());
+  }
+
+  async function doRestore() {
+    if (
+      !confirm(
+        "Pulihkan dari cadangan? Ini akan mengganti SEMUA data (produk, pesanan, stok, tipe, template, riwayat). Tindakan ini tidak bisa dibatalkan.",
+      )
+    )
+      return;
+    try {
+      const text = await pickJSONFile();
+      importAll(text);
+      alert("Data berhasil dipulihkan. Halaman akan dimuat ulang.");
+      location.reload();
+    } catch (e) {
+      alert("Gagal memulihkan: " + (e as Error).message);
+    }
   }
 
   return (
@@ -120,13 +144,44 @@ export function RootLayout() {
             <span className="text-base">🧾</span>
             {!collapsed && "Buat Invoice"}
           </Link>
+          <Link
+            to="/riwayat"
+            title="Riwayat"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
+            activeProps={{
+              className: `${linkBase} ${linkActive} ${
+                collapsed ? "justify-center px-0" : ""
+              }`,
+            }}
+          >
+            <span className="text-base">🕓</span>
+            {!collapsed && "Riwayat"}
+          </Link>
         </nav>
 
-        {!collapsed && (
-          <div className="mt-auto px-2.5 pt-3 text-xs text-slate-400">
-            Tersimpan lokal di browser
-          </div>
-        )}
+        <div className="mt-auto pt-3 flex flex-col gap-1">
+          <button
+            onClick={doBackup}
+            title="Backup semua data"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+          >
+            <span className="text-base">💾</span>
+            {!collapsed && "Backup semua"}
+          </button>
+          <button
+            onClick={doRestore}
+            title="Pulihkan dari cadangan"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+          >
+            <span className="text-base">♻️</span>
+            {!collapsed && "Pulihkan"}
+          </button>
+          {!collapsed && (
+            <div className="px-2.5 pt-2 text-xs text-slate-400">
+              Tersimpan lokal di browser
+            </div>
+          )}
+        </div>
       </aside>
 
       <main className="flex-1 min-w-0">
