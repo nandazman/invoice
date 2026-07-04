@@ -7,6 +7,7 @@ import {
   PLACEHOLDER_LOGO,
   defaultStyle,
   defaultColumns,
+  defaultFields,
 } from "./template-types";
 import { uid, nowISO } from "./format";
 
@@ -102,7 +103,8 @@ function seedTemplate(): Template {
       }),
       el({
         type: "field",
-        bind: "invoice.number",
+        fieldLabel: "No. Invoice",
+        fieldType: "text",
         x: PAGE_W - 240 - 40,
         y: 130,
         w: 240,
@@ -112,7 +114,8 @@ function seedTemplate(): Template {
       }),
       el({
         type: "field",
-        bind: "invoice.issued",
+        fieldLabel: "Tanggal Terbit",
+        fieldType: "date",
         x: PAGE_W - 240 - 40,
         y: 158,
         w: 240,
@@ -122,7 +125,8 @@ function seedTemplate(): Template {
       }),
       el({
         type: "field",
-        bind: "invoice.due",
+        fieldLabel: "Jatuh Tempo",
+        fieldType: "date",
         x: PAGE_W - 240 - 40,
         y: 186,
         w: 240,
@@ -167,6 +171,15 @@ function seedTemplate(): Template {
 
 // Ensure older templates (saved before the logo feature) have a logo image and
 // a logo box on the canvas, so there is always somewhere to manage the logo.
+// Map a legacy field element's `bind` to the new fieldLabel/fieldType shape.
+const LEGACY_BIND: Record<string, { label: string; type: "text" | "date" }> = {
+  "invoice.number": { label: "No. Invoice", type: "text" },
+  "invoice.issued": { label: "Tanggal Terbit", type: "date" },
+  "invoice.due": { label: "Jatuh Tempo", type: "date" },
+};
+
+// Ensure older templates have a logo, and migrate legacy `bind` fields to the
+// self-describing fieldLabel/fieldType shape.
 function migrate(list: Template[]): { list: Template[]; changed: boolean } {
   let changed = false;
   const out = list.map((t) => {
@@ -174,6 +187,16 @@ function migrate(list: Template[]): { list: Template[]; changed: boolean } {
     let elements = t.elements;
     if (!business.logo) {
       business = { ...business, logo: PLACEHOLDER_LOGO };
+      changed = true;
+    }
+    // Convert legacy field bindings.
+    if (elements.some((e) => e.type === "field" && e.fieldLabel === undefined)) {
+      elements = elements.map((e) => {
+        if (e.type !== "field" || e.fieldLabel !== undefined) return e;
+        const bind = (e as { bind?: string }).bind ?? "";
+        const map = LEGACY_BIND[bind] ?? { label: "Field", type: "text" as const };
+        return { ...e, fieldLabel: map.label, fieldType: map.type };
+      });
       changed = true;
     }
     if (!elements.some((e) => e.type === "logo")) {
@@ -237,6 +260,19 @@ export function createTemplate(): Template {
     customer: { nama: "", alamat: "" },
     elements: [
       el({ type: "logo", x: 40, y: 40, w: LOGO_MAX_W, h: LOGO_MAX_H, z: 1 }),
+      ...defaultFields().map((f, i) =>
+        el({
+          type: "field",
+          fieldLabel: f.label,
+          fieldType: f.type,
+          x: 40,
+          y: 120 + i * 30,
+          w: 240,
+          h: 24,
+          z: 2 + i,
+          style: { ...defaultStyle(), fontSize: 12 },
+        }),
+      ),
     ],
     createdAt: now,
     updatedAt: now,

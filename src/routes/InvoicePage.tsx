@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import type { OrderItem, OrderStatus } from "../lib/types";
-import type { InvoiceData } from "../lib/template-types";
+import type { InvoiceData, FieldType } from "../lib/template-types";
+import { fieldKey } from "../lib/template-types";
 import { useOrders } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
-import { formatRupiah, formatAngka, todayISO } from "../lib/format";
+import { formatRupiah, formatAngka } from "../lib/format";
 import { Preview } from "../components/template/Preview";
 import { Panel } from "../components/Panel";
 import { Input } from "../components/Input";
@@ -24,10 +25,26 @@ export function InvoicePage() {
   const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
   const template = templates.find((t) => t.id === templateId) ?? templates[0] ?? null;
 
-  // Dynamic invoice fields.
-  const [number, setNumber] = useState("INV-0001");
-  const [issued, setIssued] = useState(todayISO());
-  const [due, setDue] = useState("");
+  // Dynamic fields come from the template's field elements: collect unique
+  // definitions by title (same title placed twice shares one input).
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const fieldDefs = useMemo(() => {
+    const seen = new Map<string, { label: string; type: FieldType; options: string[] }>();
+    for (const el of template?.elements ?? []) {
+      if (el.type !== "field") continue;
+      const label = (el.fieldLabel ?? "").trim();
+      if (!label) continue;
+      const key = fieldKey(label);
+      if (!seen.has(key)) {
+        seen.set(key, {
+          label,
+          type: el.fieldType ?? "text",
+          options: el.fieldOptions ?? [],
+        });
+      }
+    }
+    return [...seen.values()];
+  }, [template]);
 
   // Order filter (same shape as the Excel page).
   const [exact, setExact] = useState("");
@@ -96,11 +113,9 @@ export function InvoicePage() {
   const hasFilter = exact || from || to || produk || status !== "semua";
 
   const data: InvoiceData = {
-    number,
-    issued,
-    due,
     items: stagedSorted,
     total,
+    fields: fieldValues,
   };
 
   if (!template) {
@@ -140,17 +155,47 @@ export function InvoicePage() {
         <div className="w-80 shrink-0 space-y-4">
           <Panel>
             <h3 className="font-bold text-sm text-slate-700 mb-2">Data Invoice</h3>
-            <div className="space-y-2">
-              <Field label="No. Invoice">
-                <Input value={number} onChange={(e) => setNumber(e.target.value)} />
-              </Field>
-              <Field label="Tanggal Terbit">
-                <Input type="date" value={issued} onChange={(e) => setIssued(e.target.value)} />
-              </Field>
-              <Field label="Jatuh Tempo">
-                <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-              </Field>
-            </div>
+            {fieldDefs.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                Template ini belum punya field. Tambahkan elemen <b>Field</b> di
+                halaman Desain Template.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {fieldDefs.map((f) => {
+                  const key = fieldKey(f.label);
+                  const val = fieldValues[key] ?? "";
+                  const set = (v: string) =>
+                    setFieldValues((prev) => ({ ...prev, [key]: v }));
+                  return (
+                    <Field key={key} label={f.label}>
+                      {f.type === "select" ? (
+                        <Select value={val} onChange={(e) => set(e.target.value)}>
+                          <option value="">— pilih —</option>
+                          {f.options.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Input
+                          type={
+                            f.type === "number"
+                              ? "number"
+                              : f.type === "date"
+                                ? "date"
+                                : "text"
+                          }
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                  );
+                })}
+              </div>
+            )}
           </Panel>
 
           <Panel>

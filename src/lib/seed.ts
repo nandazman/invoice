@@ -18,8 +18,10 @@ export function seedProducts(): Product[] {
     tipe: "Bar",
     ukuran: p.Ukuran ?? null,
     satuan: p.Satuan ?? null,
+    hargaDasar: 0,
     hargaJual: p["Harga Jual"],
     konversi: [],
+    stokMin: 0,
     createdAt: now,
     updatedAt: now,
   }));

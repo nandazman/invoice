@@ -5,7 +5,7 @@ import type {
   TemplateElement,
   TextStyle,
 } from "../../lib/template-types";
-import { FIELD_LABELS } from "../../lib/template-types";
+import { fieldKey } from "../../lib/template-types";
 import {
   formatRupiah,
   formatAngka,
@@ -43,23 +43,18 @@ export function styleToCss(s: TextStyle): CSSProperties {
   };
 }
 
-function fieldValue(
-  el: TemplateElement,
-  data: InvoiceData | null,
-): string {
-  if (!el.bind) return "";
-  if (!data) {
-    // editor placeholder
-    return el.bind === "invoice.number" ? "INV-0001" : formatTanggalID("2026-06-27");
+function fieldValue(el: TemplateElement, data: InvoiceData | null): string {
+  const label = el.fieldLabel ?? "";
+  if (!label) return "";
+  if (!data) return `(${label})`; // editor placeholder
+  const raw = data.fields?.[fieldKey(label)] ?? "";
+  if (!raw) return "—";
+  if (el.fieldType === "date") return formatTanggalID(raw);
+  if (el.fieldType === "number") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? formatAngka(n) : raw;
   }
-  switch (el.bind) {
-    case "invoice.number":
-      return data.number || "—";
-    case "invoice.issued":
-      return data.issued ? formatTanggalID(data.issued) : "—";
-    case "invoice.due":
-      return data.due ? formatTanggalID(data.due) : "—";
-  }
+  return raw;
 }
 
 // Sample rows shown in the editor so the items table has visible content.
@@ -129,7 +124,7 @@ export function ElementContent({
   if (el.type === "field") {
     return (
       <div style={{ ...css, width: "100%", height: "100%" }}>
-        <span style={{ fontWeight: 700 }}>{el.bind ? FIELD_LABELS[el.bind] : ""}: </span>
+        <span style={{ fontWeight: 700 }}>{el.fieldLabel ?? ""}: </span>
         {fieldValue(el, data)}
       </div>
     );

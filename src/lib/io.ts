@@ -1,4 +1,11 @@
-import type { Product, OrderItem, Conversion, OrderStatus } from "./types";
+import type {
+  Product,
+  OrderItem,
+  Conversion,
+  OrderStatus,
+  StockMovement,
+  StockReason,
+} from "./types";
 import {
   uid,
   nowISO,
@@ -19,8 +26,10 @@ interface RawProduct {
   Tipe?: string;
   Ukuran?: number | null;
   Satuan?: string | null;
+  "Harga Dasar"?: number;
   "Harga Jual"?: number;
   Konversi?: RawConversion[];
+  "Stok Min"?: number;
   CreatedAt?: string;
   UpdatedAt?: string;
 }
@@ -31,12 +40,14 @@ export function serializeProducts(products: Product[]): string {
     Tipe: p.tipe,
     Ukuran: p.ukuran,
     Satuan: p.satuan,
+    "Harga Dasar": p.hargaDasar,
     "Harga Jual": p.hargaJual,
     Konversi: p.konversi.map((c) => ({
       Nama: c.nama,
       Jumlah: c.jumlah,
       Harga: c.harga,
     })),
+    "Stok Min": p.stokMin,
     CreatedAt: p.createdAt,
     UpdatedAt: p.updatedAt,
   }));
@@ -61,8 +72,10 @@ export function parseProducts(text: string): Product[] {
       tipe: String(p.Tipe ?? "Bar"),
       ukuran: p.Ukuran ?? null,
       satuan: p.Satuan ?? null,
+      hargaDasar: Number(p["Harga Dasar"] ?? 0),
       hargaJual: Number(p["Harga Jual"] ?? 0),
       konversi,
+      stokMin: Number(p["Stok Min"] ?? 0),
       createdAt: p.CreatedAt ?? now,
       updatedAt: p.UpdatedAt ?? p.CreatedAt ?? now,
     };
@@ -78,6 +91,7 @@ interface RawItem {
   "Harga Satuan"?: number;
   "Total Harga"?: number;
   Status?: string;
+  "Tambah Stok"?: boolean;
   CreatedAt?: string;
   UpdatedAt?: string;
 }
@@ -112,6 +126,7 @@ export function serializeOrders(items: OrderItem[]): string {
         "Harga Satuan": i.hargaSatuan,
         "Total Harga": i.totalHarga,
         Status: i.status,
+        "Tambah Stok": i.affectsStock,
         CreatedAt: i.createdAt,
         UpdatedAt: i.updatedAt,
       })),
@@ -145,12 +160,74 @@ export function parseOrders(text: string): OrderItem[] {
         hargaSatuan,
         totalHarga: Number(it["Total Harga"] ?? kuantitas * hargaSatuan),
         status,
+        affectsStock: it["Tambah Stok"] === true,
         createdAt: it.CreatedAt ?? now,
         updatedAt: it.UpdatedAt ?? it.CreatedAt ?? now,
       });
     }
   }
   return items;
+}
+
+// ---------- Stock (stock.json) ----------
+
+interface RawMovement {
+  "Produk ID"?: string;
+  Tanggal?: string;
+  Qty?: number;
+  Satuan?: string;
+  Alasan?: string;
+  "Harga Modal"?: number | null;
+  "Order ID"?: string | null;
+  Catatan?: string;
+  CreatedAt?: string;
+  UpdatedAt?: string;
+}
+interface RawStockFile {
+  Movements?: RawMovement[];
+}
+
+const REASONS: StockReason[] = ["purchase", "sale", "adjustment", "return"];
+
+export function serializeStock(movements: StockMovement[]): string {
+  const Movements = movements.map((m) => ({
+    "Produk ID": m.productId,
+    Tanggal: formatTanggalID(m.tanggal),
+    Qty: m.qty,
+    Satuan: m.satuan,
+    Alasan: m.reason,
+    "Harga Modal": m.hargaModal,
+    "Order ID": m.orderId,
+    Catatan: m.note,
+    CreatedAt: m.createdAt,
+    UpdatedAt: m.updatedAt,
+  }));
+  return JSON.stringify({ Movements }, null, 2);
+}
+
+export function parseStock(text: string): StockMovement[] {
+  const data = JSON.parse(text) as RawStockFile;
+  const rows = Array.isArray(data?.Movements) ? data.Movements : [];
+  return rows.map((m) => {
+    const now = nowISO();
+    const reason: StockReason = REASONS.includes(m.Alasan as StockReason)
+      ? (m.Alasan as StockReason)
+      : "adjustment";
+    const rawModal = m["Harga Modal"];
+    return {
+      id: uid(),
+      productId: String(m["Produk ID"] ?? ""),
+      tanggal: m.Tanggal ? parseTanggalID(m.Tanggal) : todayISO(),
+      qty: Number(m.Qty ?? 0),
+      satuan: String(m.Satuan ?? ""),
+      reason,
+      hargaModal: rawModal == null ? null : Number(rawModal),
+      orderId: m["Order ID"] ?? null,
+      note: String(m.Catatan ?? ""),
+      createdAt: m.CreatedAt ?? now,
+      updatedAt: m.UpdatedAt ?? m.CreatedAt ?? now,
+    };
+  });
 }
 
 // ---------- Browser file helpers ----------

@@ -21,9 +21,17 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
     product?.ukuran != null ? String(product.ukuran) : "",
   );
   const [satuan, setSatuan] = useState(product?.satuan ?? "");
+  const [hargaDasar, setHargaDasar] = useState(
+    product?.hargaDasar ? String(product.hargaDasar) : "",
+  );
   const [hargaJual, setHarga] = useState(
     product ? String(product.hargaJual) : "",
   );
+  const [stokMin, setStokMin] = useState(
+    product?.stokMin ? String(product.stokMin) : "",
+  );
+
+  const laba = (Number(hargaJual) || 0) - (Number(hargaDasar) || 0);
   const [konversi, setKonversi] = useState<Conversion[]>(
     product?.konversi ?? [],
   );
@@ -61,8 +69,10 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
       tipe: tipe.trim() || "Bar",
       ukuran: ukuran.trim() === "" ? null : Number(ukuran),
       satuan: satuan.trim() === "" ? null : satuan.trim(),
+      hargaDasar: Number(hargaDasar) || 0,
       hargaJual: harga,
       konversi: cleanKonv,
+      stokMin: Number(stokMin) || 0,
       createdAt: product?.createdAt ?? now,
       updatedAt: now,
     });
@@ -115,6 +125,14 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
               placeholder="mis. gr, ml, pcs"
             />
           </Field>
+          <Field label="Harga Dasar" className="flex-1 min-w-[120px]">
+            <Input
+              type="number"
+              value={hargaDasar}
+              onChange={(e) => setHargaDasar(e.target.value)}
+              placeholder="mis. 30000"
+            />
+          </Field>
           <Field label="Harga Satuan *" className="flex-1 min-w-[120px]">
             <Input
               type="number"
@@ -123,7 +141,26 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
               placeholder="mis. 45000"
             />
           </Field>
+          <Field label="Stok minimum" className="flex-1 min-w-[120px]">
+            <Input
+              type="number"
+              value={stokMin}
+              onChange={(e) => setStokMin(e.target.value)}
+              placeholder="mis. 10 (satuan dasar)"
+            />
+          </Field>
         </div>
+
+        <p className="text-xs mb-3">
+          <span className="text-slate-500">Laba per satuan: </span>
+          <span
+            className={
+              laba < 0 ? "font-semibold text-red-600" : "font-semibold text-emerald-600"
+            }
+          >
+            {formatRupiah(laba)}
+          </span>
+        </p>
 
         <div className="flex items-center mb-1">
           <strong>Konversi kemasan</strong>

@@ -197,7 +197,10 @@ export function TemplatePage() {
       style: defaultStyle(),
     };
     if (type === "text") base.content = "Teks baru";
-    if (type === "field") base.bind = "invoice.number";
+    if (type === "field") {
+      base.fieldLabel = "Field Baru";
+      base.fieldType = "text";
+    }
     if (type === "items") {
       base.w = PAGE_W - 120;
       base.h = 200;

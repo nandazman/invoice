@@ -1,10 +1,11 @@
-import type { Product, OrderItem } from "./types";
+import type { Product, OrderItem, StockMovement } from "./types";
 import { seedProducts } from "./seed";
 import { nowISO } from "./format";
 
 const PRODUCTS_KEY = "invoice.products.v1";
 const ORDERS_KEY = "invoice.orders.v1";
 const TYPES_KEY = "invoice.types.v1";
+const STOCK_KEY = "invoice.stock.v1";
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -32,6 +33,8 @@ export function loadProducts(): Product[] {
   return read<Product[]>(PRODUCTS_KEY, []).map((p) => ({
     ...p,
     tipe: p.tipe ?? "Bar",
+    hargaDasar: p.hargaDasar ?? 0,
+    stokMin: p.stokMin ?? 0,
     createdAt: p.createdAt ?? now,
     updatedAt: p.updatedAt ?? p.createdAt ?? now,
   }));
@@ -59,6 +62,7 @@ export function loadOrders(): OrderItem[] {
   return read<OrderItem[]>(ORDERS_KEY, []).map((o) => ({
     ...o,
     status: o.status ?? "pending",
+    affectsStock: o.affectsStock ?? false,
     createdAt: o.createdAt ?? now,
     updatedAt: o.updatedAt ?? o.createdAt ?? now,
   }));
@@ -66,4 +70,20 @@ export function loadOrders(): OrderItem[] {
 
 export function saveOrders(orders: OrderItem[]): void {
   write(ORDERS_KEY, orders);
+}
+
+export function loadStock(): StockMovement[] {
+  const now = nowISO();
+  return read<StockMovement[]>(STOCK_KEY, []).map((m) => ({
+    ...m,
+    hargaModal: m.hargaModal ?? null,
+    orderId: m.orderId ?? null,
+    note: m.note ?? "",
+    createdAt: m.createdAt ?? now,
+    updatedAt: m.updatedAt ?? m.createdAt ?? now,
+  }));
+}
+
+export function saveStock(movements: StockMovement[]): void {
+  write(STOCK_KEY, movements);
 }

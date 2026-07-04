@@ -11,6 +11,7 @@ import { OrdersPage } from "./routes/OrdersPage";
 import { ExcelPage } from "./routes/ExcelPage";
 import { TemplatePage } from "./routes/TemplatePage";
 import { InvoicePage } from "./routes/InvoicePage";
+import { StockPage } from "./routes/StockPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -32,6 +33,12 @@ const ordersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/pesanan",
   component: OrdersPage,
+});
+
+const stockRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/stok",
+  component: StockPage,
 });
 
 const excelRoute = createRoute({
@@ -56,6 +63,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   pricesRoute,
   ordersRoute,
+  stockRoute,
   excelRoute,
   templateRoute,
   invoiceRoute,

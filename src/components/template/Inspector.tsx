@@ -1,11 +1,16 @@
 import type { ChangeEvent } from "react";
 import type {
-  FieldBind,
+  FieldType,
   Template,
   TemplateElement,
   TextStyle,
 } from "../../lib/template-types";
-import { LOGO_MAX_W, LOGO_MAX_H, PHOTO_MAX } from "../../lib/template-types";
+import {
+  LOGO_MAX_W,
+  LOGO_MAX_H,
+  PHOTO_MAX,
+  FIELD_TYPE_LABELS,
+} from "../../lib/template-types";
 import { downscaleImage, imageSize } from "../../lib/image";
 import { Input } from "../Input";
 import { Select } from "../Select";
@@ -236,8 +241,10 @@ export function Inspector({
             />
           </Field>
         </div>
+
         <p className="text-xs text-slate-400 pt-2">
-          Klik sebuah elemen di kanvas untuk mengeditnya.
+          Klik sebuah elemen di kanvas untuk mengeditnya. Tambah data isian lewat
+          tombol <b>+ Field</b>, lalu atur judul & tipenya.
         </p>
       </div>
     );
@@ -306,16 +313,49 @@ export function Inspector({
       )}
 
       {el.type === "field" && (
-        <Field label="Data dinamis">
-          <Select
-            value={el.bind}
-            onChange={(e) => onElementChange(el.id, { bind: e.target.value as FieldBind })}
-          >
-            <option value="invoice.number">No. Invoice</option>
-            <option value="invoice.issued">Tanggal Terbit</option>
-            <option value="invoice.due">Jatuh Tempo</option>
-          </Select>
-        </Field>
+        <>
+          <Field label="Judul field">
+            <Input
+              value={el.fieldLabel ?? ""}
+              onChange={(e) => onElementChange(el.id, { fieldLabel: e.target.value })}
+              placeholder="mis. No. Invoice"
+            />
+          </Field>
+          <Field label="Tipe isian">
+            <Select
+              value={el.fieldType ?? "text"}
+              onChange={(e) =>
+                onElementChange(el.id, { fieldType: e.target.value as FieldType })
+              }
+            >
+              {(Object.keys(FIELD_TYPE_LABELS) as FieldType[]).map((t) => (
+                <option key={t} value={t}>
+                  {FIELD_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {el.fieldType === "select" && (
+            <Field label="Pilihan (pisahkan dengan koma)">
+              <Input
+                value={(el.fieldOptions ?? []).join(", ")}
+                onChange={(e) =>
+                  onElementChange(el.id, {
+                    fieldOptions: e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="mis. Tunai, Transfer"
+              />
+            </Field>
+          )}
+          <p className="text-[11px] text-slate-400">
+            Judul ini menjadi input otomatis di halaman <b>Buat Invoice</b>. Judul
+            yang sama dipakai ulang berbagi satu isian.
+          </p>
+        </>
       )}
 
       {el.type === "image" && (

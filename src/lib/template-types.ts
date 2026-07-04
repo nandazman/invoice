@@ -39,8 +39,24 @@ export interface TextStyle {
   bg: string | null; // background color, null = transparent
 }
 
-// Dynamic fields filled in at generation time.
-export type FieldBind = "invoice.number" | "invoice.issued" | "invoice.due";
+// A Field element carries its own definition: a title and a data type. Every
+// field element becomes an input on the Buat Invoice page, keyed by its title
+// (so the same title placed twice shares one value).
+export type FieldType = "text" | "number" | "date" | "select";
+
+// Normalized key used to group/collect field values by title.
+export function fieldKey(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+// Default fields seeded into every new template — editable/removable.
+export function defaultFields(): { label: string; type: FieldType }[] {
+  return [
+    { label: "No. Invoice", type: "text" },
+    { label: "Tanggal Terbit", type: "date" },
+    { label: "Jatuh Tempo", type: "date" },
+  ];
+}
 
 export type ItemColumnKey =
   | "tanggal"
@@ -67,7 +83,9 @@ export interface TemplateElement {
   style: TextStyle;
   content?: string; // text
   src?: string; // image dataURL
-  bind?: FieldBind; // field
+  fieldLabel?: string; // field title, e.g. "No. Invoice"
+  fieldType?: FieldType; // field data type
+  fieldOptions?: string[]; // choices when fieldType === "select"
   columns?: ItemColumn[]; // items table
 }
 
@@ -83,11 +101,9 @@ export interface Template {
 
 // Data injected into a template at generation time.
 export interface InvoiceData {
-  number: string;
-  issued: string; // ISO date
-  due: string; // ISO date
   items: OrderItem[];
   total: number;
+  fields: Record<string, string>; // field values, keyed by fieldKey(title)
 }
 
 export function defaultStyle(): TextStyle {
@@ -112,8 +128,9 @@ export function defaultColumns(): ItemColumn[] {
   ];
 }
 
-export const FIELD_LABELS: Record<FieldBind, string> = {
-  "invoice.number": "No. Invoice",
-  "invoice.issued": "Tanggal Terbit",
-  "invoice.due": "Jatuh Tempo",
+export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  text: "Teks",
+  number: "Angka",
+  date: "Tanggal",
+  select: "Dropdown",
 };

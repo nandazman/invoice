@@ -16,7 +16,9 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 ## Fitur saat ini
 
 ### Halaman Harga (`/harga`)
-- Daftar produk: `Nama Produk`, `Tipe`, `Ukuran`, `Satuan`, `Harga Satuan`.
+- Daftar produk: `Nama Produk`, `Tipe`, `Ukuran`, `Satuan`, `Harga Dasar`
+  (modal), `Harga Satuan` (jual), dan **Laba** (`Harga Satuan − Harga Dasar`,
+  dihitung otomatis dan diberi warna hijau/merah).
 - **Tipe produk** (mis. `Bar`, `Dapur`) dipilih lewat combobox ala GitHub
   "create branch": pilih tipe yang ada atau ketik nama baru untuk
   **membuat tipe** — langsung tersimpan dan tersedia di semua dropdown.
@@ -57,6 +59,13 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
   **Gambar**, **Logo**, **Item Pesanan** (tabel berkolom), **Total**, dan **Garis**.
 - Inspector untuk gaya teks (ukuran, perataan, warna, tebal/miring), urutan
   lapisan (ke depan/belakang), duplikat, dan hapus.
+- **Field dinamis** — setiap elemen **Field** di kanvas mendefinisikan sendiri
+  **Judul** + **Tipe** (Teks / Angka / Tanggal / Dropdown; dropdown menyertakan
+  daftar pilihan). Tidak ada lagi field "bawaan" yang di-hardcode: template baru
+  hanya **diisi default** No. Invoice (teks), Tanggal Terbit (tanggal), dan
+  Jatuh Tempo (tanggal) yang bebas diubah/dihapus. Setiap judul otomatis menjadi
+  input di halaman **Buat Invoice** sesuai tipenya; judul yang sama (dipasang di
+  beberapa tempat) berbagi satu isian.
 - **Pengaturan template**: nama template, data bisnis (nama, alamat, telepon,
   logo via unggah atau URL), dan data pelanggan contoh.
 - **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z), hapus via Delete, dan **simpan
@@ -81,7 +90,8 @@ interface Product {
   tipe: string;               // kategori, mis. "Bar"
   ukuran: number | null;
   satuan: string | null;
-  hargaJual: number;          // harga per satuan dasar
+  hargaDasar: number;         // harga modal per satuan dasar
+  hargaJual: number;          // harga jual per satuan dasar (laba = hargaJual − hargaDasar)
   konversi: Conversion[];     // harga tiap konversi dihitung dari hargaJual
 }
 
@@ -182,5 +192,6 @@ Semua fitur inti sudah selesai. Ide pengembangan lanjutan:
 
 - **Ekspor PDF asli** (mis. `@react-pdf/renderer`) sebagai alternatif dialog
   cetak browser, untuk hasil yang lebih konsisten antar-perangkat.
-- **Lebih banyak field dinamis** di template (mis. catatan, pajak/PPN, diskon).
+- **Field kustom bertipe angka/mata uang** yang ikut dihitung (mis. pajak/PPN,
+  diskon) — saat ini field kustom bersifat tampilan, belum memengaruhi total.
 - **Status pembayaran & rekap** invoice yang sudah dibuat.

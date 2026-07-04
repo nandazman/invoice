@@ -87,8 +87,8 @@ export function OrdersPage() {
   const [to, setTo] = useState("");
   const [produk, setProduk] = useState("");
 
-  function addItem(item: OrderItem) {
-    addOrder(item);
+  function addItems(items: OrderItem[]) {
+    for (const item of items) addOrder(item);
   }
   function removeItem(id: string) {
     deleteOrder(id);
@@ -163,7 +163,7 @@ export function OrdersPage() {
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
       ) : (
-        <AddItemForm products={products} onAdd={addItem} />
+        <AddItemForm products={products} onAdd={addItems} />
       )}
 
       <Panel>

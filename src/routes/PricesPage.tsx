@@ -36,7 +36,9 @@ const TOGGLE_COLUMNS = [
   { id: "namaProduk", label: "Nama Produk" },
   { id: "tipe", label: "Tipe" },
   { id: "ukuran", label: "Ukuran" },
+  { id: "hargaDasar", label: "Harga Dasar" },
   { id: "hargaJual", label: "Harga Satuan" },
+  { id: "laba", label: "Laba" },
   { id: "konversi", label: "Konversi" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
@@ -117,9 +119,28 @@ export function PricesPage() {
           return `${p.ukuran ?? ""} ${p.satuan ?? ""}`.trim();
         },
       }),
+      col.accessor("hargaDasar", {
+        header: "Harga Dasar",
+        cell: (c) => formatRupiah(c.getValue()),
+        meta: { num: true },
+      }),
       col.accessor("hargaJual", {
         header: "Harga Satuan",
         cell: (c) => formatRupiah(c.getValue()),
+        meta: { num: true },
+      }),
+      col.display({
+        id: "laba",
+        header: "Laba",
+        cell: (c) => {
+          const p = c.row.original;
+          const laba = p.hargaJual - p.hargaDasar;
+          return (
+            <span className={laba < 0 ? "text-red-600" : "text-emerald-600"}>
+              {formatRupiah(laba)}
+            </span>
+          );
+        },
         meta: { num: true },
       }),
       col.display({

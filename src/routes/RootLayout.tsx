@@ -69,6 +69,19 @@ export function RootLayout() {
             {!collapsed && "Pesanan"}
           </Link>
           <Link
+            to="/stok"
+            title="Stok"
+            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
+            activeProps={{
+              className: `${linkBase} ${linkActive} ${
+                collapsed ? "justify-center px-0" : ""
+              }`,
+            }}
+          >
+            <span className="text-base">🏬</span>
+            {!collapsed && "Stok"}
+          </Link>
+          <Link
             to="/excel"
             title="Ekspor Excel"
             className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
