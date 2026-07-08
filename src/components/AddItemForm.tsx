@@ -210,7 +210,7 @@ export function AddItemForm({ products, onAdd }: Props) {
                     }
                     className="w-4 h-4 accent-blue-600 cursor-pointer"
                   />
-                  Tambah ke stok
+                  Kurangi stok
                 </label>
                 <GhostButton
                   onClick={() => removeRow(r.uid)}

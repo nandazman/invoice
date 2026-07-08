@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Product, StockMovement, StockReason } from "../lib/types";
+import type { Product, PurchaseItem } from "../lib/types";
 import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
 import { Button, PrimaryButton, GhostButton } from "./Button";
 import { Input } from "./Input";
@@ -9,41 +9,33 @@ import { Field } from "./Field";
 
 interface UnitOption {
   label: string; // displayed unit name
-  faktor: number; // base units per one of this unit
+  jumlah: number; // base units per this unit
+  harga: number; // default cost per this unit (from hargaDasar/modal)
 }
 
 function unitOptions(p: Product): UnitOption[] {
   const base: UnitOption = {
     label: p.satuan ? `${p.satuan} (satuan)` : "satuan",
-    faktor: 1,
+    jumlah: 1,
+    harga: p.hargaDasar,
   };
   const conv = p.konversi.map((k) => ({
     label: `${k.nama} (= ${k.jumlah} satuan)`,
-    faktor: k.jumlah,
+    jumlah: k.jumlah,
+    // Product carries no per-konversi modal, so default to hargaDasar × jumlah.
+    harga: p.hargaDasar * k.jumlah,
   }));
   return [base, ...conv];
 }
 
-// purchase/return bring stock in (+), sale/adjustment take it out (−).
-const IN_REASONS: StockReason[] = ["purchase", "return"];
-
-const REASON_LABEL: Record<StockReason, string> = {
-  purchase: "Pembelian (masuk)",
-  return: "Retur (masuk)",
-  sale: "Penjualan (keluar)",
-  adjustment: "Penyesuaian (keluar)",
-};
-
 // One editable row of the form. Keyed by an ephemeral uid that is NOT persisted.
-// Purchases are always valued at the product's Harga Dasar (no manual cost).
 interface Row {
   uid: string;
   tanggal: string;
   productId: string;
-  reason: StockReason;
   unitIdx: number;
   kuantitas: string;
-  note: string;
+  harga: string; // editable cost per chosen unit ("" = use unit default)
 }
 
 function emptyRow(): Row {
@@ -51,19 +43,18 @@ function emptyRow(): Row {
     uid: uid(),
     tanggal: todayISO(),
     productId: "",
-    reason: "purchase",
     unitIdx: 0,
     kuantitas: "1",
-    note: "",
+    harga: "",
   };
 }
 
 interface Props {
   products: Product[];
-  onAdd: (movements: StockMovement[]) => void;
+  onAdd: (items: PurchaseItem[]) => void;
 }
 
-export function AddMovementForm({ products, onAdd }: Props) {
+export function AddPurchaseForm({ products, onAdd }: Props) {
   const sorted = useMemo(
     () => [...products].sort((a, b) => a.namaProduk.localeCompare(b.namaProduk)),
     [products],
@@ -74,10 +65,6 @@ export function AddMovementForm({ products, onAdd }: Props) {
     setRows((prev) =>
       prev.map((r) => (r.uid === id ? { ...r, ...patch } : r)),
     );
-  }
-
-  function selectProduct(id: string, productId: string) {
-    patchRow(id, { productId, unitIdx: 0 });
   }
 
   function addRow() {
@@ -92,6 +79,12 @@ export function AddMovementForm({ products, onAdd }: Props) {
     });
   }
 
+  // The effective cost per chosen unit: the edited value, else the unit default.
+  function unitPrice(r: Row, unit: UnitOption | undefined): number {
+    if (r.harga.trim() !== "") return Number(r.harga) || 0;
+    return unit ? unit.harga : 0;
+  }
+
   // A row with no product AND default/empty qty is "blank" → skipped silently.
   function isBlank(r: Row): boolean {
     return !r.productId && (r.kuantitas === "" || r.kuantitas === "1");
@@ -103,28 +96,25 @@ export function AddMovementForm({ products, onAdd }: Props) {
     return !r.productId || (Number(r.kuantitas) || 0) <= 0;
   }
 
-  function buildRow(r: Row): StockMovement | null {
+  function buildRow(r: Row): PurchaseItem | null {
     const product = sorted.find((p) => p.id === r.productId) ?? null;
     if (!product) return null;
     const units = unitOptions(product);
     const unit = units[r.unitIdx] ?? units[0];
     const qtyNum = Number(r.kuantitas) || 0;
     if (!unit || qtyNum <= 0) return null;
-    const isIn = IN_REASONS.includes(r.reason);
-    const baseQty = qtyNum * unit.faktor;
-    const signedBase = isIn ? Math.abs(baseQty) : -Math.abs(baseQty);
+    const harga = unitPrice(r, unit);
+    const cleanUnit = unit.label.replace(/\s*\(.*\)\s*$/, "").trim();
     const now = nowISO();
     return {
       id: uid(),
-      productId: product.id,
       tanggal: r.tanggal,
-      qty: signedBase,
-      satuan: product.satuan ?? "",
-      reason: r.reason,
-      hargaModal: isIn ? product.hargaDasar : null,
-      orderId: null,
-      purchaseId: null,
-      note: r.note.trim(),
+      productId: product.id,
+      namaProduk: product.namaProduk,
+      satuan: cleanUnit,
+      kuantitas: qtyNum,
+      hargaSatuan: harga,
+      totalHarga: qtyNum * harga,
       createdAt: now,
       updatedAt: now,
     };
@@ -138,7 +128,7 @@ export function AddMovementForm({ products, onAdd }: Props) {
     const items = rows
       .filter((r) => !isBlank(r))
       .map(buildRow)
-      .filter(Boolean) as StockMovement[];
+      .filter(Boolean) as PurchaseItem[];
     if (items.length === 0) return;
     onAdd(items);
     setRows([emptyRow()]);
@@ -146,7 +136,7 @@ export function AddMovementForm({ products, onAdd }: Props) {
 
   return (
     <Panel>
-      <strong className="text-slate-700">Catat Pergerakan Stok</strong>
+      <strong className="text-slate-700">Tambah Pembelian</strong>
 
       <div className="flex flex-col gap-2 mt-3">
         {rows.map((r) => {
@@ -154,8 +144,8 @@ export function AddMovementForm({ products, onAdd }: Props) {
           const units = product ? unitOptions(product) : [];
           const unit = units[r.unitIdx] ?? units[0];
           const qtyNum = Number(r.kuantitas) || 0;
-          const isIn = IN_REASONS.includes(r.reason);
-          const baseQty = unit ? qtyNum * unit.faktor : 0;
+          const harga = unitPrice(r, unit);
+          const total = qtyNum * harga;
           const invalid = isInvalid(r);
           return (
             <div
@@ -175,7 +165,14 @@ export function AddMovementForm({ products, onAdd }: Props) {
                 <Field label="Produk" className="w-56">
                   <Select
                     value={r.productId}
-                    onChange={(e) => selectProduct(r.uid, e.target.value)}
+                    onChange={(e) =>
+                      // Reset unit + custom price when the product changes.
+                      patchRow(r.uid, {
+                        productId: e.target.value,
+                        unitIdx: 0,
+                        harga: "",
+                      })
+                    }
                   >
                     <option value="">— pilih produk —</option>
                     {sorted.map((p) => (
@@ -185,31 +182,21 @@ export function AddMovementForm({ products, onAdd }: Props) {
                     ))}
                   </Select>
                 </Field>
-                <Field label="Jenis" className="w-48">
-                  <Select
-                    value={r.reason}
-                    onChange={(e) =>
-                      patchRow(r.uid, { reason: e.target.value as StockReason })
-                    }
-                  >
-                    {(Object.keys(REASON_LABEL) as StockReason[]).map((rr) => (
-                      <option key={rr} value={rr}>
-                        {REASON_LABEL[rr]}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Satuan / Konversi" className="w-48">
+                <Field label="Satuan / Konversi" className="w-52">
                   <Select
                     value={r.unitIdx}
                     onChange={(e) =>
-                      patchRow(r.uid, { unitIdx: Number(e.target.value) })
+                      // Switching unit clears the custom price so the new default shows.
+                      patchRow(r.uid, {
+                        unitIdx: Number(e.target.value),
+                        harga: "",
+                      })
                     }
                     disabled={!product}
                   >
                     {units.map((u, i) => (
                       <option key={i} value={i}>
-                        {u.label}
+                        {u.label} — {formatRupiah(u.harga)}
                       </option>
                     ))}
                   </Select>
@@ -225,41 +212,32 @@ export function AddMovementForm({ products, onAdd }: Props) {
                     }
                   />
                 </Field>
-                {isIn && (
-                  <Field label="Total (modal)" className="w-36">
-                    <Input
-                      className="font-semibold"
-                      value={formatRupiah(baseQty * (product?.hargaDasar ?? 0))}
-                      readOnly
-                      tabIndex={-1}
-                      title="Otomatis dari Harga Dasar produk"
-                    />
-                  </Field>
-                )}
-                <Field label="Catatan" className="w-40">
+                <Field label="Harga Satuan" className="w-36">
                   <Input
-                    value={r.note}
-                    onChange={(e) => patchRow(r.uid, { note: e.target.value })}
-                    placeholder="opsional"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={r.harga}
+                    placeholder={unit ? String(unit.harga) : ""}
+                    disabled={!product}
+                    onChange={(e) => patchRow(r.uid, { harga: e.target.value })}
                   />
                 </Field>
-                <div className="flex items-center h-9 shrink-0">
-                  {product && qtyNum > 0 && (
-                    <span className="text-xs text-slate-500 whitespace-nowrap mr-1">
-                      {isIn ? "Menambah" : "Mengurangi"}{" "}
-                      <b>
-                        {baseQty} {product.satuan ?? "satuan"}
-                      </b>
-                    </span>
-                  )}
-                  <GhostButton
-                    onClick={() => removeRow(r.uid)}
-                    title="Hapus baris"
-                    className="shrink-0"
-                  >
-                    ✕
-                  </GhostButton>
-                </div>
+                <Field label="Total" className="w-36">
+                  <Input
+                    className="font-semibold"
+                    value={formatRupiah(total)}
+                    readOnly
+                    tabIndex={-1}
+                  />
+                </Field>
+                <GhostButton
+                  onClick={() => removeRow(r.uid)}
+                  title="Hapus baris"
+                  className="shrink-0 mb-0.5"
+                >
+                  ✕
+                </GhostButton>
               </div>
             </div>
           );
@@ -267,7 +245,7 @@ export function AddMovementForm({ products, onAdd }: Props) {
       </div>
 
       <div className="flex items-center gap-2 mt-3">
-        <Button onClick={addRow}>+ Tambah item</Button>
+        <Button onClick={addRow}>+ Tambah baris</Button>
         <span className="flex-1" />
         <PrimaryButton onClick={commit} disabled={validCount === 0}>
           Simpan {validCount > 1 ? `(${validCount})` : ""}

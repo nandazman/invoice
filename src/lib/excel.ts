@@ -1,8 +1,9 @@
 import type ExcelJSNS from "exceljs";
-import type { OrderItem } from "./types";
+import type { LineItem } from "./types";
 import { formatTanggalID } from "./format";
 
-const HEADER = ["Tanggal", "Nama Produk", "Kuantitas", "Harga Satuan", "Total Harga"];
+const HEADER_FULL = ["Tanggal", "Nama Produk", "Kuantitas", "Harga Satuan", "Total Harga"];
+const HEADER_SUMMARY = ["Tanggal", "Nama Produk", "Kuantitas"];
 const NUM_FMT = "#,##0";
 
 const HEADER_FILL = "FF4F81BD";
@@ -19,8 +20,8 @@ function fill(argb: string): ExcelJSNS.Fill {
   return { type: "pattern", pattern: "solid", fgColor: { argb } };
 }
 
-function groupByDate(items: OrderItem[]): Map<string, OrderItem[]> {
-  const byDate = new Map<string, OrderItem[]>();
+function groupByDate(items: LineItem[]): Map<string, LineItem[]> {
+  const byDate = new Map<string, LineItem[]>();
   for (const it of items) {
     const arr = byDate.get(it.tanggal) ?? [];
     arr.push(it);
@@ -30,24 +31,24 @@ function groupByDate(items: OrderItem[]): Map<string, OrderItem[]> {
 }
 
 export async function buildOrdersWorkbook(
-  items: OrderItem[],
+  items: LineItem[],
+  opts?: { sheetName?: string; showPrice?: boolean },
 ): Promise<ExcelJSNS.Buffer> {
   // Lazy-load exceljs so the heavy library is only fetched on export,
   // keeping it out of the main app bundle.
   const { default: ExcelJS } = await import("exceljs");
+  const showPrice = opts?.showPrice ?? true;
+  // Last populated column: price mode spans A–E, summary mode only A–C.
+  const lastCol = showPrice ? 5 : 3;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Orders");
+  const ws = wb.addWorksheet(opts?.sheetName ?? "Orders");
 
-  ws.columns = [
-    { width: 16 },
-    { width: 26 },
-    { width: 11 },
-    { width: 14 },
-    { width: 16 },
-  ];
+  ws.columns = showPrice
+    ? [{ width: 16 }, { width: 26 }, { width: 11 }, { width: 14 }, { width: 16 }]
+    : [{ width: 16 }, { width: 26 }, { width: 11 }];
 
   // Header row.
-  const header = ws.addRow(HEADER);
+  const header = ws.addRow(showPrice ? HEADER_FULL : HEADER_SUMMARY);
   header.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = fill(HEADER_FILL);
@@ -64,24 +65,24 @@ export async function buildOrdersWorkbook(
     const firstRow = ws.rowCount + 1;
 
     group.forEach((it, i) => {
-      const r = ws.addRow([
-        i === 0 ? formatTanggalID(iso) : null,
-        it.namaProduk,
-        it.kuantitas,
-        it.hargaSatuan,
-        null,
-      ]);
+      const r = ws.addRow(
+        showPrice
+          ? [i === 0 ? formatTanggalID(iso) : null, it.namaProduk, it.kuantitas, it.hargaSatuan, null]
+          : [i === 0 ? formatTanggalID(iso) : null, it.namaProduk, it.kuantitas],
+      );
       const rowNum = r.number;
 
-      const dCell = r.getCell(4);
-      dCell.numFmt = NUM_FMT;
+      if (showPrice) {
+        const dCell = r.getCell(4);
+        dCell.numFmt = NUM_FMT;
 
-      const eCell = r.getCell(5);
-      eCell.value = { formula: `C${rowNum}*D${rowNum}` };
-      eCell.numFmt = NUM_FMT;
+        const eCell = r.getCell(5);
+        eCell.value = { formula: `C${rowNum}*D${rowNum}` };
+        eCell.numFmt = NUM_FMT;
+      }
 
       r.eachCell({ includeEmpty: true }, (cell, col) => {
-        if (col >= 1 && col <= 5) cell.border = thinBorder();
+        if (col >= 1 && col <= lastCol) cell.border = thinBorder();
       });
     });
 
@@ -94,6 +95,10 @@ export async function buildOrdersWorkbook(
     const tanggalCell = ws.getCell(`A${firstRow}`);
     tanggalCell.alignment = { horizontal: "center", vertical: "middle" };
 
+    // Subtotal/grand-total rows only make sense when prices are shown; in
+    // summary mode the sheet is just a grouped listing with no money totals.
+    if (!showPrice) continue;
+
     // Subtotal row.
     const sub = ws.addRow([null, `Total ${formatTanggalID(iso)}`, null, null, null]);
     const subNum = sub.number;
@@ -104,7 +109,7 @@ export async function buildOrdersWorkbook(
     eSub.numFmt = NUM_FMT;
     eSub.font = { bold: true };
     sub.eachCell({ includeEmpty: true }, (cell, col) => {
-      if (col >= 1 && col <= 5) {
+      if (col >= 1 && col <= lastCol) {
         cell.fill = fill(SUBTOTAL_FILL);
         cell.border = thinBorder();
       }
@@ -113,7 +118,7 @@ export async function buildOrdersWorkbook(
   }
 
   // Grand total row.
-  if (subtotalCells.length > 0) {
+  if (showPrice && subtotalCells.length > 0) {
     const grand = ws.addRow([null, "Total Keseluruhan", null, null, null]);
     const bCell = grand.getCell(2);
     bCell.font = { bold: true };
@@ -122,7 +127,7 @@ export async function buildOrdersWorkbook(
     eGrand.numFmt = NUM_FMT;
     eGrand.font = { bold: true };
     grand.eachCell({ includeEmpty: true }, (cell, col) => {
-      if (col >= 1 && col <= 5) {
+      if (col >= 1 && col <= lastCol) {
         cell.fill = fill(GRAND_FILL);
         cell.border = thinBorder();
       }
@@ -134,15 +139,18 @@ export async function buildOrdersWorkbook(
   return wb.xlsx.writeBuffer();
 }
 
-export async function downloadOrdersXLSX(items: OrderItem[]): Promise<void> {
-  const buf = await buildOrdersWorkbook(items);
+export async function downloadOrdersXLSX(
+  items: LineItem[],
+  opts?: { sheetName?: string; filename?: string; showPrice?: boolean },
+): Promise<void> {
+  const buf = await buildOrdersWorkbook(items, opts);
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "order.xlsx";
+  a.download = opts?.filename ?? "order.xlsx";
   a.click();
   URL.revokeObjectURL(url);
 }

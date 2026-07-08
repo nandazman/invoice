@@ -3,6 +3,7 @@ import type {
   Product,
   OrderItem,
   OrderStatus,
+  PurchaseItem,
   StockMovement,
 } from "./types";
 import { nowISO, uid } from "./format";
@@ -12,6 +13,8 @@ import {
   saveProducts,
   loadOrders,
   saveOrders,
+  loadPurchases,
+  savePurchases,
   loadTypes,
   saveTypes,
   loadStock,
@@ -20,6 +23,7 @@ import {
 
 let products: Product[] = loadProducts();
 let orders: OrderItem[] = loadOrders();
+let purchases: PurchaseItem[] = loadPurchases();
 let types: string[] = loadTypes();
 let stock: StockMovement[] = loadStock();
 
@@ -40,6 +44,9 @@ export function useProducts(): Product[] {
 export function useOrders(): OrderItem[] {
   return useSyncExternalStore(subscribe, () => orders);
 }
+export function usePurchases(): PurchaseItem[] {
+  return useSyncExternalStore(subscribe, () => purchases);
+}
 export function useTypes(): string[] {
   return useSyncExternalStore(subscribe, () => types);
 }
@@ -55,6 +62,11 @@ export function setProducts(next: Product[]): void {
 export function setOrders(next: OrderItem[]): void {
   orders = next;
   saveOrders(next);
+  emit();
+}
+export function setPurchases(next: PurchaseItem[]): void {
+  purchases = next;
+  savePurchases(next);
   emit();
 }
 export function setStock(next: StockMovement[]): void {
@@ -148,9 +160,9 @@ function baseUnitsFor(product: Product, satuan: string): number {
 }
 
 // Add an order item, stamping status/timestamps if not already set. When
-// `affectsStock` is set, also record a matching `purchase` movement that adds
-// the ordered quantity (converted to base units) into stock, valued at the
-// product's Harga Dasar.
+// `affectsStock` is set, also record a matching `sale` movement that DEDUCTS
+// the ordered quantity (converted to base units) from stock — a customer order
+// consumes inventory. FIFO consumes existing purchase layers (hargaModal null).
 export function addOrder(item: OrderItem): void {
   const now = nowISO();
   const filled: OrderItem = {
@@ -179,11 +191,12 @@ export function addOrder(item: OrderItem): void {
         id: uid(),
         productId: product.id,
         tanggal: filled.tanggal,
-        qty: Math.abs(baseQty),
+        qty: -Math.abs(baseQty),
         satuan: product.satuan ?? "",
-        reason: "purchase",
-        hargaModal: product.hargaDasar,
+        reason: "sale",
+        hargaModal: null,
         orderId: filled.id,
+        purchaseId: null,
         note: "dari pesanan",
         createdAt: now,
         updatedAt: now,
@@ -239,6 +252,79 @@ export function deleteOrders(ids: Set<string>): void {
   }
 }
 
+// ---------- Timestamp-aware purchase (Beli Stock) mutations ----------
+
+// Add a Beli Stock line, stamping timestamps, and auto-create a linked
+// `purchase` movement that ADDS the bought quantity (converted to base units)
+// into stock, valued at the entered cost per base unit.
+export function addPurchase(item: PurchaseItem): void {
+  const now = nowISO();
+  const filled: PurchaseItem = {
+    ...item,
+    createdAt: item.createdAt ?? now,
+    updatedAt: item.updatedAt ?? now,
+  };
+  setPurchases([...purchases, filled]);
+  logAudit({
+    entity: "purchase",
+    entityId: filled.id,
+    action: "create",
+    label: `Beli Stok: ${filled.kuantitas} ${filled.satuan} ${filled.namaProduk}`,
+  });
+
+  const product =
+    products.find((p) => p.id === filled.productId) ??
+    products.find((p) => p.namaProduk === filled.namaProduk);
+  if (product) {
+    const baseUnits = baseUnitsFor(product, filled.satuan);
+    const baseQty = filled.kuantitas * baseUnits;
+    addMovement({
+      id: uid(),
+      productId: product.id,
+      tanggal: filled.tanggal,
+      qty: Math.abs(baseQty),
+      satuan: product.satuan ?? "",
+      reason: "purchase",
+      hargaModal: baseUnits > 0 ? filled.hargaSatuan / baseUnits : filled.hargaSatuan,
+      orderId: null,
+      purchaseId: filled.id,
+      note: "dari beli stok",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+export function deletePurchase(id: string): void {
+  const prev = purchases.find((p) => p.id === id);
+  setPurchases(purchases.filter((p) => p.id !== id));
+  // Drop any stock movement that was auto-generated from this purchase.
+  if (stock.some((m) => m.purchaseId === id)) {
+    setStock(stock.filter((m) => m.purchaseId !== id));
+  }
+  logAudit({
+    entity: "purchase",
+    entityId: id,
+    action: "delete",
+    label: `Beli Stok ${prev?.namaProduk ?? id} dihapus`,
+  });
+}
+
+export function deletePurchases(ids: Set<string>): void {
+  setPurchases(purchases.filter((p) => !ids.has(p.id)));
+  if (stock.some((m) => m.purchaseId && ids.has(m.purchaseId))) {
+    setStock(stock.filter((m) => !(m.purchaseId && ids.has(m.purchaseId))));
+  }
+  for (const id of ids) {
+    logAudit({
+      entity: "purchase",
+      entityId: id,
+      action: "delete",
+      label: `Beli Stok dihapus (massal)`,
+    });
+  }
+}
+
 // ---------- Stock mutations ----------
 
 export function addMovement(m: StockMovement): void {
@@ -282,6 +368,9 @@ export function getProducts(): Product[] {
 }
 export function getOrders(): OrderItem[] {
   return orders;
+}
+export function getPurchases(): PurchaseItem[] {
+  return purchases;
 }
 export function getStock(): StockMovement[] {
   return stock;

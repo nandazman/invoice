@@ -37,12 +37,39 @@ export interface OrderItem {
   updatedAt: string; // ISO datetime
 }
 
+// A stock-purchase line (Beli Stock). Pesanan-shaped but without status /
+// affectsStock: every saved purchase always ADDS stock. Priced at Harga Dasar
+// (modal); hargaSatuan is editable so the real invoice cost can be captured.
+export interface PurchaseItem {
+  id: string;
+  tanggal: string; // ISO date, yyyy-mm-dd
+  productId: string; // links to Product.id
+  namaProduk: string;
+  satuan: string; // chosen unit label (base satuan or a conversion nama)
+  kuantitas: number; // in chosen unit
+  hargaSatuan: number; // cost per chosen unit (editable, defaults from hargaDasar)
+  totalHarga: number; // kuantitas x hargaSatuan
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
+}
+
+// The common fields the export helpers (excel/text/image) read. Both OrderItem
+// and PurchaseItem structurally satisfy this, so exports work off either source.
+export interface LineItem {
+  tanggal: string;
+  namaProduk: string;
+  satuan: string;
+  kuantitas: number;
+  hargaSatuan: number;
+  totalHarga: number;
+}
+
 // One append-only entry in the global audit log. Never rewritten; a Restore
 // replaces the whole log. entityId may dangle after the entity is deleted.
 export interface AuditEntry {
   id: string;
   timestamp: string; // ISO datetime
-  entity: "product" | "order" | "stock" | "type";
+  entity: "product" | "order" | "stock" | "type" | "purchase";
   entityId: string;
   action: "create" | "update" | "delete";
   label: string; // human summary, e.g. "Harga Jual 12.000 → 13.000"
@@ -65,6 +92,7 @@ export interface StockMovement {
   reason: StockReason;
   hargaModal: number | null; // cost per BASE unit, snapshot on purchases; null otherwise
   orderId: string | null; // set when auto-generated from an order item
+  purchaseId: string | null; // set when auto-generated from a Beli Stock line
   note: string; // free-text note
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime

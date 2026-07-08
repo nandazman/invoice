@@ -8,9 +8,11 @@ TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
 Semua data disimpan di **localStorage browser** dan dapat di-**ekspor/impor
 sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 
-> **Status:** Tujuh halaman sudah **selesai** — Harga, Pesanan, Stok, Ekspor
-> Excel, Desain Template, Buat Invoice, dan Riwayat. Setiap produk juga punya
-> **halaman detail** (`/produk/:id`).
+> **Status:** Delapan halaman sudah **selesai** — Harga, Pesanan, Stok, Beli
+> Stock, Ekspor Excel, Desain Template, Buat Invoice, dan Riwayat. Setiap produk
+> juga punya **halaman detail** (`/produk/:id`). Sidebar dikelompokkan menjadi
+> **Data** (Harga, Pesanan, Stok, Beli Stock, Riwayat) dan **Alat** (Ekspor
+> Excel, Desain Template, Buat Invoice).
 
 > **Cadangan data:** Gunakan **Backup semua / Pulihkan** di footer sidebar untuk
 > mencadangkan/memulihkan SELURUH data dengan **ID dipertahankan**. Ekspor/impor
@@ -44,9 +46,25 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
   saat ditambahkan; mengubah harga produk **tidak** mengubah pesanan lama.
 - **Riwayat** ditampilkan dikelompokkan per tanggal, dengan subtotal per
   tanggal dan total keseluruhan.
-- **Filter**: rentang tanggal (dari/sampai), tanggal spesifik, dan nama produk.
+- **Filter**: rentang tanggal (dari/sampai), tanggal spesifik, nama produk, dan
+  **status** (semua/pending/paid).
+- Centang **"Kurangi stok"** pada item → menambah pergerakan **`sale`** yang
+  **mengurangi** stok (pesanan pelanggan mengonsumsi inventaris); menghapus
+  pesanan mengembalikan stoknya.
 - **Impor / Ekspor JSON** (format `order.json` lama: `Orders[]` per tanggal +
   `Total Keseluruhan`).
+
+### Halaman Beli Stock (`/beli-stok`)
+- Ledger **pembelian stok** berbentuk seperti Pesanan: tambah baris (produk,
+  tanggal, satuan/konversi, kuantitas), dikelompokkan per tanggal dengan
+  subtotal + total keseluruhan.
+- Diharga pada **Harga Dasar** (modal): default satuan dasar = `hargaDasar`,
+  konversi = `hargaDasar × jumlah`. Kolom **Harga Satuan bisa diedit** agar biaya
+  faktur nyata bisa dicatat.
+- Setiap baris yang disimpan **selalu menambah stok** (pergerakan `purchase`),
+  tanpa centang — menghapus baris menghapus pergerakan tertaut. Tidak ada status.
+- Toggle kolom (kunci `invoice.beli.cols.v1`) dan **Impor / Ekspor JSON**
+  (`beli-stok.json`).
 
 ### Halaman Detail Produk (`/produk/:id`)
 - Buka lewat klik **nama produk** di halaman Harga, Stok, atau Pesanan.
@@ -65,8 +83,13 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
   pencarian teks bebas pada ringkasan.
 
 ### Halaman Ekspor Excel (`/excel`)
-- Ekspor pesanan ke **`order.xlsx`** langsung di browser (memakai `exceljs`),
-  menyamai tata letak `python/create_excel.py`.
+- **Sumber data**: toggle di atas filter memilih **Order** atau **Beli Stock**
+  sebagai dataset yang difilter/di-staging/diekspor. Filter status hanya muncul
+  untuk Order; berganti sumber mengosongkan staging + seleksi dan judul/nama
+  berkas menyesuaikan (`order.xlsx` / `beli-stok.xlsx`, "🧾 Pesanan" / "🧾 Beli
+  Stock").
+- Ekspor ke **`order.xlsx`** (atau `beli-stok.xlsx`) langsung di browser (memakai
+  `exceljs`), menyamai tata letak `python/create_excel.py`.
 - Kolom: **Tanggal, Nama Produk, Kuantitas, Harga Satuan, Total Harga**, dengan
   **formula** `Kuantitas × Harga Satuan` per baris, **subtotal** per tanggal,
   dan **Total Keseluruhan**.
@@ -127,12 +150,25 @@ interface OrderItem {
   kuantitas: number;
   hargaSatuan: number;        // snapshot harga unit terpilih
   totalHarga: number;
+  status: "pending" | "paid";
+  affectsStock: boolean;      // jika true, mengurangi stok (pergerakan "sale")
+}
+
+// Item beli stock (beli-stok.json, dikelompokkan per tanggal) — selalu menambah stok
+interface PurchaseItem {
+  tanggal: string;            // ISO yyyy-mm-dd
+  productId: string;
+  namaProduk: string;
+  satuan: string;             // satuan/konversi yang dipilih
+  kuantitas: number;
+  hargaSatuan: number;        // biaya per unit terpilih (bisa diedit, default hargaDasar)
+  totalHarga: number;
 }
 
 // Entri log audit (append-only, disimpan di invoice.audit.v1)
 interface AuditEntry {
   timestamp: string;                                   // ISO datetime
-  entity: "product" | "order" | "stock" | "type";
+  entity: "product" | "order" | "stock" | "type" | "purchase";
   entityId: string;
   action: "create" | "update" | "delete";
   label: string;                                       // ringkasan, mis. "Harga Jual 12.000 → 13.000"
@@ -142,8 +178,11 @@ interface AuditEntry {
 
 > **Backup vs. ekspor per-halaman.** `exportAll()` (`src/lib/backup.ts`)
 > menulis bentuk internal mentah **dengan ID dipertahankan** — satu-satunya
-> round-trip yang aman. Ekspor JSON per-halaman (`io.ts`) me-regenerasi ID saat
-> diimpor sehingga cocok untuk **pertukaran**, bukan cadangan.
+> round-trip yang aman — kini termasuk **Beli Stock** (`purchases`) dan tautan
+> `purchaseId`/`orderId` pada stok. Berkas cadangan sekarang **versi 2**
+> (`BACKUP_VERSION`); pemulihan menolak versi yang tidak cocok. Ekspor JSON
+> per-halaman (`io.ts`) me-regenerasi ID saat diimpor sehingga cocok untuk
+> **pertukaran**, bukan cadangan.
 
 ---
 
@@ -182,7 +221,7 @@ Jika nama repo bukan `invoice`, ubah `base` di `vite.config.ts` agar cocok.
 ```
 src/
   main.tsx              # entry
-  router.tsx            # rute (hash history): /harga, /produk/:id, /pesanan, /stok, /riwayat, /excel, /template, /invoice
+  router.tsx            # rute (hash history): /harga, /produk/:id, /pesanan, /stok, /beli-stok, /riwayat, /excel, /template, /invoice
   styles.css            # @import "tailwindcss"
   lib/
     types.ts            # tipe data (termasuk AuditEntry)
@@ -206,6 +245,7 @@ src/
     TypeSelect.tsx      # combobox tipe (pilih / buat baru)
     ProductDialog.tsx   # form tambah/ubah produk + konversi
     AddItemForm.tsx     # form tambah item pesanan
+    AddPurchaseForm.tsx # form tambah baris beli stock
     ColumnToggle.tsx    # toggle visibilitas kolom
     template/
       Canvas.tsx        # kanvas drag-and-drop A4
@@ -216,6 +256,7 @@ src/
     RootLayout.tsx      # sidebar + outlet
     PricesPage.tsx      # halaman Harga
     OrdersPage.tsx      # halaman Pesanan
+    BeliStockPage.tsx   # halaman Beli Stock
     ExcelPage.tsx       # halaman Ekspor Excel
     TemplatePage.tsx    # halaman Desain Template
     InvoicePage.tsx     # halaman Buat Invoice

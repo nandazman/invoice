@@ -1,23 +1,76 @@
 import { useState } from "react";
-import { Link, Outlet } from "@tanstack/react-router";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
 import { downloadJSON, pickJSONFile } from "../lib/io";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
+const GROUPS_KEY = "invoice.sidebar.groups";
 
 const linkBase =
   "flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-semibold text-slate-500 hover:bg-slate-100 transition-colors";
 const linkActive = "bg-blue-50 text-blue-600 hover:bg-blue-50";
 
+// Sidebar navigation, grouped. Each group's item list is collapsible.
+interface NavItem {
+  to: string;
+  label: string;
+  icon: string;
+}
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Data",
+    items: [
+      { to: "/harga", label: "Harga", icon: "🏷️" },
+      { to: "/pesanan", label: "Pesanan", icon: "📦" },
+      { to: "/stok", label: "Stok", icon: "🏬" },
+      { to: "/beli-stok", label: "Beli Stock", icon: "🛒" },
+      { to: "/riwayat", label: "Riwayat", icon: "🕓" },
+    ],
+  },
+  {
+    label: "Alat",
+    items: [
+      { to: "/excel", label: "Ekspor Excel", icon: "📊" },
+      { to: "/template", label: "Desain Template", icon: "🎨" },
+      { to: "/invoice", label: "Buat Invoice", icon: "🧾" },
+    ],
+  },
+];
+
 export function RootLayout() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1",
   );
+  // Per-group collapse state: a set of group labels whose item list is hidden.
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(GROUPS_KEY);
+      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
 
   function toggle() {
     setCollapsed((c) => {
       const next = !c;
       localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
+  function toggleGroup(label: string) {
+    setClosedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      localStorage.setItem(GROUPS_KEY, JSON.stringify([...next]));
       return next;
     });
   }
@@ -66,97 +119,57 @@ export function RootLayout() {
         </div>
 
         <nav className="flex flex-col gap-1">
-          <Link
-            to="/harga"
-            title="Harga"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">🏷️</span>
-            {!collapsed && "Harga"}
-          </Link>
-          <Link
-            to="/pesanan"
-            title="Pesanan"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">📦</span>
-            {!collapsed && "Pesanan"}
-          </Link>
-          <Link
-            to="/stok"
-            title="Stok"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">🏬</span>
-            {!collapsed && "Stok"}
-          </Link>
-          <Link
-            to="/excel"
-            title="Ekspor Excel"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">📊</span>
-            {!collapsed && "Ekspor Excel"}
-          </Link>
-          <Link
-            to="/template"
-            title="Desain Template"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">🎨</span>
-            {!collapsed && "Desain Template"}
-          </Link>
-          <Link
-            to="/invoice"
-            title="Buat Invoice"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">🧾</span>
-            {!collapsed && "Buat Invoice"}
-          </Link>
-          <Link
-            to="/riwayat"
-            title="Riwayat"
-            className={`${linkBase} ${collapsed ? "justify-center px-0" : ""}`}
-            activeProps={{
-              className: `${linkBase} ${linkActive} ${
-                collapsed ? "justify-center px-0" : ""
-              }`,
-            }}
-          >
-            <span className="text-base">🕓</span>
-            {!collapsed && "Riwayat"}
-          </Link>
+          {NAV_GROUPS.map((group, gi) => {
+            const groupClosed = closedGroups.has(group.label);
+            // Highlight the group header when one of its pages is the active route.
+            const groupActive = group.items.some(
+              (item) => pathname === item.to || pathname.startsWith(item.to + "/"),
+            );
+            return (
+              <div key={group.label} className="flex flex-col gap-1">
+                {collapsed ? (
+                  // Icon-only mode: a thin divider separates groups; items always show.
+                  gi > 0 && <div className="my-2 border-t border-slate-200" />
+                ) : (
+                  <button
+                    onClick={() => toggleGroup(group.label)}
+                    aria-expanded={!groupClosed}
+                    className={`flex items-center gap-1 px-2.5 text-xs uppercase tracking-wide cursor-pointer ${
+                      gi > 0 ? "pt-3 pb-1" : "pt-1 pb-1"
+                    } ${
+                      groupActive
+                        ? "text-blue-600 font-semibold"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    <span className="text-[10px] w-3 inline-block">
+                      {groupClosed ? "▸" : "▾"}
+                    </span>
+                    {group.label}
+                  </button>
+                )}
+                {(collapsed || !groupClosed) &&
+                  group.items.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      title={item.label}
+                      className={`${linkBase} ${
+                        collapsed ? "justify-center px-0" : ""
+                      }`}
+                      activeProps={{
+                        className: `${linkBase} ${linkActive} ${
+                          collapsed ? "justify-center px-0" : ""
+                        }`,
+                      }}
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      {!collapsed && item.label}
+                    </Link>
+                  ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="mt-auto pt-3 flex flex-col gap-1">

@@ -1,6 +1,7 @@
 import type {
   Product,
   OrderItem,
+  PurchaseItem,
   Conversion,
   OrderStatus,
   StockMovement,
@@ -172,6 +173,89 @@ export function parseOrders(text: string): OrderItem[] {
   return items;
 }
 
+// ---------- Purchases (beli-stok.json, grouped by date) ----------
+
+interface RawPurchaseItem {
+  "Produk ID"?: string;
+  "Nama Produk"?: string;
+  Satuan?: string;
+  Kuantitas?: number;
+  "Harga Satuan"?: number;
+  "Total Harga"?: number;
+  CreatedAt?: string;
+  UpdatedAt?: string;
+}
+interface RawPurchaseGroup {
+  Tanggal?: string;
+  Items?: RawPurchaseItem[];
+}
+interface RawPurchaseFile {
+  Purchases?: RawPurchaseGroup[];
+}
+
+export function serializePurchases(items: PurchaseItem[]): string {
+  // Group by ISO date, ascending, emit in beli-stok.json shape.
+  const byDate = new Map<string, PurchaseItem[]>();
+  for (const it of items) {
+    const arr = byDate.get(it.tanggal) ?? [];
+    arr.push(it);
+    byDate.set(it.tanggal, arr);
+  }
+  const dates = [...byDate.keys()].sort();
+  let grand = 0;
+  const Purchases = dates.map((iso) => {
+    const group = byDate.get(iso)!;
+    const totalTanggal = group.reduce((s, i) => s + i.totalHarga, 0);
+    grand += totalTanggal;
+    return {
+      Tanggal: formatTanggalID(iso),
+      Items: group.map((i) => ({
+        "Produk ID": i.productId,
+        "Nama Produk": i.namaProduk,
+        Satuan: i.satuan,
+        Kuantitas: i.kuantitas,
+        "Harga Satuan": i.hargaSatuan,
+        "Total Harga": i.totalHarga,
+        CreatedAt: i.createdAt,
+        UpdatedAt: i.updatedAt,
+      })),
+      "Total Tanggal": totalTanggal,
+    };
+  });
+  return JSON.stringify(
+    { Purchases, "Total Keseluruhan": grand },
+    null,
+    2,
+  );
+}
+
+export function parsePurchases(text: string): PurchaseItem[] {
+  const data = JSON.parse(text) as RawPurchaseFile;
+  const groups = Array.isArray(data?.Purchases) ? data.Purchases : [];
+  const items: PurchaseItem[] = [];
+  for (const g of groups) {
+    const iso = g.Tanggal ? parseTanggalID(g.Tanggal) : todayISO();
+    for (const it of g.Items ?? []) {
+      const kuantitas = Number(it.Kuantitas ?? 0);
+      const hargaSatuan = Number(it["Harga Satuan"] ?? 0);
+      const now = nowISO();
+      items.push({
+        id: uid(),
+        tanggal: iso,
+        productId: String(it["Produk ID"] ?? ""),
+        namaProduk: String(it["Nama Produk"] ?? ""),
+        satuan: String(it.Satuan ?? ""),
+        kuantitas,
+        hargaSatuan,
+        totalHarga: Number(it["Total Harga"] ?? kuantitas * hargaSatuan),
+        createdAt: it.CreatedAt ?? now,
+        updatedAt: it.UpdatedAt ?? it.CreatedAt ?? now,
+      });
+    }
+  }
+  return items;
+}
+
 // ---------- Stock (stock.json) ----------
 
 interface RawMovement {
@@ -182,6 +266,7 @@ interface RawMovement {
   Alasan?: string;
   "Harga Modal"?: number | null;
   "Order ID"?: string | null;
+  "Purchase ID"?: string | null;
   Catatan?: string;
   CreatedAt?: string;
   UpdatedAt?: string;
@@ -201,6 +286,7 @@ export function serializeStock(movements: StockMovement[]): string {
     Alasan: m.reason,
     "Harga Modal": m.hargaModal,
     "Order ID": m.orderId,
+    "Purchase ID": m.purchaseId,
     Catatan: m.note,
     CreatedAt: m.createdAt,
     UpdatedAt: m.updatedAt,
@@ -226,6 +312,7 @@ export function parseStock(text: string): StockMovement[] {
       reason,
       hargaModal: rawModal == null ? null : Number(rawModal),
       orderId: m["Order ID"] ?? null,
+      purchaseId: m["Purchase ID"] ?? null,
       note: String(m.Catatan ?? ""),
       createdAt: m.CreatedAt ?? now,
       updatedAt: m.UpdatedAt ?? m.CreatedAt ?? now,

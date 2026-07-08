@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { OrderItem, OrderStatus } from "../lib/types";
+import type { PurchaseItem } from "../lib/types";
 import {
   useProducts,
-  useOrders,
-  setOrders,
-  addOrder,
-  deleteOrder,
-  setOrderStatus,
+  usePurchases,
+  setPurchases,
+  addPurchase,
+  deletePurchase,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -16,25 +15,22 @@ import {
   formatDateTimeID,
 } from "../lib/format";
 import {
-  serializeOrders,
-  parseOrders,
+  serializePurchases,
+  parsePurchases,
   downloadJSON,
   pickJSONFile,
 } from "../lib/io";
 import { usePersistentVisibility } from "../lib/columns";
-import { AddItemForm } from "../components/AddItemForm";
+import { AddPurchaseForm } from "../components/AddPurchaseForm";
 import { Button, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
-import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
 
-type StatusFilter = "semua" | OrderStatus;
-
 interface DateGroup {
   tanggal: string;
-  items: OrderItem[];
+  items: PurchaseItem[];
   total: number;
 }
 
@@ -50,7 +46,7 @@ const COLS_BEFORE_TOTAL = [
   "hargaSatuan",
 ] as const;
 // Columns shown right of the "Total" column, in display order.
-const COLS_AFTER_TOTAL = ["status", "createdAt", "updatedAt"] as const;
+const COLS_AFTER_TOTAL = ["createdAt", "updatedAt"] as const;
 
 const COLUMNS = [
   { id: "namaProduk", label: "Produk" },
@@ -58,7 +54,6 @@ const COLUMNS = [
   { id: "kuantitas", label: "Qty" },
   { id: "hargaSatuan", label: "Harga Satuan" },
   { id: "totalHarga", label: "Total" },
-  { id: "status", label: "Status" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
 ];
@@ -69,19 +64,12 @@ const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
 
-// Colored badge feel for the inline status dropdown.
-function statusSelectClass(status: OrderStatus): string {
-  return status === "paid"
-    ? "text-emerald-600 bg-emerald-50 border-emerald-200 font-semibold"
-    : "text-amber-600 bg-amber-50 border-amber-200 font-semibold";
-}
-
-export function OrdersPage() {
+export function BeliStockPage() {
   const products = useProducts();
-  const orders = useOrders();
+  const purchases = usePurchases();
 
   const [visible, toggle] = usePersistentVisibility(
-    "invoice.pesanan.cols.v2",
+    "invoice.beli.cols.v1",
     COLUMN_DEFAULTS,
   );
 
@@ -89,33 +77,31 @@ export function OrdersPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [produk, setProduk] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("semua");
 
-  function addItems(items: OrderItem[]) {
-    for (const item of items) addOrder(item);
+  function addItems(items: PurchaseItem[]) {
+    for (const item of items) addPurchase(item);
   }
   function removeItem(id: string) {
-    deleteOrder(id);
+    deletePurchase(id);
   }
   function clearFilters() {
     setExact("");
     setFrom("");
     setTo("");
     setProduk("");
-    setStatus("semua");
   }
 
   async function doImport() {
     try {
       const text = await pickJSONFile();
-      const imported = parseOrders(text);
+      const imported = parsePurchases(text);
       if (
         !confirm(
-          `Impor ${imported.length} item? Ini akan mengganti riwayat saat ini.`,
+          `Impor ${imported.length} item? Ini akan mengganti data saat ini.`,
         )
       )
         return;
-      setOrders(imported);
+      setPurchases(imported);
     } catch (e) {
       alert("Gagal impor: " + (e as Error).message);
     }
@@ -123,20 +109,19 @@ export function OrdersPage() {
 
   const filtered = useMemo(() => {
     const q = produk.trim().toLowerCase();
-    return orders.filter((o) => {
+    return purchases.filter((o) => {
       if (exact && o.tanggal !== exact) return false;
       if (!exact) {
         if (from && o.tanggal < from) return false;
         if (to && o.tanggal > to) return false;
       }
       if (q && !o.namaProduk.toLowerCase().includes(q)) return false;
-      if (status !== "semua" && o.status !== status) return false;
       return true;
     });
-  }, [orders, exact, from, to, produk, status]);
+  }, [purchases, exact, from, to, produk]);
 
   const groups = useMemo<DateGroup[]>(() => {
-    const byDate = new Map<string, OrderItem[]>();
+    const byDate = new Map<string, PurchaseItem[]>();
     for (const o of filtered) {
       const arr = byDate.get(o.tanggal) ?? [];
       arr.push(o);
@@ -155,13 +140,13 @@ export function OrdersPage() {
   }, [filtered]);
 
   const grandTotal = filtered.reduce((s, i) => s + i.totalHarga, 0);
-  const hasFilter = exact || from || to || produk || status !== "semua";
+  const hasFilter = exact || from || to || produk;
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Pesanan</h1>
+      <h1 className="text-2xl font-bold mb-1">Beli Stock</h1>
       <p className="text-slate-500 mb-4">
-        Tambah item dari daftar harga, lihat riwayat per tanggal.
+        Catat pembelian stok; setiap baris menambah stok otomatis.
       </p>
 
       {products.length === 0 ? (
@@ -169,7 +154,7 @@ export function OrdersPage() {
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
       ) : (
-        <AddItemForm products={products} onAdd={addItems} />
+        <AddPurchaseForm products={products} onAdd={addItems} />
       )}
 
       <Panel>
@@ -204,16 +189,6 @@ export function OrdersPage() {
               placeholder="Nama produk…"
             />
           </Field>
-          <Field label="Status" className="w-36">
-            <Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as StatusFilter)}
-            >
-              <option value="semua">Semua</option>
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-            </Select>
-          </Field>
           {hasFilter && <Button onClick={clearFilters}>Reset</Button>}
         </div>
       </Panel>
@@ -228,7 +203,9 @@ export function OrdersPage() {
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
           <Button onClick={doImport}>Impor JSON</Button>
           <Button
-            onClick={() => downloadJSON("order.json", serializeOrders(orders))}
+            onClick={() =>
+              downloadJSON("beli-stok.json", serializePurchases(purchases))
+            }
           >
             Ekspor JSON
           </Button>
@@ -238,7 +215,7 @@ export function OrdersPage() {
           <div className="text-center text-slate-400 py-8">
             {hasFilter
               ? "Tidak ada item cocok dengan filter."
-              : "Belum ada pesanan."}
+              : "Belum ada pembelian."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -260,9 +237,6 @@ export function OrdersPage() {
                   {visible.totalHarga !== false && (
                     <th className={`${thClass} text-right`}>Total</th>
                   )}
-                  {visible.status !== false && (
-                    <th className={thClass}>Status</th>
-                  )}
                   {visible.createdAt !== false && (
                     <th className={thClass}>Dibuat</th>
                   )}
@@ -279,7 +253,6 @@ export function OrdersPage() {
                     group={g}
                     visible={visible}
                     onRemove={removeItem}
-                    onSetStatus={setOrderStatus}
                   />
                 ))}
               </tbody>
@@ -295,12 +268,10 @@ function GroupRows({
   group,
   visible,
   onRemove,
-  onSetStatus,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
   onRemove: (id: string) => void;
-  onSetStatus: (id: string, status: OrderStatus) => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -357,20 +328,6 @@ function GroupRows({
           {visible.totalHarga !== false && (
             <td className={`${tdClass} text-right tabular-nums`}>
               {formatRupiah(it.totalHarga)}
-            </td>
-          )}
-          {visible.status !== false && (
-            <td className={tdClass}>
-              <Select
-                className={`w-auto py-1 ${statusSelectClass(it.status)}`}
-                value={it.status}
-                onChange={(e) =>
-                  onSetStatus(it.id, e.target.value as OrderStatus)
-                }
-              >
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-              </Select>
             </td>
           )}
           {visible.createdAt !== false && (

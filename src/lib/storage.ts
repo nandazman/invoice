@@ -1,9 +1,16 @@
-import type { Product, OrderItem, StockMovement, AuditEntry } from "./types";
+import type {
+  Product,
+  OrderItem,
+  PurchaseItem,
+  StockMovement,
+  AuditEntry,
+} from "./types";
 import { seedProducts } from "./seed";
 import { nowISO } from "./format";
 
 const PRODUCTS_KEY = "invoice.products.v1";
 const ORDERS_KEY = "invoice.orders.v1";
+const PURCHASES_KEY = "invoice.purchases.v1";
 const TYPES_KEY = "invoice.types.v1";
 const STOCK_KEY = "invoice.stock.v1";
 const AUDIT_KEY = "invoice.audit.v1";
@@ -79,12 +86,26 @@ export function saveOrders(orders: OrderItem[]): void {
   write(ORDERS_KEY, orders);
 }
 
+export function loadPurchases(): PurchaseItem[] {
+  const now = nowISO();
+  return read<PurchaseItem[]>(PURCHASES_KEY, []).map((p) => ({
+    ...p,
+    createdAt: p.createdAt ?? now,
+    updatedAt: p.updatedAt ?? p.createdAt ?? now,
+  }));
+}
+
+export function savePurchases(purchases: PurchaseItem[]): void {
+  write(PURCHASES_KEY, purchases);
+}
+
 export function loadStock(): StockMovement[] {
   const now = nowISO();
   return read<StockMovement[]>(STOCK_KEY, []).map((m) => ({
     ...m,
     hargaModal: m.hargaModal ?? null,
     orderId: m.orderId ?? null,
+    purchaseId: m.purchaseId ?? null,
     note: m.note ?? "",
     createdAt: m.createdAt ?? now,
     updatedAt: m.updatedAt ?? m.createdAt ?? now,

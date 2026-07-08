@@ -13,6 +13,7 @@ import { ExcelPage } from "./routes/ExcelPage";
 import { TemplatePage } from "./routes/TemplatePage";
 import { InvoicePage } from "./routes/InvoicePage";
 import { StockPage } from "./routes/StockPage";
+import { BeliStockPage } from "./routes/BeliStockPage";
 import { HistoryPage } from "./routes/HistoryPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
@@ -49,6 +50,12 @@ const stockRoute = createRoute({
   component: StockPage,
 });
 
+const beliStockRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/beli-stok",
+  component: BeliStockPage,
+});
+
 const excelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/excel",
@@ -79,6 +86,7 @@ const routeTree = rootRoute.addChildren([
   productDetailRoute,
   ordersRoute,
   stockRoute,
+  beliStockRoute,
   excelRoute,
   templateRoute,
   invoiceRoute,

@@ -1,4 +1,4 @@
-import type { OrderItem } from "./types";
+import type { LineItem } from "./types";
 import { formatTanggalID, formatRupiah, formatAngka } from "./format";
 
 // Render the staged orders as a table image (PNG), grouped by date with
@@ -8,13 +8,14 @@ import { formatTanggalID, formatRupiah, formatAngka } from "./format";
 
 type Col = { key: string; label: string; width: number; align: "left" | "right" };
 
-const COLS: Col[] = [
+const COLS_FULL: Col[] = [
   { key: "tanggal", label: "Tanggal", width: 130, align: "left" },
   { key: "produk", label: "Nama Produk", width: 230, align: "left" },
   { key: "qty", label: "Kuantitas", width: 100, align: "right" },
   { key: "harga", label: "Harga Satuan", width: 140, align: "right" },
   { key: "total", label: "Total Harga", width: 150, align: "right" },
 ];
+const COLS_SUMMARY: Col[] = COLS_FULL.slice(0, 3);
 
 const PAD = 10; // horizontal cell padding
 const ROW_H = 34;
@@ -29,8 +30,8 @@ const GRAND_FILL = "#C5D9F1";
 const BORDER = "#B0B0B0";
 const TEXT = "#1e293b";
 
-function groupByDate(items: OrderItem[]): [string, OrderItem[]][] {
-  const byDate = new Map<string, OrderItem[]>();
+function groupByDate(items: LineItem[]): [string, LineItem[]][] {
+  const byDate = new Map<string, LineItem[]>();
   for (const it of items) {
     const arr = byDate.get(it.tanggal) ?? [];
     arr.push(it);
@@ -39,13 +40,19 @@ function groupByDate(items: OrderItem[]): [string, OrderItem[]][] {
   return [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-export function renderOrdersImage(items: OrderItem[]): Promise<Blob> {
+export function renderOrdersImage(
+  items: LineItem[],
+  opts?: { showPrice?: boolean },
+): Promise<Blob> {
+  const showPrice = opts?.showPrice ?? true;
+  const COLS = showPrice ? COLS_FULL : COLS_SUMMARY;
   const groups = groupByDate(items);
 
-  // Count total drawn rows: header + (item rows + subtotal per group) + grand.
+  // Count total drawn rows: header + item rows, plus a subtotal per group and a
+  // grand-total row when prices (and therefore money totals) are shown.
   let bodyRows = 0;
-  for (const [, grp] of groups) bodyRows += grp.length + 1;
-  const grandRows = groups.length > 0 ? 1 : 0;
+  for (const [, grp] of groups) bodyRows += grp.length + (showPrice ? 1 : 0);
+  const grandRows = showPrice && groups.length > 0 ? 1 : 0;
 
   const width = COLS.reduce((s, c) => s + c.width, 0);
   const height = HEADER_H + bodyRows * ROW_H + grandRows * ROW_H;
@@ -135,8 +142,10 @@ export function renderOrdersImage(items: OrderItem[]): Promise<Blob> {
       if (i === 0) drawCell(formatTanggalID(iso), 0, y);
       drawCell(it.namaProduk, 1, y);
       drawCell(formatAngka(it.kuantitas), 2, y);
-      drawCell(formatRupiah(it.hargaSatuan), 3, y);
-      drawCell(formatRupiah(it.totalHarga), 4, y);
+      if (showPrice) {
+        drawCell(formatRupiah(it.hargaSatuan), 3, y);
+        drawCell(formatRupiah(it.totalHarga), 4, y);
+      }
       borderRow(y, ROW_H);
       y += ROW_H;
     });
@@ -154,13 +163,15 @@ export function renderOrdersImage(items: OrderItem[]): Promise<Blob> {
       }
     }
 
-    // Subtotal row.
-    const subtotal = group.reduce((s, it) => s + it.totalHarga, 0);
-    fillRow(y, ROW_H, SUBTOTAL_FILL);
-    drawCell(`Total ${formatTanggalID(iso)}`, 1, y, { bold: true });
-    drawCell(formatRupiah(subtotal), 4, y, { bold: true });
-    borderRow(y, ROW_H);
-    y += ROW_H;
+    // Subtotal row (price mode only).
+    if (showPrice) {
+      const subtotal = group.reduce((s, it) => s + it.totalHarga, 0);
+      fillRow(y, ROW_H, SUBTOTAL_FILL);
+      drawCell(`Total ${formatTanggalID(iso)}`, 1, y, { bold: true });
+      drawCell(formatRupiah(subtotal), 4, y, { bold: true });
+      borderRow(y, ROW_H);
+      y += ROW_H;
+    }
   }
 
   // Grand total.
@@ -179,19 +190,25 @@ export function renderOrdersImage(items: OrderItem[]): Promise<Blob> {
   });
 }
 
-export async function copyOrdersImage(items: OrderItem[]): Promise<void> {
-  const blob = await renderOrdersImage(items);
+export async function copyOrdersImage(
+  items: LineItem[],
+  opts?: { showPrice?: boolean },
+): Promise<void> {
+  const blob = await renderOrdersImage(items, opts);
   await navigator.clipboard.write([
     new ClipboardItem({ "image/png": blob }),
   ]);
 }
 
-export async function downloadOrdersImage(items: OrderItem[]): Promise<void> {
-  const blob = await renderOrdersImage(items);
+export async function downloadOrdersImage(
+  items: LineItem[],
+  opts?: { filename?: string; showPrice?: boolean },
+): Promise<void> {
+  const blob = await renderOrdersImage(items, opts);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "order.png";
+  a.download = opts?.filename ?? "order.png";
   a.click();
   URL.revokeObjectURL(url);
 }

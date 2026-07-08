@@ -1,6 +1,7 @@
 import type {
   Product,
   OrderItem,
+  PurchaseItem,
   StockMovement,
   AuditEntry,
 } from "./types";
@@ -9,16 +10,18 @@ import { nowISO } from "./format";
 import {
   getProducts,
   getOrders,
+  getPurchases,
   getStock,
   setProducts,
   setOrders,
+  setPurchases,
   setStock,
 } from "./store";
 import { getAudit, setAudit } from "./audit";
 
 // Bumped whenever the on-disk backup shape changes incompatibly. importAll
 // rejects any file whose `version` does not match this exactly.
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 // localStorage keys owned by stores we cannot re-enter through a setter here.
 // Kept in sync with storage.ts (TYPES_KEY) and template-store.ts (TEMPLATES_KEY).
@@ -32,6 +35,7 @@ export interface BackupFile {
   exportedAt: string; // ISO datetime the backup was produced
   products: Product[];
   orders: OrderItem[];
+  purchases: PurchaseItem[];
   stock: StockMovement[];
   types: string[];
   templates: Template[];
@@ -58,6 +62,7 @@ export function exportAll(): string {
     exportedAt: nowISO(),
     products: getProducts(),
     orders: getOrders(),
+    purchases: getPurchases(),
     stock: getStock(),
     types: readArray<string>(TYPES_KEY),
     templates: readArray<Template>(TEMPLATES_KEY),
@@ -87,6 +92,7 @@ export function importAll(text: string): void {
   // Reactive stores: persisted and broadcast immediately.
   setProducts(data.products ?? []);
   setOrders(data.orders ?? []);
+  setPurchases(data.purchases ?? []);
   setStock(data.stock ?? []);
   setAudit(data.audit ?? []);
 
