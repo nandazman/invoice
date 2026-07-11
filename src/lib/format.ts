@@ -17,6 +17,19 @@ export function formatAngka(n: number): string {
   return new Intl.NumberFormat("id-ID").format(n);
 }
 
+// Whole-rupiah rounding used for every displayed money value (formatRupiah uses
+// maximumFractionDigits: 0, i.e. Math.round for display).
+export function roundRupiah(n: number): number {
+  return Math.round(n);
+}
+
+// Sum a list of rupiah line totals the way they are displayed: round each line,
+// then add. This enforces the invariant Σ(displayed lines) === displayed total,
+// so a printed total always equals the sum of the printed per-line amounts.
+export function sumRupiah(nums: number[]): number {
+  return nums.reduce((s, n) => s + roundRupiah(n), 0);
+}
+
 // "2026-06-01" -> "1 Juni 2026"
 export function formatTanggalID(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);

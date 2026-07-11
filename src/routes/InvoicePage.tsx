@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { OrderItem, OrderStatus } from "../lib/types";
 import type { InvoiceData, FieldType } from "../lib/template-types";
 import { fieldKey } from "../lib/template-types";
 import { useOrders } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
-import { formatRupiah, formatAngka } from "../lib/format";
+import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
 import { Preview } from "../components/template/Preview";
 import { Panel } from "../components/Panel";
 import { Input } from "../components/Input";
@@ -109,7 +110,7 @@ export function InvoicePage() {
     () => [...staged].sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
     [staged],
   );
-  const total = staged.reduce((s, i) => s + i.totalHarga, 0);
+  const total = sumRupiah(staged.map((i) => i.totalHarga));
   const hasFilter = exact || from || to || produk || status !== "semua";
 
   const data: InvoiceData = {
@@ -321,10 +322,15 @@ export function InvoicePage() {
         </div>
       </div>
 
-      {/* Full-size page used only for printing */}
-      <div className="print-area">
-        <Preview template={template} data={data} fit={false} />
-      </div>
+      {/* Full-size pages used only for printing. Rendered into <body> (outside
+          #root) so the multi-page invoice flows and breaks per A4 sheet — a
+          position:absolute overlay inside the app shell can't paginate. */}
+      {createPortal(
+        <div className="print-portal">
+          <Preview template={template} data={data} fit={false} />
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

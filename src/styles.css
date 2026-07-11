@@ -8,9 +8,14 @@
   }
 }
 
-/* The full-size print page is hidden on screen, shown only when printing. */
-.print-area {
-  display: none;
+/* The full-size print pages are portaled to <body>. Kept rendered (not
+   display:none) but pushed off-screen so their row heights still measure for
+   pagination; revealed only when printing. */
+.print-portal {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  width: 794px; /* PAGE_W, so measured layout matches the printed page */
 }
 
 @media print {
@@ -21,20 +26,21 @@
   body {
     background: white;
   }
-  body * {
-    visibility: hidden;
+  /* Hide the whole app; show only the portaled invoice pages in normal flow. */
+  #root {
+    display: none !important;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
-  }
-  .print-area {
-    display: block;
-    position: absolute;
+  .print-portal {
+    position: static;
     left: 0;
-    top: 0;
+    width: auto;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  /* One computed sheet per physical page. */
+  .invoice-page-break {
+    break-after: page;
+    page-break-after: always;
   }
   .no-print {
     display: none !important;

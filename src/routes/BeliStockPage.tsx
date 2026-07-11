@@ -13,6 +13,7 @@ import {
   formatAngka,
   formatTanggalID,
   formatDateTimeID,
+  sumRupiah,
 } from "../lib/format";
 import {
   serializePurchases,
@@ -134,12 +135,12 @@ export function BeliStockPage() {
         return {
           tanggal,
           items,
-          total: items.reduce((s, i) => s + i.totalHarga, 0),
+          total: sumRupiah(items.map((i) => i.totalHarga)),
         };
       });
   }, [filtered]);
 
-  const grandTotal = filtered.reduce((s, i) => s + i.totalHarga, 0);
+  const grandTotal = sumRupiah(filtered.map((i) => i.totalHarga));
   const hasFilter = exact || from || to || produk;
 
   return (

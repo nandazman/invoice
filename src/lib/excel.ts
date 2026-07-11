@@ -77,7 +77,11 @@ export async function buildOrdersWorkbook(
         dCell.numFmt = NUM_FMT;
 
         const eCell = r.getCell(5);
-        eCell.value = { formula: `C${rowNum}*D${rowNum}` };
+        // Live formula, but ROUND each line to whole rupiah so the visible cell
+        // equals what subtotals/grand total sum — Σ(displayed lines) === total.
+        // Keeps the sheet recalculating on manual edits. (App data always has
+        // totalHarga === kuantitas × hargaSatuan, so this matches the stored total.)
+        eCell.value = { formula: `ROUND(C${rowNum}*D${rowNum},0)` };
         eCell.numFmt = NUM_FMT;
       }
 
@@ -99,7 +103,8 @@ export async function buildOrdersWorkbook(
     // summary mode the sheet is just a grouped listing with no money totals.
     if (!showPrice) continue;
 
-    // Subtotal row.
+    // Subtotal row. SUM over the already-rounded E cells, so the subtotal equals
+    // what a reader gets adding the visible line amounts.
     const sub = ws.addRow([null, `Total ${formatTanggalID(iso)}`, null, null, null]);
     const subNum = sub.number;
     const bCell = sub.getCell(2);
@@ -117,7 +122,8 @@ export async function buildOrdersWorkbook(
     subtotalCells.push(`E${subNum}`);
   }
 
-  // Grand total row.
+  // Grand total row. Sum of the subtotal cells (each already a sum of rounded
+  // lines) — matches the app/text/image/JSON grand total and stays live.
   if (showPrice && subtotalCells.length > 0) {
     const grand = ws.addRow([null, "Total Keseluruhan", null, null, null]);
     const bCell = grand.getCell(2);

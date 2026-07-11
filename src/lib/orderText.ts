@@ -1,5 +1,5 @@
 import type { LineItem } from "./types";
-import { formatTanggalID, formatRupiah, formatAngka } from "./format";
+import { formatTanggalID, formatRupiah, formatAngka, sumRupiah } from "./format";
 
 // Build a chat-friendly plain-text summary of the staged orders, grouped by
 // date with per-date subtotals and a grand total. Meant for pasting into
@@ -32,13 +32,13 @@ export function buildOrdersText(
       lines.push(`• ${it.namaProduk}${unit} ×${formatAngka(it.kuantitas)}${price}`);
     }
     if (showPrice) {
-      const subtotal = group.reduce((s, it) => s + it.totalHarga, 0);
+      const subtotal = sumRupiah(group.map((it) => it.totalHarga));
       lines.push(`  Subtotal: ${formatRupiah(subtotal)}`);
     }
   }
 
   if (showPrice) {
-    const grandTotal = items.reduce((s, it) => s + it.totalHarga, 0);
+    const grandTotal = sumRupiah(items.map((it) => it.totalHarga));
     lines.push("");
     lines.push(`💰 Total: ${formatRupiah(grandTotal)}`);
   }

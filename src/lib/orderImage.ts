@@ -1,5 +1,5 @@
 import type { LineItem } from "./types";
-import { formatTanggalID, formatRupiah, formatAngka } from "./format";
+import { formatTanggalID, formatRupiah, formatAngka, sumRupiah } from "./format";
 
 // Render the staged orders as a table image (PNG), grouped by date with
 // subtotals and a grand total — mirroring the XLSX layout. Drawn directly on a
@@ -132,7 +132,7 @@ export function renderOrdersImage(
   borderRow(y, HEADER_H);
   y += HEADER_H;
 
-  const grandTotal = items.reduce((s, it) => s + it.totalHarga, 0);
+  const grandTotal = sumRupiah(items.map((it) => it.totalHarga));
 
   for (const [iso, group] of groups) {
     const groupTop = y;
@@ -165,7 +165,7 @@ export function renderOrdersImage(
 
     // Subtotal row (price mode only).
     if (showPrice) {
-      const subtotal = group.reduce((s, it) => s + it.totalHarga, 0);
+      const subtotal = sumRupiah(group.map((it) => it.totalHarga));
       fillRow(y, ROW_H, SUBTOTAL_FILL);
       drawCell(`Total ${formatTanggalID(iso)}`, 1, y, { bold: true });
       drawCell(formatRupiah(subtotal), 4, y, { bold: true });
