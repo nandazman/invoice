@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { OrderItem, OrderStatus } from "../lib/types";
+import type { OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
   useProducts,
   useOrders,
@@ -8,6 +8,7 @@ import {
   addOrder,
   deleteOrder,
   setOrderStatus,
+  addPurchase,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -24,6 +25,7 @@ import {
 } from "../lib/io";
 import { usePersistentVisibility } from "../lib/columns";
 import { AddItemForm } from "../components/AddItemForm";
+import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
 import { Button, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
@@ -91,9 +93,16 @@ export function OrdersPage() {
   const [to, setTo] = useState("");
   const [produk, setProduk] = useState("");
   const [status, setStatus] = useState<StatusFilter>("semua");
+  // The order date whose items are open in the "Beli stok dari pesanan" dialog.
+  const [buyDate, setBuyDate] = useState<string | null>(null);
 
   function addItems(items: OrderItem[]) {
     for (const item of items) addOrder(item);
+  }
+  function commitPurchases(items: PurchaseItem[]) {
+    for (const item of items)
+      addPurchase(item, "pembelian dari pesanan langsung untuk stok (by order)");
+    setBuyDate(null);
   }
   function removeItem(id: string) {
     deleteOrder(id);
@@ -281,6 +290,7 @@ export function OrdersPage() {
                     visible={visible}
                     onRemove={removeItem}
                     onSetStatus={setOrderStatus}
+                    onBuy={() => setBuyDate(g.tanggal)}
                   />
                 ))}
               </tbody>
@@ -288,6 +298,16 @@ export function OrdersPage() {
           </div>
         )}
       </Panel>
+
+      {buyDate && (
+        <BuyFromOrderDialog
+          tanggal={buyDate}
+          items={orders.filter((o) => o.tanggal === buyDate)}
+          products={products}
+          onConfirm={commitPurchases}
+          onClose={() => setBuyDate(null)}
+        />
+      )}
     </div>
   );
 }
@@ -297,11 +317,13 @@ function GroupRows({
   visible,
   onRemove,
   onSetStatus,
+  onBuy,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
   onRemove: (id: string) => void;
   onSetStatus: (id: string, status: OrderStatus) => void;
+  onBuy: () => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -323,7 +345,11 @@ function GroupRows({
             {formatRupiah(group.total)}
           </td>
         )}
-        <td className={tdClass} colSpan={afterCount}></td>
+        <td className={`${tdClass} text-right`} colSpan={afterCount}>
+          <Button size="sm" onClick={onBuy} title="Catat pembelian stok untuk tanggal ini">
+            Beli stok
+          </Button>
+        </td>
       </tr>
       {group.items.map((it) => (
         <tr key={it.id} className="hover:bg-slate-50">
