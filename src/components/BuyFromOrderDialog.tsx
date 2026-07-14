@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { OrderItem, Product, PurchaseItem } from "../lib/types";
 import { formatRupiah, formatAngka, formatTanggalID } from "../lib/format";
 import { modalCostFor, purchaseFromOrderItem } from "../lib/purchaseFromOrder";
@@ -22,6 +23,61 @@ interface Row {
   selected: boolean;
 }
 
+// Animated success check: the ring sweeps in, then the tick draws itself, with a
+// small pop. Self-contained (scoped <style>) so it needs no global CSS.
+function SuccessCheck() {
+  return (
+    <div className="flex justify-center mb-3">
+      <style>{`
+        @keyframes bfo-pop {
+          0% { transform: scale(0); }
+          70% { transform: scale(1.1); }
+          100% { transform: scale(1); }
+        }
+        @keyframes bfo-draw { to { stroke-dashoffset: 0; } }
+        .bfo-check { animation: bfo-pop 0.35s ease-out both; }
+        .bfo-ring {
+          stroke-dasharray: 166; stroke-dashoffset: 166;
+          animation: bfo-draw 0.45s ease-out 0.1s forwards;
+        }
+        .bfo-tick {
+          stroke-dasharray: 48; stroke-dashoffset: 48;
+          animation: bfo-draw 0.3s ease-out 0.5s forwards;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .bfo-check, .bfo-ring, .bfo-tick { animation: none; }
+          .bfo-ring, .bfo-tick { stroke-dashoffset: 0; }
+        }
+      `}</style>
+      <svg
+        className="bfo-check"
+        width="64"
+        height="64"
+        viewBox="0 0 52 52"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle
+          className="bfo-ring"
+          cx="26"
+          cy="26"
+          r="24"
+          stroke="#10b981"
+          strokeWidth="3"
+        />
+        <path
+          className="bfo-tick"
+          d="M15 27 l7 7 l15 -15"
+          stroke="#10b981"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export function BuyFromOrderDialog({
   tanggal,
   items,
@@ -29,6 +85,7 @@ export function BuyFromOrderDialog({
   onConfirm,
   onClose,
 }: Props) {
+  const navigate = useNavigate();
   const productById = useMemo(() => {
     const m = new Map<string, Product>();
     for (const p of products) m.set(p.id, p);
@@ -49,6 +106,8 @@ export function BuyFromOrderDialog({
     }),
   );
   const [confirming, setConfirming] = useState(false);
+  // How many items were committed; non-null flips the dialog to its success view.
+  const [savedCount, setSavedCount] = useState<number | null>(null);
 
   function toggle(id: string, checked: boolean) {
     setRows((prev) =>
@@ -66,6 +125,46 @@ export function BuyFromOrderDialog({
   function build(): PurchaseItem[] {
     return selectedRows.map((r) =>
       purchaseFromOrderItem(r.order, r.product, { hargaSatuan: r.harga }),
+    );
+  }
+
+  function save() {
+    const items = build();
+    onConfirm(items);
+    setConfirming(false);
+    setSavedCount(items.length);
+  }
+
+  // Success view: purchases committed; offer a jump to the stock page.
+  if (savedCount !== null) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+        onClick={onClose}
+      >
+        <div
+          className="bg-white rounded-xl p-6 w-full max-w-md text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SuccessCheck />
+          <h2 className="text-xl font-bold mb-1">Tersimpan</h2>
+          <p className="text-slate-600 mb-5">
+            {savedCount} item dicatat sebagai pembelian stok dari pesanan{" "}
+            {formatTanggalID(tanggal)}.
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button onClick={onClose}>Tutup</Button>
+            <PrimaryButton
+              onClick={() => {
+                onClose();
+                navigate({ to: "/stok" });
+              }}
+            >
+              Lihat Stok
+            </PrimaryButton>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -184,9 +283,7 @@ export function BuyFromOrderDialog({
               </p>
               <div className="flex justify-end gap-3">
                 <Button onClick={() => setConfirming(false)}>Batal</Button>
-                <DangerButton onClick={() => onConfirm(build())}>
-                  Ya, simpan
-                </DangerButton>
+                <DangerButton onClick={save}>Ya, simpan</DangerButton>
               </div>
             </div>
           </div>
