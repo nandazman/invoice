@@ -99,12 +99,14 @@ export function OrdersPage() {
   function addItems(items: OrderItem[]) {
     for (const item of items) addOrder(item);
   }
-  function commitPurchases(items: PurchaseItem[]) {
+  function commitPurchases(
+    items: { purchase: PurchaseItem; order: OrderItem }[],
+  ) {
     for (const item of items)
       addPurchase(
-        item,
+        item.purchase,
         "pembelian dari pesanan langsung untuk stok (by order)",
-        item.id,
+        item.order,
       );
     // Dialog stays open to show its success view; it closes itself via onClose.
   }

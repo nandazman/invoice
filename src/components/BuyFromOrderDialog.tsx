@@ -9,7 +9,9 @@ interface Props {
   tanggal: string; // the order date the items belong to
   items: OrderItem[]; // order items on that date
   products: Product[];
-  onConfirm: (purchases: PurchaseItem[]) => void;
+  onConfirm: (
+    purchases: { purchase: PurchaseItem; order: OrderItem }[],
+  ) => void;
   onClose: () => void;
 }
 
@@ -122,10 +124,13 @@ export function BuyFromOrderDialog({
   );
   const canSave = selectedRows.length > 0;
 
-  function build(): PurchaseItem[] {
-    return selectedRows.map((r) =>
-      purchaseFromOrderItem(r.order, r.product, { hargaSatuan: r.harga }),
-    );
+  function build(): { purchase: PurchaseItem; order: OrderItem }[] {
+    return selectedRows.map((r) => ({
+      purchase: purchaseFromOrderItem(r.order, r.product, {
+        hargaSatuan: r.harga,
+      }),
+      order: r.order,
+    }));
   }
 
   function save() {

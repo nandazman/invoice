@@ -12,9 +12,10 @@ vi.hoisted(() => {
     },
   });
 });
-import type { Product, PurchaseItem } from "./types";
+import type { OrderItem, Product, PurchaseItem } from "./types";
 import {
   addPurchase,
+  deletePurchase,
   getStock,
   setProducts,
   setPurchases,
@@ -34,20 +35,30 @@ const purchase: PurchaseItem = {
   createdAt: "2026-07-16T00:00:00.000Z",
   updatedAt: "2026-07-16T00:00:00.000Z",
 };
+const order: OrderItem = {
+  id: "order-1", tanggal: "2026-07-16", productId: "p1",
+  namaProduk: "Almond", satuan: "pcs", kuantitas: 5,
+  hargaSatuan: 5000, totalHarga: 25000, status: "pending", affectsStock: false,
+  createdAt: "2026-07-16T00:00:00.000Z",
+  updatedAt: "2026-07-16T00:00:00.000Z",
+};
 
 afterEach(() => {
   setProducts([]); setPurchases([]); setStock([]);
 });
 
 describe("addPurchase", () => {
-  it("adds equal and opposite stock movements for an order purchase", () => {
+  it("links the original order and removes both movements when deleted", () => {
     setProducts([product]);
-    addPurchase(purchase, "from order", "order-1");
+    addPurchase(purchase, "from order", order);
 
     expect(getStock()).toMatchObject([
       { qty: 5, reason: "purchase", purchaseId: "buy-1", orderId: null },
-      { qty: -5, reason: "sale", purchaseId: null, orderId: "order-1" },
+      { qty: -5, reason: "sale", purchaseId: "buy-1", orderId: "order-1" },
     ]);
     expect(getStock().reduce((sum, movement) => sum + movement.qty, 0)).toBe(0);
+
+    deletePurchase(purchase.id);
+    expect(getStock()).toEqual([]);
   });
 });

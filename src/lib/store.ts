@@ -260,7 +260,7 @@ export function deleteOrders(ids: Set<string>): void {
 export function addPurchase(
   item: PurchaseItem,
   note = "dari beli stok",
-  orderId?: string,
+  order?: OrderItem,
 ): void {
   const now = nowISO();
   const filled: PurchaseItem = {
@@ -296,7 +296,7 @@ export function addPurchase(
       createdAt: now,
       updatedAt: now,
     });
-    if (orderId) {
+    if (order) {
       addMovement({
         id: uid(),
         productId: product.id,
@@ -305,8 +305,8 @@ export function addPurchase(
         satuan: product.satuan ?? "",
         reason: "sale",
         hargaModal: null,
-        orderId,
-        purchaseId: null,
+        orderId: order.id,
+        purchaseId: filled.id,
         note: "dari pesanan",
         createdAt: now,
         updatedAt: now,
