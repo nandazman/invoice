@@ -101,7 +101,11 @@ export function OrdersPage() {
   }
   function commitPurchases(items: PurchaseItem[]) {
     for (const item of items)
-      addPurchase(item, "pembelian dari pesanan langsung untuk stok (by order)");
+      addPurchase(
+        item,
+        "pembelian dari pesanan langsung untuk stok (by order)",
+        item.id,
+      );
     // Dialog stays open to show its success view; it closes itself via onClose.
   }
   function removeItem(id: string) {

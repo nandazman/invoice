@@ -257,7 +257,11 @@ export function deleteOrders(ids: Set<string>): void {
 // Add a Beli Stock line, stamping timestamps, and auto-create a linked
 // `purchase` movement that ADDS the bought quantity (converted to base units)
 // into stock, valued at the entered cost per base unit.
-export function addPurchase(item: PurchaseItem, note = "dari beli stok"): void {
+export function addPurchase(
+  item: PurchaseItem,
+  note = "dari beli stok",
+  orderId?: string,
+): void {
   const now = nowISO();
   const filled: PurchaseItem = {
     ...item,
@@ -292,6 +296,22 @@ export function addPurchase(item: PurchaseItem, note = "dari beli stok"): void {
       createdAt: now,
       updatedAt: now,
     });
+    if (orderId) {
+      addMovement({
+        id: uid(),
+        productId: product.id,
+        tanggal: filled.tanggal,
+        qty: -Math.abs(baseQty),
+        satuan: product.satuan ?? "",
+        reason: "sale",
+        hargaModal: null,
+        orderId,
+        purchaseId: null,
+        note: "dari pesanan",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 }
 
