@@ -75,6 +75,7 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
       stokMin: Number(stokMin) || 0,
       createdAt: product?.createdAt ?? now,
       updatedAt: now,
+      deletedAt: null,
     });
   }
 

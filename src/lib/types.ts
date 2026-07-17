@@ -1,3 +1,9 @@
+// Soft deletes: every stored entity except AuditEntry carries `deletedAt`.
+// Deleting stamps it instead of dropping the row, so the row survives in
+// IndexedDB and a delete stays representable as data rather than as absence.
+// The in-memory stores hold LIVE rows only (`deletedAt === null`), so nothing
+// downstream of `store.ts` ever sees a tombstone and no page needs to filter.
+
 // A packaging conversion for a product, e.g. "1 box = 12 unit".
 // Each conversion carries its OWN price (may differ from base unit x jumlah).
 export interface Conversion {
@@ -18,6 +24,7 @@ export interface Product {
   stokMin: number; // low-stock threshold in base units (0 = no threshold)
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }
 
 export type OrderStatus = "pending" | "paid";
@@ -35,6 +42,7 @@ export interface OrderItem {
   affectsStock: boolean; // if true, adding this item deducts stock (a "sale" movement)
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }
 
 // A stock-purchase line (Beli Stock). Pesanan-shaped but without status /
@@ -51,6 +59,7 @@ export interface PurchaseItem {
   totalHarga: number; // kuantitas x hargaSatuan
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }
 
 // The common fields the export helpers (excel/text/image) read. Both OrderItem
@@ -96,4 +105,5 @@ export interface StockMovement {
   note: string; // free-text note
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }

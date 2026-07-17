@@ -117,6 +117,7 @@ export function AddPurchaseForm({ products, onAdd }: Props) {
       totalHarga: qtyNum * harga,
       createdAt: now,
       updatedAt: now,
+      deletedAt: null,
     };
   }
 

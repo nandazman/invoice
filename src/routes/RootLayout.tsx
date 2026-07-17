@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
+import { flushWrites } from "../lib/db";
 import { downloadJSON, pickJSONFile } from "../lib/io";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
@@ -90,8 +91,17 @@ export function RootLayout() {
     try {
       const text = await pickJSONFile();
       importAll(text);
-      alert("Data berhasil dipulihkan. Halaman akan dimuat ulang.");
-      location.reload();
+      // Every store writes to IndexedDB fire-and-forget, so the restore is NOT
+      // durable when importAll returns — only the in-memory arrays are. Wait
+      // for the writes to land before reporting success, or a tab closed right
+      // after "berhasil" would lose the whole restore.
+      //
+      // This used to end in location.reload(), which was safe when stores wrote
+      // synchronously to localStorage but now kills the in-flight transactions
+      // outright. No reload is needed: every store is reactive, so the UI has
+      // already updated.
+      await flushWrites();
+      alert("Data berhasil dipulihkan.");
     } catch (e) {
       alert("Gagal memulihkan: " + (e as Error).message);
     }

@@ -127,6 +127,7 @@ export function AddMovementForm({ products, onAdd }: Props) {
       note: r.note.trim(),
       createdAt: now,
       updatedAt: now,
+      deletedAt: null,
     };
   }
 

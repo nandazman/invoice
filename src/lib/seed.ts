@@ -24,5 +24,6 @@ export function seedProducts(): Product[] {
     stokMin: 0,
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   }));
 }

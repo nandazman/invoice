@@ -97,6 +97,7 @@ export interface Template {
   elements: TemplateElement[];
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }
 
 // Data injected into a template at generation time.

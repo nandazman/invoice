@@ -5,8 +5,15 @@ produk dan menghitung pesanan secara otomatis. Dibangun dengan **Vite + React +
 TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
 **GitHub Pages** lewat GitHub Actions.
 
-Semua data disimpan di **localStorage browser** dan dapat di-**ekspor/impor
-sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
+Semua data disimpan di **IndexedDB browser** (via Dexie) dan dapat di-**ekspor/
+impor sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
+
+> **Migrasi penyimpanan (2026-07-17):** data lama otomatis dipindahkan dari
+> localStorage ke IndexedDB saat aplikasi pertama kali dibuka — tanpa tindakan
+> apa pun dari pengguna. Kunci localStorage lama **tidak dihapus** (jalur
+> rollback; dihapus pada rilis berikutnya). File **cadangan lama (v2) tetap bisa
+> dipulihkan**. Preferensi tampilan (sidebar, kolom) tetap di localStorage.
+> Lihat `docs/2026-07-17/plan.md`.
 
 > **Status:** Delapan halaman sudah **selesai** — Harga, Pesanan, Stok, Beli
 > Stock, Ekspor Excel, Desain Template, Buat Invoice, dan Riwayat. Setiap produk
@@ -115,7 +122,7 @@ sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 - **Pengaturan template**: nama template, data bisnis (nama, alamat, telepon,
   logo via unggah atau URL), dan data pelanggan contoh.
 - **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z), hapus via Delete, dan **simpan
-  otomatis** ke localStorage. Buat, duplikat, dan hapus template.
+  otomatis** ke IndexedDB. Buat, duplikat, dan hapus template.
 
 ### Halaman Buat Invoice (`/invoice`)
 - Pilih template, isi **data invoice** (nomor, tanggal terbit, jatuh tempo).
@@ -220,13 +227,16 @@ Jika nama repo bukan `invoice`, ubah `base` di `vite.config.ts` agar cocok.
 
 ```
 src/
-  main.tsx              # entry
+  main.tsx              # entry: bootstrap() lalu render
   router.tsx            # rute (hash history): /harga, /produk/:id, /pesanan, /stok, /beli-stok, /riwayat, /excel, /template, /invoice
   styles.css            # @import "tailwindcss"
+  test-setup.ts         # fake-indexeddb + stub localStorage untuk vitest
   lib/
-    types.ts            # tipe data (termasuk AuditEntry)
+    types.ts            # tipe data (termasuk AuditEntry) + konvensi deletedAt
     format.ts           # rupiah, tanggal Indonesia, uid
-    storage.ts          # baca/tulis localStorage (produk, pesanan, tipe, stok, audit)
+    db.ts               # IndexedDB (Dexie): skema per-baris, readAll, migrasi, persist
+    bootstrap.ts        # urutan boot: migrasi -> readAll -> hydrate (dipanggil main.tsx)
+    storage.ts          # LEGACY: pembaca localStorage, hanya sumber migrasi
     store.ts            # state global (useSyncExternalStore) + mutasi + hook audit
     audit.ts            # log audit append-only: logAudit, useAudit, diff()
     backup.ts           # cadangan menyeluruh: exportAll / importAll (ID dipertahankan)
@@ -236,7 +246,7 @@ src/
     columns.ts          # definisi & toggle kolom tabel
     excel.ts            # ekspor order.xlsx (exceljs)
     template-types.ts   # tipe template, elemen, & data invoice
-    template-store.ts   # state template (localStorage) + create/duplicate/save
+    template-store.ts   # state template (IndexedDB) + create/duplicate/save
     image.ts            # downscale gambar & baca dimensi
     snap.ts             # snapping drag/resize di kanvas
   components/

@@ -108,6 +108,7 @@ export function AddItemForm({ products, onAdd }: Props) {
       affectsStock: r.affectsStock,
       createdAt: now,
       updatedAt: now,
+      deletedAt: null,
     };
   }
 

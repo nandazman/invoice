@@ -79,6 +79,9 @@ export function parseProducts(text: string): Product[] {
       stokMin: Number(p["Stok Min"] ?? 0),
       createdAt: p.CreatedAt ?? now,
       updatedAt: p.UpdatedAt ?? p.CreatedAt ?? now,
+      // Interchange files never carry tombstones: this format regenerates ids
+      // (see the id: uid() above), so every parsed row is a brand-new live row.
+      deletedAt: null,
     };
   });
 }
@@ -167,6 +170,7 @@ export function parseOrders(text: string): OrderItem[] {
         affectsStock: it["Tambah Stok"] === true,
         createdAt: it.CreatedAt ?? now,
         updatedAt: it.UpdatedAt ?? it.CreatedAt ?? now,
+        deletedAt: null,
       });
     }
   }
@@ -250,6 +254,7 @@ export function parsePurchases(text: string): PurchaseItem[] {
         totalHarga: Number(it["Total Harga"] ?? kuantitas * hargaSatuan),
         createdAt: it.CreatedAt ?? now,
         updatedAt: it.UpdatedAt ?? it.CreatedAt ?? now,
+        deletedAt: null,
       });
     }
   }
@@ -316,6 +321,7 @@ export function parseStock(text: string): StockMovement[] {
       note: String(m.Catatan ?? ""),
       createdAt: m.CreatedAt ?? now,
       updatedAt: m.UpdatedAt ?? m.CreatedAt ?? now,
+      deletedAt: null,
     };
   });
 }

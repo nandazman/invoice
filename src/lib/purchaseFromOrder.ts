@@ -42,5 +42,6 @@ export function purchaseFromOrderItem(
     totalHarga: kuantitas * hargaSatuan,
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   };
 }

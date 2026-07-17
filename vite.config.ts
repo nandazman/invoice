@@ -1,4 +1,6 @@
-import { defineConfig, type Plugin } from "vite";
+// `vitest/config` re-exports vite's defineConfig with the `test` block typed.
+import { defineConfig } from "vitest/config";
+import type { Plugin } from "vite";
 import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -39,4 +41,8 @@ export default defineConfig({
     __RELEASE__: JSON.stringify(RELEASE),
   },
   plugins: [react(), tailwindcss(), releaseMetaPlugin()],
+  test: {
+    // Installs fake-indexeddb + a localStorage stub before any module loads.
+    setupFiles: ["./src/test-setup.ts"],
+  },
 });

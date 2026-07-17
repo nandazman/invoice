@@ -285,7 +285,17 @@ export function ProductDetailPage() {
               <tbody>
                 {productOrders.map((o) => (
                   <tr key={o.id} className="hover:bg-slate-50">
-                    <td className={tdClass}>{formatTanggalID(o.tanggal)}</td>
+                    <td className={tdClass}>
+                      {formatTanggalID(o.tanggal)}
+                      <span className="block text-xs text-slate-400">
+                        Dibuat {formatDateTimeID(o.createdAt)}
+                      </span>
+                      {o.updatedAt !== o.createdAt && (
+                        <span className="block text-xs text-slate-400">
+                          Diubah {formatDateTimeID(o.updatedAt)}
+                        </span>
+                      )}
+                    </td>
                     <td className={tdClass}>{o.satuan}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatAngka(o.kuantitas)}

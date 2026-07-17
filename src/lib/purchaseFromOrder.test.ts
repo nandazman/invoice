@@ -18,6 +18,7 @@ const product: Product = {
   stokMin: 0,
   createdAt: "2026-07-14T00:00:00.000Z",
   updatedAt: "2026-07-14T00:00:00.000Z",
+  deletedAt: null,
 };
 
 function order(over: Partial<OrderItem> = {}): OrderItem {
@@ -34,6 +35,7 @@ function order(over: Partial<OrderItem> = {}): OrderItem {
     affectsStock: true,
     createdAt: "2026-07-15T00:00:00.000Z",
     updatedAt: "2026-07-15T00:00:00.000Z",
+    deletedAt: null,
     ...over,
   };
 }

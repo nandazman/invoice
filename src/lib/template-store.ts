@@ -10,30 +10,13 @@ import {
   defaultFields,
 } from "./template-types";
 import { uid, nowISO } from "./format";
+import { db, persist, type Snapshot } from "./db";
 
-const TEMPLATES_KEY = "invoice.templates.v1";
-
-function read(): Template[] {
-  try {
-    const raw = localStorage.getItem(TEMPLATES_KEY);
-    if (raw == null) return [];
-    return JSON.parse(raw) as Template[];
-  } catch {
-    return [];
-  }
-}
-
-function write(list: Template[]): void {
-  try {
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
-  } catch (e) {
-    // Most likely QuotaExceededError — surface it so the user knows the save failed.
-    alert(
-      "Gagal menyimpan template. Penyimpanan browser penuh — coba kecilkan/hapus gambar.",
-    );
-    throw e;
-  }
-}
+// Templates were the store that actually hit the 5MB localStorage cap: logos and
+// image elements are base64 data URLs (~33% larger than the bytes they encode),
+// embedded in a JSON string, in an origin-wide 5MB budget shared with every
+// other store. The QuotaExceededError alert that used to live here is gone —
+// the bug it reported is what moving to IndexedDB fixes.
 
 // ---------- Seed: one ready-to-use example template ----------
 function el(e: Partial<TemplateElement> & Pick<TemplateElement, "type">): TemplateElement {
@@ -166,6 +149,7 @@ function seedTemplate(): Template {
     ],
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   };
 }
 
@@ -214,17 +198,24 @@ function migrate(list: Template[]): { list: Template[]; changed: boolean } {
   return { list: out, changed };
 }
 
-let templates: Template[] = (() => {
-  const existing = read();
-  if (existing.length === 0) {
-    const seeded = [seedTemplate()];
-    write(seeded);
-    return seeded;
+let templates: Template[] = [];
+
+// Fill from the boot snapshot. Two legacy paths still run here:
+//   - an empty store seeds the example template;
+//   - `migrate()` fixes up older template shapes (missing logo, legacy `bind`
+//     fields). Both persist only when they actually changed something.
+export function hydrateTemplates(snap: Snapshot): void {
+  if (snap.templates.length === 0) {
+    const seeded = seedTemplate();
+    templates = [seeded];
+    persist("seedTemplate", () => db.templates.put(seeded));
+  } else {
+    const { list, changed } = migrate(snap.templates);
+    templates = list;
+    if (changed) persist("migrateTemplates", () => db.templates.bulkPut(list));
   }
-  const { list, changed } = migrate(existing);
-  if (changed) write(list);
-  return list;
-})();
+  emit();
+}
 
 const listeners = new Set<() => void>();
 function emit() {
@@ -245,10 +236,28 @@ export function getTemplates(): Template[] {
   return templates;
 }
 
-function setTemplates(next: Template[]): void {
+// Whole-table replace. Only correct for Restore, where the caller is replacing
+// the entire dataset; `clear()` drops tombstones because a restore is an
+// authoritative replacement, not a merge. Every other mutation writes one row.
+export function setTemplates(next: Template[]): void {
   templates = next;
-  write(next);
   emit();
+  persist("setTemplates", () =>
+    db.transaction("rw", db.templates, async () => {
+      await db.templates.clear();
+      await db.templates.bulkPut(next);
+    }),
+  );
+}
+
+// Insert-or-update ONE template.
+function putTemplate(t: Template): void {
+  const exists = templates.some((x) => x.id === t.id);
+  templates = exists
+    ? templates.map((x) => (x.id === t.id ? t : x))
+    : [...templates, t];
+  emit();
+  persist("putTemplate", () => db.templates.put(t));
 }
 
 export function createTemplate(): Template {
@@ -276,8 +285,9 @@ export function createTemplate(): Template {
     ],
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   };
-  setTemplates([...templates, t]);
+  putTemplate(t);
   return t;
 }
 
@@ -291,20 +301,31 @@ export function duplicateTemplate(id: string): Template | null {
     nama: `${src.nama} (salinan)`,
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   };
-  setTemplates([...templates, copy]);
+  putTemplate(copy);
   return copy;
 }
 
 export function saveTemplate(t: Template): void {
-  const now = nowISO();
-  setTemplates(
-    templates.map((x) =>
-      x.id === t.id ? { ...t, createdAt: x.createdAt, updatedAt: now } : x,
-    ),
-  );
+  const prev = templates.find((x) => x.id === t.id);
+  if (!prev) return;
+  putTemplate({
+    ...t,
+    createdAt: prev.createdAt,
+    updatedAt: nowISO(),
+    deletedAt: null,
+  });
 }
 
+// Soft delete: the row stays in IndexedDB with a `deletedAt` and only leaves the
+// in-memory list.
 export function deleteTemplate(id: string): void {
-  setTemplates(templates.filter((t) => t.id !== id));
+  const prev = templates.find((t) => t.id === id);
+  if (!prev) return;
+  const now = nowISO();
+  const row: Template = { ...prev, deletedAt: now, updatedAt: now };
+  templates = templates.filter((t) => t.id !== id);
+  emit();
+  persist("deleteTemplate", () => db.templates.put(row));
 }
