@@ -121,6 +121,15 @@ export function ExcelPage() {
     setStaged((prev) => prev.filter((s) => !selected.has(s.id)));
     setSelected(new Set());
   }
+  function removeRow(id: string) {
+    setStaged((prev) => prev.filter((s) => s.id !== id));
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
 
   async function copyImage() {
     try {
@@ -312,6 +321,7 @@ export function ExcelPage() {
                       <th className={`${thClass} text-right`}>Total</th>
                     </>
                   )}
+                  <th className={`${thClass} w-8`}></th>
                 </tr>
               </thead>
               <tbody>
@@ -339,6 +349,15 @@ export function ExcelPage() {
                         </td>
                       </>
                     )}
+                    <td className={`${tdClass} text-right`}>
+                      <DangerButton
+                        size="sm"
+                        onClick={() => removeRow(it.id)}
+                        title="Hapus dari staging"
+                      >
+                        ✕
+                      </DangerButton>
+                    </td>
                   </tr>
                 ))}
               </tbody>

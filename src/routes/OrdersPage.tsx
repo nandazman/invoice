@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
@@ -26,7 +26,7 @@ import {
 import { usePersistentVisibility } from "../lib/columns";
 import { AddItemForm } from "../components/AddItemForm";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
-import { Button, DangerButton } from "../components/Button";
+import { Button, DangerButton, GhostButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
@@ -72,6 +72,37 @@ const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
 
+// Order ids the user has hidden from the totals. This is a view preference, not
+// domain data, so it lives in localStorage (like column visibility) — no DB row,
+// no audit entry. Hidden items still render (dimmed); they just don't count.
+function usePersistentHidden(
+  storageKey: string,
+): [Set<string>, (id: string) => void] {
+  const [ids, setIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const toggle = useCallback(
+    (id: string) => {
+      setIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        localStorage.setItem(storageKey, JSON.stringify([...next]));
+        return next;
+      });
+    },
+    [storageKey],
+  );
+
+  return [ids, toggle];
+}
+
 // Colored badge feel for the inline status dropdown.
 function statusSelectClass(status: OrderStatus): string {
   return status === "paid"
@@ -87,6 +118,7 @@ export function OrdersPage() {
     "invoice.pesanan.cols.v2",
     COLUMN_DEFAULTS,
   );
+  const [hidden, toggleHidden] = usePersistentHidden("invoice.pesanan.hidden.v1");
 
   const [exact, setExact] = useState("");
   const [from, setFrom] = useState("");
@@ -165,12 +197,17 @@ export function OrdersPage() {
         return {
           tanggal,
           items,
-          total: sumRupiah(items.map((i) => i.totalHarga)),
+          // Subtotal counts only rows the user hasn't hidden.
+          total: sumRupiah(
+            items.filter((i) => !hidden.has(i.id)).map((i) => i.totalHarga),
+          ),
         };
       });
-  }, [filtered]);
+  }, [filtered, hidden]);
 
-  const grandTotal = sumRupiah(filtered.map((i) => i.totalHarga));
+  const counted = filtered.filter((i) => !hidden.has(i.id));
+  const grandTotal = sumRupiah(counted.map((i) => i.totalHarga));
+  const hiddenCount = filtered.length - counted.length;
   const hasFilter = exact || from || to || produk || status !== "semua";
 
   return (
@@ -239,7 +276,10 @@ export function OrdersPage() {
           <span className="text-lg font-bold">
             Total: {formatRupiah(grandTotal)}
           </span>
-          <span className="text-slate-400">· {filtered.length} item</span>
+          <span className="text-slate-400">
+            · {counted.length} item
+            {hiddenCount > 0 && ` (${hiddenCount} disembunyikan)`}
+          </span>
           <span className="flex-1" />
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
           <Button onClick={doImport}>Impor JSON</Button>
@@ -294,6 +334,8 @@ export function OrdersPage() {
                     key={g.tanggal}
                     group={g}
                     visible={visible}
+                    hidden={hidden}
+                    onToggleHidden={toggleHidden}
                     onRemove={removeItem}
                     onSetStatus={setOrderStatus}
                     onBuy={() => setBuyDate(g.tanggal)}
@@ -321,12 +363,16 @@ export function OrdersPage() {
 function GroupRows({
   group,
   visible,
+  hidden,
+  onToggleHidden,
   onRemove,
   onSetStatus,
   onBuy,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
+  hidden: Set<string>;
+  onToggleHidden: (id: string) => void;
   onRemove: (id: string) => void;
   onSetStatus: (id: string, status: OrderStatus) => void;
   onBuy: () => void;
@@ -358,7 +404,12 @@ function GroupRows({
         </td>
       </tr>
       {group.items.map((it) => (
-        <tr key={it.id} className="hover:bg-slate-50">
+        <tr
+          key={it.id}
+          className={`hover:bg-slate-50 ${
+            hidden.has(it.id) ? "opacity-40" : ""
+          }`}
+        >
           {visible.namaProduk !== false && (
             <td className={tdClass}>
               {it.productId ? (
@@ -416,7 +467,19 @@ function GroupRows({
               {formatDateTimeID(it.updatedAt)}
             </td>
           )}
-          <td className={`${tdClass} text-right`}>
+          <td className={`${tdClass} text-right whitespace-nowrap`}>
+            <GhostButton
+              size="sm"
+              className="mr-1"
+              onClick={() => onToggleHidden(it.id)}
+              title={
+                hidden.has(it.id)
+                  ? "Tampilkan & hitung di total"
+                  : "Sembunyikan dari total"
+              }
+            >
+              {hidden.has(it.id) ? "🙈" : "👁"}
+            </GhostButton>
             <DangerButton
               size="sm"
               onClick={() => onRemove(it.id)}

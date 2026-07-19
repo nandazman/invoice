@@ -452,7 +452,7 @@ export function addPurchase(
         hargaModal: null,
         orderId: order.id,
         purchaseId: filled.id,
-        note: "dari pesanan",
+        note: "penjualan dari pesanan (by order)",
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
