@@ -1,19 +1,20 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { OrderItem, OrderStatus } from "../lib/types";
+import type { OrderItem } from "../lib/types";
 import type { InvoiceData, FieldType } from "../lib/template-types";
 import { fieldKey } from "../lib/template-types";
-import { useOrders } from "../lib/store";
+import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
 import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
+import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
+import { FilterBar } from "../components/FilterBar";
+import { CopyTextDialog } from "../components/CopyTextDialog";
 import { Panel } from "../components/Panel";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Field } from "../components/Field";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
-
-type StatusFilter = "semua" | OrderStatus;
 
 const thClass =
   "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
@@ -21,6 +22,7 @@ const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 export function InvoicePage() {
   const orders = useOrders();
+  const products = useProducts();
   const templates = useTemplates();
 
   const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
@@ -47,36 +49,12 @@ export function InvoicePage() {
     return [...seen.values()];
   }, [template]);
 
-  // Order filter (same shape as the Excel page).
-  const [exact, setExact] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [produk, setProduk] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("semua");
+  const filter = useOrderFilter(orders, products);
+  const { filtered } = filter;
   const [staged, setStaged] = useState<OrderItem[]>([]);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-
-  function clearFilters() {
-    setExact("");
-    setFrom("");
-    setTo("");
-    setProduk("");
-    setStatus("semua");
-  }
-
-  const filtered = useMemo(() => {
-    const q = produk.trim().toLowerCase();
-    return orders.filter((o) => {
-      if (exact && o.tanggal !== exact) return false;
-      if (!exact) {
-        if (from && o.tanggal < from) return false;
-        if (to && o.tanggal > to) return false;
-      }
-      if (q && !o.namaProduk.toLowerCase().includes(q)) return false;
-      if (status !== "semua" && o.status !== status) return false;
-      return true;
-    });
-  }, [orders, exact, from, to, produk, status]);
+  const [showPrice, setShowPrice] = useState(true);
+  const [copyOpen, setCopyOpen] = useState(false);
 
   function appendFiltered() {
     setStaged((prev) => {
@@ -111,7 +89,6 @@ export function InvoicePage() {
     [staged],
   );
   const total = sumRupiah(staged.map((i) => i.totalHarga));
-  const hasFilter = exact || from || to || produk || status !== "semua";
 
   const data: InvoiceData = {
     items: stagedSorted,
@@ -147,7 +124,17 @@ export function InvoicePage() {
             </option>
           ))}
         </Select>
-        <PrimaryButton className="ml-auto" onClick={() => window.print()}>
+        <Button
+          className="ml-auto"
+          onClick={() => setCopyOpen(true)}
+          disabled={staged.length === 0}
+        >
+          Salin teks
+        </Button>
+        <PrimaryButton
+          onClick={() => window.print()}
+          disabled={staged.length === 0}
+        >
           Cetak / PDF
         </PrimaryButton>
       </div>
@@ -199,60 +186,34 @@ export function InvoicePage() {
             )}
           </Panel>
 
+          <FilterBar
+            filter={filter}
+            className="flex flex-col gap-2"
+            fieldClassName="w-full"
+          >
+            <Field label="Status">
+              <Select
+                value={filter.values.status}
+                onChange={(e) =>
+                  filter.set({ status: e.target.value as StatusFilter })
+                }
+              >
+                <option value="semua">Semua</option>
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+              </Select>
+            </Field>
+          </FilterBar>
+
           <Panel>
             <h3 className="font-bold text-sm text-slate-700 mb-2">Pilih Item Pesanan</h3>
-            <div className="space-y-2">
-              <Field label="Tanggal spesifik">
-                <Input type="date" value={exact} onChange={(e) => setExact(e.target.value)} />
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Dari">
-                  <Input
-                    type="date"
-                    value={from}
-                    disabled={!!exact}
-                    onChange={(e) => setFrom(e.target.value)}
-                  />
-                </Field>
-                <Field label="Sampai">
-                  <Input
-                    type="date"
-                    value={to}
-                    disabled={!!exact}
-                    onChange={(e) => setTo(e.target.value)}
-                  />
-                </Field>
-              </div>
-              <Field label="Cari produk">
-                <Input
-                  value={produk}
-                  onChange={(e) => setProduk(e.target.value)}
-                  placeholder="Nama produk…"
-                />
-              </Field>
-              <Field label="Status">
-                <Select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-                  <option value="semua">Semua</option>
-                  <option value="pending">Pending</option>
-                  <option value="paid">Paid</option>
-                </Select>
-              </Field>
-              <div className="flex gap-2 items-center pt-1">
-                <span className="text-xs text-slate-400">{filtered.length} cocok</span>
-                {hasFilter && (
-                  <Button size="sm" onClick={clearFilters}>
-                    Reset
-                  </Button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={appendFiltered} className="flex-1">
-                  Tambah
-                </Button>
-                <Button size="sm" onClick={replaceFiltered} className="flex-1">
-                  Ganti semua
-                </Button>
-              </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={appendFiltered} className="flex-1">
+                Tambah
+              </Button>
+              <Button size="sm" onClick={replaceFiltered} className="flex-1">
+                Ganti semua
+              </Button>
             </div>
           </Panel>
 
@@ -321,6 +282,16 @@ export function InvoicePage() {
           <Preview template={template} data={data} />
         </div>
       </div>
+
+      {copyOpen && (
+        <CopyTextDialog
+          items={stagedSorted}
+          title="🧾 Invoice"
+          showPrice={showPrice}
+          onShowPriceChange={setShowPrice}
+          onClose={() => setCopyOpen(false)}
+        />
+      )}
 
       {/* Full-size pages used only for printing. Rendered into <body> (outside
           #root) so the multi-page invoice flows and breaks per A4 sheet — a

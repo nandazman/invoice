@@ -4,6 +4,7 @@ import type { OrderItem, Product, PurchaseItem } from "../lib/types";
 import { formatRupiah, formatAngka, formatTanggalID } from "../lib/format";
 import { modalCostFor, purchaseFromOrderItem } from "../lib/purchaseFromOrder";
 import { Button, PrimaryButton, DangerButton } from "./Button";
+import { Modal } from "./Modal";
 
 interface Props {
   tanggal: string; // the order date the items belong to
@@ -143,14 +144,10 @@ export function BuyFromOrderDialog({
   // Success view: purchases committed; offer a jump to the stock page.
   if (savedCount !== null) {
     return (
-      <div
-        className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-        onClick={onClose}
+      <Modal
+        onClose={onClose}
+        className="bg-white rounded-xl p-6 w-full max-w-md text-center"
       >
-        <div
-          className="bg-white rounded-xl p-6 w-full max-w-md text-center"
-          onClick={(e) => e.stopPropagation()}
-        >
           <SuccessCheck />
           <h2 className="text-xl font-bold mb-1">Tersimpan</h2>
           <p className="text-slate-600 mb-5">
@@ -168,20 +165,15 @@ export function BuyFromOrderDialog({
               Lihat Stok
             </PrimaryButton>
           </div>
-        </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="bg-white rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
     >
-      <div
-        className="bg-white rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
         <h2 className="text-xl font-bold mb-1">Beli Stok dari Pesanan</h2>
         <p className="text-slate-500 mb-4">
           Pesanan {formatTanggalID(tanggal)} — pilih barang yang akan dibeli.
@@ -269,14 +261,11 @@ export function BuyFromOrderDialog({
         </div>
 
         {confirming && (
-          <div
-            className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4"
-            onClick={() => setConfirming(false)}
+          <Modal
+            onClose={() => setConfirming(false)}
+            overlayClassName="z-[60]"
+            className="bg-white rounded-xl p-5 w-full max-w-md"
           >
-            <div
-              className="bg-white rounded-xl p-5 w-full max-w-md"
-              onClick={(e) => e.stopPropagation()}
-            >
               <h3 className="text-lg font-bold mb-2">Konfirmasi</h3>
               <p className="text-sm text-slate-600 mb-1">
                 {selectedRows.length} item akan dicatat sebagai pembelian stok
@@ -290,10 +279,8 @@ export function BuyFromOrderDialog({
                 <Button onClick={() => setConfirming(false)}>Batal</Button>
                 <DangerButton onClick={save}>Ya, simpan</DangerButton>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

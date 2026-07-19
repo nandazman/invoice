@@ -12,19 +12,11 @@ import {
 import type { Product } from "../lib/types";
 import {
   useProducts,
-  setProducts,
   useTypes,
-  addType,
   upsertProduct,
   deleteProduct,
 } from "../lib/store";
 import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
-import {
-  serializeProducts,
-  parseProducts,
-  downloadJSON,
-  pickJSONFile,
-} from "../lib/io";
 import { usePersistentVisibility } from "../lib/columns";
 import { ProductDialog } from "../components/ProductDialog";
 import { ColumnToggle } from "../components/ColumnToggle";
@@ -80,23 +72,6 @@ export function PricesPage() {
     upsertProduct(product);
     setEditing(null);
     setCreating(false);
-  }
-
-  async function doImport() {
-    try {
-      const text = await pickJSONFile();
-      const imported = parseProducts(text);
-      if (
-        !confirm(
-          `Impor ${imported.length} produk? Ini akan mengganti daftar saat ini.`,
-        )
-      )
-        return;
-      setProducts(imported);
-      for (const p of imported) addType(p.tipe);
-    } catch (e) {
-      alert("Gagal impor: " + (e as Error).message);
-    }
   }
 
   const columns = useMemo(
@@ -239,14 +214,6 @@ export function PricesPage() {
           <PrimaryButton onClick={() => setCreating(true)}>
             + Tambah Produk
           </PrimaryButton>
-          <Button onClick={doImport}>Impor JSON</Button>
-          <Button
-            onClick={() =>
-              downloadJSON("price.json", serializeProducts(products))
-            }
-          >
-            Ekspor JSON
-          </Button>
           <ColumnToggle
             columns={TOGGLE_COLUMNS}
             visible={visible}

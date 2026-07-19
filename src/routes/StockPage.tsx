@@ -5,18 +5,10 @@ import {
   useProducts,
   useStock,
   addMovement,
-  setStock,
 } from "../lib/store";
 import { computeFifo } from "../lib/stock";
 import { formatRupiah, formatAngka } from "../lib/format";
-import {
-  serializeStock,
-  parseStock,
-  downloadJSON,
-  pickJSONFile,
-} from "../lib/io";
 import { AddMovementForm } from "../components/AddMovementForm";
-import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
@@ -40,22 +32,6 @@ export function StockPage() {
 
   function addMovements(ms: StockMovement[]) {
     for (const m of ms) addMovement(m);
-  }
-
-  async function doImport() {
-    try {
-      const text = await pickJSONFile();
-      const imported = parseStock(text);
-      if (
-        !confirm(
-          `Impor ${imported.length} pergerakan? Ini akan mengganti data stok saat ini.`,
-        )
-      )
-        return;
-      setStock(imported);
-    } catch (e) {
-      alert("Gagal impor: " + (e as Error).message);
-    }
   }
 
   const rows = useMemo<Row[]>(() => {
@@ -124,12 +100,6 @@ export function StockPage() {
               placeholder="Cari produk…"
             />
           </Field>
-          <Button onClick={doImport}>Impor JSON</Button>
-          <Button
-            onClick={() => downloadJSON("stock.json", serializeStock(stock))}
-          >
-            Ekspor JSON
-          </Button>
         </div>
 
         {rows.length === 0 ? (

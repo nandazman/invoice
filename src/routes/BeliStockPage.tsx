@@ -4,9 +4,9 @@ import type { PurchaseItem } from "../lib/types";
 import {
   useProducts,
   usePurchases,
-  setPurchases,
   addPurchase,
   deletePurchase,
+  linkPurchaseProduct,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -15,19 +15,14 @@ import {
   formatDateTimeID,
   sumRupiah,
 } from "../lib/format";
-import {
-  serializePurchases,
-  parsePurchases,
-  downloadJSON,
-  pickJSONFile,
-} from "../lib/io";
 import { usePersistentVisibility } from "../lib/columns";
+import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
-import { Button, DangerButton } from "../components/Button";
-import { Input } from "../components/Input";
+import { DangerButton } from "../components/Button";
 import { Panel } from "../components/Panel";
-import { Field } from "../components/Field";
+import { FilterBar } from "../components/FilterBar";
 import { ColumnToggle } from "../components/ColumnToggle";
+import { LinkProductDialog } from "../components/LinkProductDialog";
 
 interface DateGroup {
   tanggal: string;
@@ -74,10 +69,10 @@ export function BeliStockPage() {
     COLUMN_DEFAULTS,
   );
 
-  const [exact, setExact] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [produk, setProduk] = useState("");
+  const filter = useOrderFilter(purchases, products);
+  const { filtered, hasFilter } = filter;
+  // The unlinked purchase row whose "Tautkan Produk" dialog is open.
+  const [linking, setLinking] = useState<PurchaseItem | null>(null);
 
   function addItems(items: PurchaseItem[]) {
     for (const item of items) addPurchase(item);
@@ -85,41 +80,6 @@ export function BeliStockPage() {
   function removeItem(id: string) {
     deletePurchase(id);
   }
-  function clearFilters() {
-    setExact("");
-    setFrom("");
-    setTo("");
-    setProduk("");
-  }
-
-  async function doImport() {
-    try {
-      const text = await pickJSONFile();
-      const imported = parsePurchases(text);
-      if (
-        !confirm(
-          `Impor ${imported.length} item? Ini akan mengganti data saat ini.`,
-        )
-      )
-        return;
-      setPurchases(imported);
-    } catch (e) {
-      alert("Gagal impor: " + (e as Error).message);
-    }
-  }
-
-  const filtered = useMemo(() => {
-    const q = produk.trim().toLowerCase();
-    return purchases.filter((o) => {
-      if (exact && o.tanggal !== exact) return false;
-      if (!exact) {
-        if (from && o.tanggal < from) return false;
-        if (to && o.tanggal > to) return false;
-      }
-      if (q && !o.namaProduk.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [purchases, exact, from, to, produk]);
 
   const groups = useMemo<DateGroup[]>(() => {
     const byDate = new Map<string, PurchaseItem[]>();
@@ -141,7 +101,6 @@ export function BeliStockPage() {
   }, [filtered]);
 
   const grandTotal = sumRupiah(filtered.map((i) => i.totalHarga));
-  const hasFilter = exact || from || to || produk;
 
   return (
     <div>
@@ -158,41 +117,9 @@ export function BeliStockPage() {
         <AddPurchaseForm products={products} onAdd={addItems} />
       )}
 
-      <Panel>
-        <div className="flex gap-3 flex-wrap items-end">
-          <Field label="Tanggal spesifik" className="w-36">
-            <Input
-              type="date"
-              value={exact}
-              onChange={(e) => setExact(e.target.value)}
-            />
-          </Field>
-          <Field label="Dari tanggal" className="w-36">
-            <Input
-              type="date"
-              value={from}
-              disabled={!!exact}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </Field>
-          <Field label="Sampai tanggal" className="w-36">
-            <Input
-              type="date"
-              value={to}
-              disabled={!!exact}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </Field>
-          <Field label="Cari produk" className="flex-1 min-w-[160px]">
-            <Input
-              value={produk}
-              onChange={(e) => setProduk(e.target.value)}
-              placeholder="Nama produk…"
-            />
-          </Field>
-          {hasFilter && <Button onClick={clearFilters}>Reset</Button>}
-        </div>
-      </Panel>
+      {/* No children: purchases carry no status, and the hook's status
+          predicate skips rows without one. */}
+      <FilterBar filter={filter} />
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">
@@ -202,14 +129,6 @@ export function BeliStockPage() {
           <span className="text-slate-400">· {filtered.length} item</span>
           <span className="flex-1" />
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
-          <Button onClick={doImport}>Impor JSON</Button>
-          <Button
-            onClick={() =>
-              downloadJSON("beli-stok.json", serializePurchases(purchases))
-            }
-          >
-            Ekspor JSON
-          </Button>
         </div>
 
         {groups.length === 0 ? (
@@ -254,6 +173,7 @@ export function BeliStockPage() {
                     group={g}
                     visible={visible}
                     onRemove={removeItem}
+                    onLink={setLinking}
                   />
                 ))}
               </tbody>
@@ -261,6 +181,18 @@ export function BeliStockPage() {
           </div>
         )}
       </Panel>
+
+      {linking && (
+        <LinkProductDialog
+          namaProduk={linking.namaProduk}
+          products={products}
+          onPick={(productId) => {
+            linkPurchaseProduct(linking.id, productId);
+            setLinking(null);
+          }}
+          onClose={() => setLinking(null)}
+        />
+      )}
     </div>
   );
 }
@@ -269,10 +201,12 @@ function GroupRows({
   group,
   visible,
   onRemove,
+  onLink,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
   onRemove: (id: string) => void;
+  onLink: (item: PurchaseItem) => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -309,7 +243,14 @@ function GroupRows({
                   {it.namaProduk}
                 </Link>
               ) : (
-                it.namaProduk
+                <button
+                  type="button"
+                  className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100"
+                  title="Belum tertaut ke produk — klik untuk menautkan"
+                  onClick={() => onLink(it)}
+                >
+                  ⚠ {it.namaProduk}
+                </button>
               )}
             </td>
           )}

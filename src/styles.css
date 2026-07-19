@@ -6,6 +6,24 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     margin: 0;
   }
+
+  /* Tailwind's preflight leaves controls on the browser default arrow. One rule
+     here beats a cursor-pointer class on every button, checkbox and option. */
+  button:not(:disabled),
+  select:not(:disabled),
+  label,
+  [role="button"],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
 }
 
 /* The full-size print pages are portaled to <body>. Kept rendered (not

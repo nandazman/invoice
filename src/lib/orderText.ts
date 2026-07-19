@@ -45,10 +45,3 @@ export function buildOrdersText(
 
   return lines.join("\n");
 }
-
-export async function copyOrdersText(
-  items: LineItem[],
-  opts?: { title?: string; showPrice?: boolean },
-): Promise<void> {
-  await navigator.clipboard.writeText(buildOrdersText(items, opts));
-}

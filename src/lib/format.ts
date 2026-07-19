@@ -56,6 +56,64 @@ export function todayISO(): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
+// The date presets offered by the shared filter bar.
+export type PresetKey =
+  | "hari-ini"
+  | "kemarin"
+  | "7-hari"
+  | "bulan-ini"
+  | "bulan-lalu";
+
+export const PRESET_LABELS: Record<PresetKey, string> = {
+  "hari-ini": "Hari ini",
+  kemarin: "Kemarin",
+  "7-hari": "7 hari",
+  "bulan-ini": "Bulan ini",
+  "bulan-lalu": "Bulan lalu",
+};
+
+// Local-calendar yyyy-mm-dd. Not toISOString(), which is UTC and shifts the day
+// for anyone east/west of Greenwich.
+function isoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+// [from, to] as inclusive ISO dates for a preset. `now` is injectable so the
+// tests can pin a date; callers pass one argument.
+//
+// Month boundaries lean on Date's overflow normalisation: new Date(y, m + 1, 0)
+// is "day 0 of next month" = the last day of month m, and a month index of -1
+// rolls back into December of the previous year (the January `bulan-lalu` case).
+export function presetRange(
+  key: PresetKey,
+  now: Date = new Date(),
+): [string, string] {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+
+  switch (key) {
+    case "hari-ini": {
+      const today = isoLocal(new Date(y, m, d));
+      return [today, today];
+    }
+    case "kemarin": {
+      const yest = isoLocal(new Date(y, m, d - 1));
+      return [yest, yest];
+    }
+    case "7-hari":
+      // Inclusive of today, so 7 calendar days total.
+      return [isoLocal(new Date(y, m, d - 6)), isoLocal(new Date(y, m, d))];
+    case "bulan-ini":
+      return [isoLocal(new Date(y, m, 1)), isoLocal(new Date(y, m + 1, 0))];
+    case "bulan-lalu":
+      return [isoLocal(new Date(y, m - 1, 1)), isoLocal(new Date(y, m, 0))];
+  }
+}
+
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }

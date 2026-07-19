@@ -6,6 +6,7 @@ import { Button, PrimaryButton, GhostButton } from "./Button";
 import { Input } from "./Input";
 import { Field } from "./Field";
 import { TypeSelect } from "./TypeSelect";
+import { Modal } from "./Modal";
 
 interface Props {
   product: Product | null; // null = creating new
@@ -80,14 +81,10 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="bg-white rounded-xl p-5 w-full max-w-xl max-h-[90vh] overflow-auto"
     >
-      <div
-        className="bg-white rounded-xl p-5 w-full max-w-xl max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
         <h2 className="text-xl font-bold mb-4">
           {product ? "Ubah Produk" : "Tambah Produk"}
         </h2>
@@ -218,7 +215,6 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
           <Button onClick={onClose}>Batal</Button>
           <PrimaryButton onClick={submit}>Simpan</PrimaryButton>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

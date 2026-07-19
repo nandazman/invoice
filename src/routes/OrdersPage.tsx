@@ -4,11 +4,11 @@ import type { OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
   useProducts,
   useOrders,
-  setOrders,
   addOrder,
   deleteOrder,
   setOrderStatus,
   addPurchase,
+  linkOrderProduct,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -17,23 +17,17 @@ import {
   formatDateTimeID,
   sumRupiah,
 } from "../lib/format";
-import {
-  serializeOrders,
-  parseOrders,
-  downloadJSON,
-  pickJSONFile,
-} from "../lib/io";
 import { usePersistentVisibility } from "../lib/columns";
+import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
 import { AddItemForm } from "../components/AddItemForm";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
+import { LinkProductDialog } from "../components/LinkProductDialog";
 import { Button, DangerButton, GhostButton } from "../components/Button";
-import { Input } from "../components/Input";
+import { FilterBar } from "../components/FilterBar";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
-
-type StatusFilter = "semua" | OrderStatus;
 
 interface DateGroup {
   tanggal: string;
@@ -120,13 +114,12 @@ export function OrdersPage() {
   );
   const [hidden, toggleHidden] = usePersistentHidden("invoice.pesanan.hidden.v1");
 
-  const [exact, setExact] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [produk, setProduk] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("semua");
+  const filter = useOrderFilter(orders, products);
+  const { filtered, hasFilter } = filter;
   // The order date whose items are open in the "Beli stok dari pesanan" dialog.
   const [buyDate, setBuyDate] = useState<string | null>(null);
+  // The unlinked order row whose "Tautkan Produk" dialog is open.
+  const [linking, setLinking] = useState<OrderItem | null>(null);
 
   function addItems(items: OrderItem[]) {
     for (const item of items) addOrder(item);
@@ -145,44 +138,6 @@ export function OrdersPage() {
   function removeItem(id: string) {
     deleteOrder(id);
   }
-  function clearFilters() {
-    setExact("");
-    setFrom("");
-    setTo("");
-    setProduk("");
-    setStatus("semua");
-  }
-
-  async function doImport() {
-    try {
-      const text = await pickJSONFile();
-      const imported = parseOrders(text);
-      if (
-        !confirm(
-          `Impor ${imported.length} item? Ini akan mengganti riwayat saat ini.`,
-        )
-      )
-        return;
-      setOrders(imported);
-    } catch (e) {
-      alert("Gagal impor: " + (e as Error).message);
-    }
-  }
-
-  const filtered = useMemo(() => {
-    const q = produk.trim().toLowerCase();
-    return orders.filter((o) => {
-      if (exact && o.tanggal !== exact) return false;
-      if (!exact) {
-        if (from && o.tanggal < from) return false;
-        if (to && o.tanggal > to) return false;
-      }
-      if (q && !o.namaProduk.toLowerCase().includes(q)) return false;
-      if (status !== "semua" && o.status !== status) return false;
-      return true;
-    });
-  }, [orders, exact, from, to, produk, status]);
-
   const groups = useMemo<DateGroup[]>(() => {
     const byDate = new Map<string, OrderItem[]>();
     for (const o of filtered) {
@@ -208,7 +163,6 @@ export function OrdersPage() {
   const counted = filtered.filter((i) => !hidden.has(i.id));
   const grandTotal = sumRupiah(counted.map((i) => i.totalHarga));
   const hiddenCount = filtered.length - counted.length;
-  const hasFilter = exact || from || to || produk || status !== "semua";
 
   return (
     <div>
@@ -225,51 +179,20 @@ export function OrdersPage() {
         <AddItemForm products={products} onAdd={addItems} />
       )}
 
-      <Panel>
-        <div className="flex gap-3 flex-wrap items-end">
-          <Field label="Tanggal spesifik" className="w-36">
-            <Input
-              type="date"
-              value={exact}
-              onChange={(e) => setExact(e.target.value)}
-            />
-          </Field>
-          <Field label="Dari tanggal" className="w-36">
-            <Input
-              type="date"
-              value={from}
-              disabled={!!exact}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </Field>
-          <Field label="Sampai tanggal" className="w-36">
-            <Input
-              type="date"
-              value={to}
-              disabled={!!exact}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </Field>
-          <Field label="Cari produk" className="flex-1 min-w-[160px]">
-            <Input
-              value={produk}
-              onChange={(e) => setProduk(e.target.value)}
-              placeholder="Nama produk…"
-            />
-          </Field>
-          <Field label="Status" className="w-36">
-            <Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as StatusFilter)}
-            >
-              <option value="semua">Semua</option>
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-            </Select>
-          </Field>
-          {hasFilter && <Button onClick={clearFilters}>Reset</Button>}
-        </div>
-      </Panel>
+      <FilterBar filter={filter} className="flex gap-3 flex-wrap items-end">
+        <Field label="Status" className="w-36">
+          <Select
+            value={filter.values.status}
+            onChange={(e) =>
+              filter.set({ status: e.target.value as StatusFilter })
+            }
+          >
+            <option value="semua">Semua</option>
+            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+          </Select>
+        </Field>
+      </FilterBar>
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">
@@ -282,12 +205,6 @@ export function OrdersPage() {
           </span>
           <span className="flex-1" />
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
-          <Button onClick={doImport}>Impor JSON</Button>
-          <Button
-            onClick={() => downloadJSON("order.json", serializeOrders(orders))}
-          >
-            Ekspor JSON
-          </Button>
         </div>
 
         {groups.length === 0 ? (
@@ -339,6 +256,7 @@ export function OrdersPage() {
                     onRemove={removeItem}
                     onSetStatus={setOrderStatus}
                     onBuy={() => setBuyDate(g.tanggal)}
+                    onLink={setLinking}
                   />
                 ))}
               </tbody>
@@ -356,6 +274,18 @@ export function OrdersPage() {
           onClose={() => setBuyDate(null)}
         />
       )}
+
+      {linking && (
+        <LinkProductDialog
+          namaProduk={linking.namaProduk}
+          products={products}
+          onPick={(productId) => {
+            linkOrderProduct(linking.id, productId);
+            setLinking(null);
+          }}
+          onClose={() => setLinking(null)}
+        />
+      )}
     </div>
   );
 }
@@ -368,6 +298,7 @@ function GroupRows({
   onRemove,
   onSetStatus,
   onBuy,
+  onLink,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
@@ -376,6 +307,7 @@ function GroupRows({
   onRemove: (id: string) => void;
   onSetStatus: (id: string, status: OrderStatus) => void;
   onBuy: () => void;
+  onLink: (item: OrderItem) => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -421,7 +353,14 @@ function GroupRows({
                   {it.namaProduk}
                 </Link>
               ) : (
-                it.namaProduk
+                <button
+                  type="button"
+                  className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100"
+                  title="Belum tertaut ke produk — klik untuk menautkan"
+                  onClick={() => onLink(it)}
+                >
+                  ⚠ {it.namaProduk}
+                </button>
               )}
             </td>
           )}

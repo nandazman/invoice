@@ -8,6 +8,8 @@ import {
   deleteProduct,
   deletePurchase,
   setOrderStatus,
+  linkOrderProduct,
+  linkPurchaseProduct,
   getProducts,
   getOrders,
   getPurchases,
@@ -15,7 +17,7 @@ import {
 } from "./store";
 import { hydrateAudit, getAudit } from "./audit";
 import { db, flushWrites, type Snapshot } from "./db";
-import type { Product, OrderItem } from "./types";
+import type { Product, OrderItem, PurchaseItem } from "./types";
 
 // These tests exist to prove the write path actually reaches IndexedDB. The
 // store API is synchronous and optimistic — memory updates and emits before the
@@ -112,6 +114,106 @@ describe("writes reach IndexedDB", () => {
     expect(await db.products.count()).toBe(1);
     expect((await db.products.get("p1"))?.hargaJual).toBe(7000);
     expect(getProducts()).toHaveLength(1);
+  });
+});
+
+describe("linkOrderProduct", () => {
+  // A legacy row: no productId, and a sale price that no longer matches the
+  // product's current hargaJual.
+  const orphan = () =>
+    order({ id: "o9", productId: "", hargaSatuan: 4000, totalHarga: 20000 });
+
+  beforeEach(() => reset({ products: [product] }));
+
+  it("sets productId and persists it with an audit entry", async () => {
+    addOrder(orphan());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    linkOrderProduct("o9", "p1");
+    await flushWrites();
+
+    expect((await db.orders.get("o9"))?.productId).toBe("p1");
+    expect(await db.audit.count()).toBe(before + 1);
+  });
+
+  it("leaves the sold price and name untouched", async () => {
+    addOrder(orphan());
+    linkOrderProduct("o9", "p1");
+    await flushWrites();
+
+    const row = await db.orders.get("o9");
+    expect(row?.hargaSatuan).toBe(4000); // not the product's 5000
+    expect(row?.totalHarga).toBe(20000);
+    expect(row?.namaProduk).toBe("Almond Kacang");
+  });
+
+  it("ignores an unknown product id", async () => {
+    addOrder(orphan());
+    linkOrderProduct("o9", "nope");
+    await flushWrites();
+
+    expect((await db.orders.get("o9"))?.productId).toBe("");
+  });
+
+  it("is a no-op when already linked to that product", async () => {
+    addOrder(order()); // already productId "p1"
+    await flushWrites();
+    const before = await db.audit.count();
+
+    linkOrderProduct("o1", "p1");
+    await flushWrites();
+
+    expect(await db.audit.count()).toBe(before);
+  });
+});
+
+describe("linkPurchaseProduct", () => {
+  // Same legacy shape as the order case: no productId, and a paid price that no
+  // longer matches the product's current hargaDasar.
+  const orphan = (): PurchaseItem => ({
+    id: "b9",
+    tanggal: "2026-07-15",
+    productId: "",
+    namaProduk: "Almond Kacang",
+    satuan: "pcs",
+    kuantitas: 5,
+    hargaSatuan: 1500,
+    totalHarga: 7500,
+    createdAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+    deletedAt: null,
+  });
+
+  beforeEach(() => reset({ products: [product] }));
+
+  it("sets productId and leaves the paid price untouched", async () => {
+    addPurchase(orphan());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    linkPurchaseProduct("b9", "p1");
+    await flushWrites();
+
+    const row = await db.purchases.get("b9");
+    expect(row?.productId).toBe("p1");
+    expect(row?.hargaSatuan).toBe(1500); // not the product's 2000
+    expect(await db.audit.count()).toBe(before + 1);
+  });
+
+  it("ignores an unknown product id and re-linking the same one", async () => {
+    addPurchase(orphan());
+    linkPurchaseProduct("b9", "nope");
+    await flushWrites();
+    expect((await db.purchases.get("b9"))?.productId).toBe("");
+
+    linkPurchaseProduct("b9", "p1");
+    await flushWrites();
+    const before = await db.audit.count();
+
+    linkPurchaseProduct("b9", "p1");
+    await flushWrites();
+    expect(await db.audit.count()).toBe(before);
   });
 });
 

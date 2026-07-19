@@ -344,6 +344,64 @@ export function setOrderStatus(id: string, status: OrderStatus): void {
   );
 }
 
+// Attach a legacy order row (productId "") to an existing product. Only the
+// link changes: namaProduk, satuan and the prices stay as sold, because they
+// are the historical record of that sale, not a stale copy of the product.
+export function linkOrderProduct(id: string, productId: string): void {
+  const now = nowISO();
+  const prev = orders.find((o) => o.id === id);
+  const product = products.find((p) => p.id === productId);
+  if (!prev || !product || prev.productId === productId) return;
+
+  const row: OrderItem = { ...prev, productId, updatedAt: now };
+  orders = orders.map((o) => (o.id === id ? row : o));
+  emit();
+
+  const entry = logAudit({
+    entity: "order",
+    entityId: id,
+    action: "update",
+    label: `${prev.namaProduk}: ditautkan ke produk ${product.namaProduk}`,
+    changes: [
+      { field: "productId", from: prev.productId, to: productId },
+    ],
+  });
+  persist("linkOrderProduct", () =>
+    db.transaction("rw", db.orders, db.audit, async () => {
+      await db.orders.put(row);
+      await db.audit.put(entry);
+    }),
+  );
+}
+
+// Same as linkOrderProduct, for the identical orphan case on purchases. Also
+// link-only: the purchase price is what was actually paid, not a copy of the
+// product's current hargaDasar.
+export function linkPurchaseProduct(id: string, productId: string): void {
+  const now = nowISO();
+  const prev = purchases.find((p) => p.id === id);
+  const product = products.find((p) => p.id === productId);
+  if (!prev || !product || prev.productId === productId) return;
+
+  const row: PurchaseItem = { ...prev, productId, updatedAt: now };
+  purchases = purchases.map((p) => (p.id === id ? row : p));
+  emit();
+
+  const entry = logAudit({
+    entity: "purchase",
+    entityId: id,
+    action: "update",
+    label: `${prev.namaProduk}: ditautkan ke produk ${product.namaProduk}`,
+    changes: [{ field: "productId", from: prev.productId, to: productId }],
+  });
+  persist("linkPurchaseProduct", () =>
+    db.transaction("rw", db.purchases, db.audit, async () => {
+      await db.purchases.put(row);
+      await db.audit.put(entry);
+    }),
+  );
+}
+
 export function deleteOrder(id: string): void {
   deleteOrders(new Set([id]));
 }
