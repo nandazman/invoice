@@ -243,9 +243,25 @@ export function TemplatePage() {
     const maxZ = draft!.elements.reduce((m, e) => Math.max(m, e.z), 0);
     patchElement(id, { z: maxZ + 1 });
   }
+  // Never emit a negative z. The invoice preview paints the page background on
+  // the same element that holds the boxes, so a negative z-index child renders
+  // behind it and disappears. (The design canvas hides this, because there the
+  // background sits on an outer div and the boxes are in a scaled — and so
+  // separately stacked — inner div.)
   function sendBack(id: string) {
-    const minZ = draft!.elements.reduce((m, e) => Math.min(m, e.z), 0);
-    patchElement(id, { z: minZ - 1 });
+    update((d) => {
+      const others = d.elements.filter((e) => e.id !== id);
+      const minOther = others.length ? Math.min(...others.map((e) => e.z)) : 1;
+      return minOther > 0
+        ? { ...d, elements: d.elements.map((e) => (e.id === id ? { ...e, z: 0 } : e)) }
+        : {
+            // Bottom is already 0 — lift everything else to make room.
+            ...d,
+            elements: d.elements.map((e) =>
+              e.id === id ? { ...e, z: 0 } : { ...e, z: e.z + 1 },
+            ),
+          };
+    });
   }
 
   // Persist the current draft before changing which template is active, so

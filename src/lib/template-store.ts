@@ -183,6 +183,14 @@ function migrate(list: Template[]): { list: Template[]; changed: boolean } {
       });
       changed = true;
     }
+    // A bug in "send to back" produced negative z values, which made the
+    // element invisible in the invoice preview (it painted behind the page
+    // background). Lift the whole stack back to a non-negative range.
+    const minZ = elements.reduce((m, e) => Math.min(m, e.z), 0);
+    if (minZ < 0) {
+      elements = elements.map((e) => ({ ...e, z: e.z - minZ }));
+      changed = true;
+    }
     if (!elements.some((e) => e.type === "logo")) {
       const maxZ = elements.reduce((m, e) => Math.max(m, e.z), 0);
       elements = [

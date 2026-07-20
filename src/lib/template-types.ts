@@ -8,6 +8,13 @@ export const PAGE_H = 1123;
 
 export const LOGO_MAX_W = 120;
 export const LOGO_MAX_H = 60;
+// Uploaded logos are stored at this resolution — well above their on-canvas
+// size, so they stay sharp when the design is exported/printed above 1x.
+export const LOGO_STORE_MAX = 512;
+// On-canvas cap for an uploaded logo. The box takes the image's own aspect
+// ratio and is scaled to fit inside this square, so a 1:1 logo lands at 240×240
+// instead of being letterboxed into the 120×60 placeholder box.
+export const LOGO_FIT_MAX = 240;
 export const PHOTO_MAX = 800; // max edge for non-logo images
 
 // ---------- Elements ----------

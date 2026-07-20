@@ -6,8 +6,8 @@ import type {
   TextStyle,
 } from "../../lib/template-types";
 import {
-  LOGO_MAX_W,
-  LOGO_MAX_H,
+  LOGO_STORE_MAX,
+  LOGO_FIT_MAX,
   PHOTO_MAX,
   FIELD_TYPE_LABELS,
 } from "../../lib/template-types";
@@ -117,11 +117,24 @@ export function Inspector({
     onElementChange(el.id, { style: { ...el.style, ...patch } });
   }
 
+  // Resize every logo box to the image's own aspect ratio, scaled to fit inside
+  // LOGO_FIT_MAX, so the logo isn't letterboxed in the default placeholder box.
+  function fitLogoElements(size: { w: number; h: number }) {
+    const ratio = Math.min(LOGO_FIT_MAX / size.w, LOGO_FIT_MAX / size.h, 1);
+    const w = Math.round(size.w * ratio);
+    const h = Math.round(size.h * ratio);
+    for (const logoEl of template.elements) {
+      if (logoEl.type === "logo") onElementChange(logoEl.id, { w, h });
+    }
+  }
+
   async function onLogoUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const src = await downscaleImage(file, LOGO_MAX_W, LOGO_MAX_H, "image/webp");
+    const src = await downscaleImage(file, LOGO_STORE_MAX, LOGO_STORE_MAX, "image/webp");
+    const size = await imageSize(src);
     onTemplateChange({ business: { ...template.business, logo: src } });
+    fitLogoElements(size);
     e.target.value = "";
   }
 
@@ -155,6 +168,11 @@ export function Inspector({
     const url = raw.trim();
     if (!url) return;
     onTemplateChange({ business: { ...template.business, logo: url } });
+    try {
+      fitLogoElements(await imageSize(url));
+    } catch {
+      // Couldn't read dimensions (CORS/404) — keep the current box size.
+    }
   }
 
   // ---------- Template settings (nothing selected) ----------
@@ -195,7 +213,7 @@ export function Inspector({
               }
             />
           </Field>
-          <Field label={`Logo (maks ${LOGO_MAX_W}×${LOGO_MAX_H}px)`}>
+          <Field label={`Logo (otomatis pas ke maks ${LOGO_FIT_MAX}px, rasio asli)`}>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 {template.business.logo && (
