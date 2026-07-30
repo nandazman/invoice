@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Buyer, OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
@@ -8,9 +8,11 @@ import {
   addOrder,
   deleteOrder,
   setOrderStatus,
+  setOrdersStatus,
   addPurchase,
   linkOrderProduct,
   setOrderBuyer,
+  setOrdersBuyer,
   upsertBuyer,
   useBuyerBackfillPending,
   dismissBuyerBackfill,
@@ -114,6 +116,24 @@ function usePersistentHidden(
   return [ids, toggle];
 }
 
+// A buyer created from a picker, where a name is all we have. The remaining
+// fields are "" rather than optional so the row matches one made in BuyerDialog
+// — see the Buyer comment in types.ts.
+function newBuyer(nama: string): Buyer {
+  const now = nowISO();
+  return {
+    id: uid(),
+    nama: nama.trim(),
+    telepon: "",
+    email: "",
+    alamat: "",
+    catatan: "",
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  };
+}
+
 // Colored badge feel for the inline status dropdown.
 function statusSelectClass(status: OrderStatus): string {
   return status === "paid"
@@ -153,6 +173,53 @@ export function OrdersPage() {
   const [linking, setLinking] = useState<OrderItem | null>(null);
   // The order row whose buyer cell is currently showing the picker.
   const [assigning, setAssigning] = useState<string | null>(null);
+  // Rows ticked for a bulk edit. Kept as raw ids, never pruned on filter
+  // change: narrowing the filter and widening it again should give you your
+  // selection back. Every read goes through `chosen` below instead.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
+  // Selection ∩ what is on screen. Bulk actions MUST run off this, not off
+  // `selected` — otherwise filtering down to one day and hitting "Paid" would
+  // silently also stamp rows from days the user cannot see.
+  const chosen = useMemo(() => {
+    const onScreen = new Set(filtered.map((o) => o.id));
+    return new Set([...selected].filter((id) => onScreen.has(id)));
+  }, [selected, filtered]);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Select-all over a set of ids: if every one is already ticked, untick them.
+  const toggleAll = useCallback((ids: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (ids.every((id) => next.has(id))) for (const id of ids) next.delete(id);
+      else for (const id of ids) next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
+  function bulkStatus(status: OrderStatus) {
+    setOrdersStatus(chosen, status);
+    clearSelection();
+  }
+  function bulkBuyer(buyerId: string) {
+    setOrdersBuyer(chosen, buyerId);
+    clearSelection();
+  }
+  function bulkCreateBuyer(nama: string) {
+    const row = newBuyer(nama);
+    upsertBuyer(row);
+    bulkBuyer(row.id);
+  }
 
   const buyerById = useMemo(
     () => new Map(buyers.map((b) => [b.id, b] as const)),
@@ -160,18 +227,7 @@ export function OrdersPage() {
   );
 
   function createBuyerFor(orderId: string, nama: string) {
-    const now = nowISO();
-    const row: Buyer = {
-      id: uid(),
-      nama: nama.trim(),
-      telepon: "",
-      email: "",
-      alamat: "",
-      catatan: "",
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
+    const row = newBuyer(nama);
     upsertBuyer(row);
     setOrderBuyer(orderId, row.id);
     setAssigning(null);
@@ -263,6 +319,17 @@ export function OrdersPage() {
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
         </div>
 
+        {chosen.size > 0 && (
+          <BulkBar
+            count={chosen.size}
+            buyers={buyers}
+            onStatus={bulkStatus}
+            onBuyer={bulkBuyer}
+            onCreateBuyer={bulkCreateBuyer}
+            onClear={clearSelection}
+          />
+        )}
+
         {groups.length === 0 ? (
           <div className="text-center text-slate-400 py-8">
             {hasFilter
@@ -274,6 +341,14 @@ export function OrdersPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
+                  <th className={`${thClass} w-8`}>
+                    <SelectAllBox
+                      ids={filtered.map((o) => o.id)}
+                      selected={chosen}
+                      onToggle={toggleAll}
+                      title="Pilih semua item yang tampil"
+                    />
+                  </th>
                   {visible.namaProduk !== false && (
                     <th className={thClass}>Produk</th>
                   )}
@@ -322,6 +397,9 @@ export function OrdersPage() {
                     onAssign={setAssigning}
                     onSetBuyer={setOrderBuyer}
                     onCreateBuyer={createBuyerFor}
+                    selected={chosen}
+                    onToggleSelected={toggleSelected}
+                    onToggleAll={toggleAll}
                   />
                 ))}
               </tbody>
@@ -377,6 +455,9 @@ function GroupRows({
   onAssign,
   onSetBuyer,
   onCreateBuyer,
+  selected,
+  onToggleSelected,
+  onToggleAll,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
@@ -392,6 +473,9 @@ function GroupRows({
   onAssign: (id: string | null) => void;
   onSetBuyer: (id: string, buyerId: string) => void;
   onCreateBuyer: (orderId: string, nama: string) => void;
+  selected: Set<string>;
+  onToggleSelected: (id: string) => void;
+  onToggleAll: (ids: string[]) => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -405,6 +489,14 @@ function GroupRows({
   return (
     <>
       <tr className="bg-slate-100 font-bold">
+        <td className={tdClass}>
+          <SelectAllBox
+            ids={group.items.map((i) => i.id)}
+            selected={selected}
+            onToggle={onToggleAll}
+            title={`Pilih semua item ${formatTanggalID(group.tanggal)}`}
+          />
+        </td>
         <td className={`${tdClass} font-bold`} colSpan={Math.max(1, beforeCount)}>
           {formatTanggalID(group.tanggal)}
         </td>
@@ -424,8 +516,17 @@ function GroupRows({
           key={it.id}
           className={`hover:bg-slate-50 ${
             hidden.has(it.id) ? "opacity-40" : ""
-          }`}
+          } ${selected.has(it.id) ? "bg-blue-50" : ""}`}
         >
+          <td className={tdClass}>
+            <input
+              type="checkbox"
+              className="align-middle accent-blue-600"
+              checked={selected.has(it.id)}
+              onChange={() => onToggleSelected(it.id)}
+              aria-label={`Pilih ${it.namaProduk}`}
+            />
+          </td>
           {visible.namaProduk !== false && (
             <td className={tdClass}>
               {it.productId ? (
@@ -493,6 +594,7 @@ function GroupRows({
                   onAssign(null);
                 }}
                 onCreate={(nama) => onCreateBuyer(it.id, nama)}
+                onCancel={() => onAssign(null)}
               />
             </td>
           )}
@@ -533,9 +635,103 @@ function GroupRows({
   );
 }
 
+// A checkbox over a set of rows: checked when all are selected, indeterminate
+// when only some are. `indeterminate` is a DOM property with no HTML attribute,
+// so it can only be set through a ref — React will not render it from JSX.
+function SelectAllBox({
+  ids,
+  selected,
+  onToggle,
+  title,
+}: {
+  ids: string[];
+  selected: Set<string>;
+  onToggle: (ids: string[]) => void;
+  title: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const picked = ids.filter((id) => selected.has(id)).length;
+  const all = ids.length > 0 && picked === ids.length;
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = picked > 0 && !all;
+  }, [picked, all]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      className="align-middle accent-blue-600"
+      checked={all}
+      disabled={ids.length === 0}
+      onChange={() => onToggle(ids)}
+      title={title}
+      aria-label={title}
+    />
+  );
+}
+
+// The bulk editor. Both controls apply on change with no confirm step, matching
+// the inline row controls they mirror — and every write they make is a normal
+// audited update, so a misfire is visible in Riwayat rather than silent.
+function BulkBar({
+  count,
+  buyers,
+  onStatus,
+  onBuyer,
+  onCreateBuyer,
+  onClear,
+}: {
+  count: number;
+  buyers: Buyer[];
+  onStatus: (status: OrderStatus) => void;
+  onBuyer: (buyerId: string) => void;
+  onCreateBuyer: (nama: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex gap-3 flex-wrap items-center mb-3 p-2.5 rounded-lg border border-blue-200 bg-blue-50">
+      <span className="text-sm font-semibold text-blue-700">
+        {count} item dipilih
+      </span>
+      <Select
+        className="w-auto py-1"
+        // Resets to the placeholder after every apply: the control is an action,
+        // not a field, and leaving "Paid" showing would imply the selection is
+        // now paid when the selection has already been cleared.
+        value=""
+        onChange={(e) => e.target.value && onStatus(e.target.value as OrderStatus)}
+      >
+        <option value="">Ubah status…</option>
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+      </Select>
+      <div className="w-52">
+        <BuyerSelect
+          value=""
+          options={buyers}
+          onChange={onBuyer}
+          onCreate={onCreateBuyer}
+        />
+      </div>
+      <GhostButton size="sm" onClick={onClear}>
+        Batal pilih
+      </GhostButton>
+    </div>
+  );
+}
+
 // Three states, and the middle one is the point: a row with no buyer gets a
 // grey chip, not the amber one an unlinked product gets. An unlinked product is
 // a data defect; a buyerless order is very often just the truth.
+//
+// All three reach the picker, including the two that already name a buyer: an
+// order handed to the wrong pembeli is an ordinary mistake, and the name is the
+// one field on the row that cannot be corrected any other way (deleting and
+// re-adding the order would lose its stock links). The reassign affordance is a
+// separate ✎ button rather than making the name itself clickable, because the
+// name has to stay a link to the buyer's page — that is how you check you are
+// about to correct the right row.
 function BuyerCell({
   item,
   buyers,
@@ -544,6 +740,7 @@ function BuyerCell({
   onPick,
   onChange,
   onCreate,
+  onCancel,
 }: {
   item: OrderItem;
   buyers: Buyer[];
@@ -552,16 +749,26 @@ function BuyerCell({
   onPick: () => void;
   onChange: (buyerId: string) => void;
   onCreate: (nama: string) => void;
+  onCancel: () => void;
 }) {
   if (picking)
     return (
-      <div className="w-52">
-        <BuyerSelect
-          value={item.buyerId}
-          options={buyers}
-          onChange={onChange}
-          onCreate={onCreate}
-        />
+      <div className="flex items-center gap-1">
+        <div className="w-52">
+          <BuyerSelect
+            value={item.buyerId}
+            options={buyers}
+            onChange={onChange}
+            onCreate={onCreate}
+          />
+        </div>
+        {/* Without this the cell is a one-way door: BuyerSelect closes its own
+            dropdown but never unsets `assigning`, so a user who opens the picker
+            on an already-assigned row and changes their mind would have to pick
+            the same buyer again to get the name back. */}
+        <GhostButton size="sm" onClick={onCancel} title="Batal">
+          ✕
+        </GhostButton>
       </div>
     );
 
@@ -579,21 +786,24 @@ function BuyerCell({
 
   const buyer = buyerById.get(item.buyerId);
   // deleteBuyer does not cascade, so a live order can point at a tombstoned
-  // buyer. Say so instead of rendering a link that lands on a not-found page.
-  if (!buyer)
-    return (
-      <span className="text-slate-400 italic whitespace-nowrap">
-        (pembeli dihapus)
-      </span>
-    );
-
+  // buyer. Say so instead of rendering a link that lands on a not-found page —
+  // and keep the ✎, since this is the state that most needs repairing.
   return (
-    <Link
-      to="/pembeli/$id"
-      params={{ id: buyer.id }}
-      className="text-blue-600 hover:underline font-medium"
-    >
-      {buyer.nama}
-    </Link>
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      {buyer ? (
+        <Link
+          to="/pembeli/$id"
+          params={{ id: buyer.id }}
+          className="text-blue-600 hover:underline font-medium"
+        >
+          {buyer.nama}
+        </Link>
+      ) : (
+        <span className="text-slate-400 italic">(pembeli dihapus)</span>
+      )}
+      <GhostButton size="sm" onClick={onPick} title="Ganti pembeli">
+        ✎
+      </GhostButton>
+    </span>
   );
 }

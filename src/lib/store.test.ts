@@ -13,6 +13,8 @@ import {
   upsertBuyer,
   deleteBuyer,
   setOrderBuyer,
+  setOrdersStatus,
+  setOrdersBuyer,
   backfillOrderBuyer,
   getProducts,
   getOrders,
@@ -518,6 +520,92 @@ describe("setOrderBuyer", () => {
     setOrderBuyer("nope", "b1");
     await flushWrites();
     expect(await db.audit.count()).toBe(0);
+  });
+});
+
+describe("bulk order edits", () => {
+  beforeEach(() =>
+    reset({ products: [product], buyers: [buyer(), buyer({ id: "b2" })] }),
+  );
+
+  it("stamps a status onto every selected row, one audit entry each", async () => {
+    addOrder(order({ id: "o1" }));
+    addOrder(order({ id: "o2" }));
+    addOrder(order({ id: "o3" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrdersStatus(new Set(["o1", "o3"]), "paid");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.status).toBe("paid");
+    expect((await db.orders.get("o3"))?.status).toBe("paid");
+    // Not selected, so untouched.
+    expect((await db.orders.get("o2"))?.status).toBe("pending");
+    expect(await db.audit.count()).toBe(before + 2);
+  });
+
+  it("skips rows already at the target status", async () => {
+    addOrder(order({ id: "o1", status: "paid" }));
+    addOrder(order({ id: "o2" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrdersStatus(new Set(["o1", "o2"]), "paid");
+    await flushWrites();
+
+    // Only o2 changed, so only o2 is logged — a select-all over a mostly-paid
+    // day must not fill Riwayat with no-op rewrites.
+    expect(await db.audit.count()).toBe(before + 1);
+  });
+
+  it("stamps a buyer onto every selected row", async () => {
+    addOrder(order({ id: "o1" }));
+    addOrder(order({ id: "o2", buyerId: "b2" }));
+    await flushWrites();
+
+    setOrdersBuyer(new Set(["o1", "o2"]), "b1");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
+    // Reassignment, not just first assignment.
+    expect((await db.orders.get("o2"))?.buyerId).toBe("b1");
+  });
+
+  it("rejects the whole batch on an unknown buyer id", async () => {
+    addOrder(order({ id: "o1" }));
+    addOrder(order({ id: "o2" }));
+    await flushWrites();
+
+    setOrdersBuyer(new Set(["o1", "o2"]), "nope");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("");
+    expect((await db.orders.get("o2"))?.buyerId).toBe("");
+  });
+
+  it("ignores ids that do not exist", async () => {
+    addOrder(order({ id: "o1" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrdersStatus(new Set(["o1", "ghost"]), "paid");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.status).toBe("paid");
+    expect(await db.audit.count()).toBe(before + 1);
+  });
+
+  it("writes nothing when the selection is empty", async () => {
+    addOrder(order({ id: "o1" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrdersStatus(new Set(), "paid");
+    setOrdersBuyer(new Set(), "b1");
+    await flushWrites();
+
+    expect(await db.audit.count()).toBe(before);
   });
 });
 

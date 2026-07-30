@@ -437,25 +437,40 @@ export function addOrder(item: OrderItem): void {
 }
 
 export function setOrderStatus(id: string, status: OrderStatus): void {
-  const now = nowISO();
-  const prev = orders.find((o) => o.id === id);
-  if (!prev || prev.status === status) return;
+  setOrdersStatus(new Set([id]), status);
+}
 
-  const row: OrderItem = { ...prev, status, updatedAt: now };
-  orders = orders.map((o) => (o.id === id ? row : o));
+// Set the status on many rows at once, in one transaction. Rows already at
+// `status` are skipped rather than rewritten, so a select-all over a mostly-paid
+// day writes (and logs) only what actually changes.
+//
+// One audit entry per row, unlike backfillOrderBuyer's single summary: the
+// backfill is unbounded (it touches every legacy order), whereas this set is
+// whatever a human ticked, so the log stays readable and each row keeps a
+// reversible record of its own before/after.
+export function setOrdersStatus(ids: Set<string>, status: OrderStatus): void {
+  const now = nowISO();
+  const targets = orders.filter((o) => ids.has(o.id) && o.status !== status);
+  if (targets.length === 0) return;
+
+  const rows = targets.map((o) => ({ ...o, status, updatedAt: now }));
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+  orders = orders.map((o) => byId.get(o.id) ?? o);
   emit();
 
-  const entry = logAudit({
-    entity: "order",
-    entityId: id,
-    action: "update",
-    label: `${prev.namaProduk}: status ${prev.status} → ${status}`,
-    changes: [{ field: "status", from: prev.status, to: status }],
-  });
-  persist("setOrderStatus", () =>
+  const entries = targets.map((prev) =>
+    logAudit({
+      entity: "order",
+      entityId: prev.id,
+      action: "update",
+      label: `${prev.namaProduk}: status ${prev.status} → ${status}`,
+      changes: [{ field: "status", from: prev.status, to: status }],
+    }),
+  );
+  persist("setOrdersStatus", () =>
     db.transaction("rw", db.orders, db.audit, async () => {
-      await db.orders.put(row);
-      await db.audit.put(entry);
+      await db.orders.bulkPut(rows);
+      await db.audit.bulkPut(entries);
     }),
   );
 }
@@ -493,31 +508,41 @@ export function linkOrderProduct(id: string, productId: string): void {
 // Assign (or clear, with "") the buyer on a single order row. Nothing else
 // changes — the sold name and prices are the record of that sale.
 export function setOrderBuyer(id: string, buyerId: string): void {
+  setOrdersBuyer(new Set([id]), buyerId);
+}
+
+// The bulk form of the above. Same validity rule, checked once for the whole
+// call: an unknown buyerId rejects the entire batch rather than half of it.
+export function setOrdersBuyer(ids: Set<string>, buyerId: string): void {
   const now = nowISO();
-  const prev = orders.find((o) => o.id === id);
-  if (!prev || prev.buyerId === buyerId) return;
   // An unknown id would render as "(pembeli dihapus)" forever; "" is the one
   // non-existent id that is legal, because it means "no buyer".
   if (buyerId !== "" && !buyers.some((b) => b.id === buyerId)) return;
 
-  const row: OrderItem = { ...prev, buyerId, updatedAt: now };
-  orders = orders.map((o) => (o.id === id ? row : o));
+  const targets = orders.filter((o) => ids.has(o.id) && o.buyerId !== buyerId);
+  if (targets.length === 0) return;
+
+  const rows = targets.map((o) => ({ ...o, buyerId, updatedAt: now }));
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+  orders = orders.map((o) => byId.get(o.id) ?? o);
   emit();
 
   const name = buyers.find((b) => b.id === buyerId)?.nama;
-  const entry = logAudit({
-    entity: "order",
-    entityId: id,
-    action: "update",
-    label: name
-      ? `${prev.namaProduk}: pembeli → ${name}`
-      : `${prev.namaProduk}: pembeli dikosongkan`,
-    changes: [{ field: "buyerId", from: prev.buyerId, to: buyerId }],
-  });
-  persist("setOrderBuyer", () =>
+  const entries = targets.map((prev) =>
+    logAudit({
+      entity: "order",
+      entityId: prev.id,
+      action: "update",
+      label: name
+        ? `${prev.namaProduk}: pembeli → ${name}`
+        : `${prev.namaProduk}: pembeli dikosongkan`,
+      changes: [{ field: "buyerId", from: prev.buyerId, to: buyerId }],
+    }),
+  );
+  persist("setOrdersBuyer", () =>
     db.transaction("rw", db.orders, db.audit, async () => {
-      await db.orders.put(row);
-      await db.audit.put(entry);
+      await db.orders.bulkPut(rows);
+      await db.audit.bulkPut(entries);
     }),
   );
 }
