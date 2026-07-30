@@ -10,6 +10,7 @@ export function Modal({
   onClose,
   className = "bg-white rounded-xl p-5 w-full max-w-md max-h-[90vh] overflow-auto",
   overlayClassName = "z-50",
+  closeOnOverlay = true,
   children,
 }: {
   onClose: () => void;
@@ -17,6 +18,9 @@ export function Modal({
   // Only the nested confirm inside BuyFromOrderDialog needs this, to sit above
   // the dialog that opened it.
   overlayClassName?: string;
+  // Set false for dialogs holding enough state that a stray click outside is
+  // more likely a misclick than an intent to close.
+  closeOnOverlay?: boolean;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -38,7 +42,7 @@ export function Modal({
   return (
     <div
       className={`fixed inset-0 bg-black/40 flex items-center justify-center p-4 ${overlayClassName}`}
-      onClick={onClose}
+      onClick={closeOnOverlay ? onClose : undefined}
     >
       <div className={className} onClick={(e) => e.stopPropagation()}>
         {children}

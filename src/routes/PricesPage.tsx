@@ -19,6 +19,7 @@ import {
 import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
 import { usePersistentVisibility } from "../lib/columns";
 import { ProductDialog } from "../components/ProductDialog";
+import { CatalogDialog } from "../components/CatalogDialog";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
@@ -54,6 +55,7 @@ export function PricesPage() {
   const types = useTypes();
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([
     { id: "namaProduk", desc: false },
@@ -214,6 +216,12 @@ export function PricesPage() {
           <PrimaryButton onClick={() => setCreating(true)}>
             + Tambah Produk
           </PrimaryButton>
+          <Button
+            onClick={() => setCatalogOpen(true)}
+            disabled={products.length === 0}
+          >
+            Ekspor Katalog
+          </Button>
           <ColumnToggle
             columns={TOGGLE_COLUMNS}
             visible={visible}
@@ -296,6 +304,14 @@ export function PricesPage() {
             setEditing(null);
             setCreating(false);
           }}
+        />
+      )}
+
+      {catalogOpen && (
+        <CatalogDialog
+          products={products}
+          types={types}
+          onClose={() => setCatalogOpen(false)}
         />
       )}
     </div>
