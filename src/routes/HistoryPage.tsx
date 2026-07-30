@@ -18,6 +18,7 @@ const ENTITY_LABELS: Record<AuditEntry["entity"], string> = {
   stock: "Stok",
   type: "Tipe",
   purchase: "Beli Stok",
+  buyer: "Pembeli",
 };
 
 const ACTION_LABELS: Record<AuditEntry["action"], string> = {
@@ -39,6 +40,8 @@ function entityBadgeClass(entity: AuditEntry["entity"]): string {
       return "text-violet-700 bg-violet-50 border-violet-200";
     case "purchase":
       return "text-emerald-700 bg-emerald-50 border-emerald-200";
+    case "buyer":
+      return "text-rose-700 bg-rose-50 border-rose-200";
   }
 }
 

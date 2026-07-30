@@ -1,14 +1,20 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
+import type { Buyer, OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
   useProducts,
   useOrders,
+  useBuyers,
   addOrder,
   deleteOrder,
   setOrderStatus,
   addPurchase,
   linkOrderProduct,
+  setOrderBuyer,
+  upsertBuyer,
+  useBuyerBackfillPending,
+  dismissBuyerBackfill,
+  needsBuyer,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -16,12 +22,16 @@ import {
   formatTanggalID,
   formatDateTimeID,
   sumRupiah,
+  uid,
+  nowISO,
 } from "../lib/format";
 import { usePersistentVisibility } from "../lib/columns";
 import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
 import { AddItemForm } from "../components/AddItemForm";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
 import { LinkProductDialog } from "../components/LinkProductDialog";
+import { BuyerBackfillDialog } from "../components/BuyerBackfillDialog";
+import { BuyerSelect } from "../components/BuyerSelect";
 import { Button, DangerButton, GhostButton } from "../components/Button";
 import { FilterBar } from "../components/FilterBar";
 import { Select } from "../components/Select";
@@ -46,8 +56,10 @@ const COLS_BEFORE_TOTAL = [
   "kuantitas",
   "hargaSatuan",
 ] as const;
-// Columns shown right of the "Total" column, in display order.
-const COLS_AFTER_TOTAL = ["status", "createdAt", "updatedAt"] as const;
+// Columns shown right of the "Total" column, in display order. Every new column
+// has to be listed here (or above) or the date-group subtotal stops lining up
+// under "Total" — the group row's colSpans are counted from these two lists.
+const COLS_AFTER_TOTAL = ["status", "buyer", "createdAt", "updatedAt"] as const;
 
 const COLUMNS = [
   { id: "namaProduk", label: "Produk" },
@@ -56,11 +68,16 @@ const COLUMNS = [
   { id: "hargaSatuan", label: "Harga Satuan" },
   { id: "totalHarga", label: "Total" },
   { id: "status", label: "Status" },
+  { id: "buyer", label: "Pembeli" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
 ];
 
-// createdAt/updatedAt are hidden by default; users can re-enable them.
+// createdAt/updatedAt are hidden by default; users can re-enable them. Pembeli
+// is NOT: it is mandatory on new orders, so hiding it would hide a field the
+// form insists on. No storage-key bump needed: usePersistentVisibility merges
+// the saved object over `defaults` key by key (`columns.ts`), so an id the saved
+// state has never heard of resolves to its default rather than to `undefined`.
 const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
 const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
@@ -107,6 +124,20 @@ function statusSelectClass(status: OrderStatus): string {
 export function OrdersPage() {
   const products = useProducts();
   const orders = useOrders();
+  const buyers = useBuyers();
+
+  const backfillPending = useBuyerBackfillPending();
+  // Escape / click-outside on the prompt must write nothing, so "closed" is
+  // session state here, not a stored answer: the prompt returns next visit.
+  const [backfillClosed, setBackfillClosed] = useState(false);
+  // Gate on the rows the backfill would actually touch, not on `orders.length`:
+  // an install with no orders and one where every order already has a buyer are
+  // the same question — "nothing to ask about" — and both must answer silently
+  // rather than offer to stamp zero rows.
+  const withoutBuyer = useMemo(() => orders.filter(needsBuyer).length, [orders]);
+  useEffect(() => {
+    if (backfillPending && withoutBuyer === 0) dismissBuyerBackfill();
+  }, [backfillPending, withoutBuyer]);
 
   const [visible, toggle] = usePersistentVisibility(
     "invoice.pesanan.cols.v2",
@@ -120,6 +151,31 @@ export function OrdersPage() {
   const [buyDate, setBuyDate] = useState<string | null>(null);
   // The unlinked order row whose "Tautkan Produk" dialog is open.
   const [linking, setLinking] = useState<OrderItem | null>(null);
+  // The order row whose buyer cell is currently showing the picker.
+  const [assigning, setAssigning] = useState<string | null>(null);
+
+  const buyerById = useMemo(
+    () => new Map(buyers.map((b) => [b.id, b] as const)),
+    [buyers],
+  );
+
+  function createBuyerFor(orderId: string, nama: string) {
+    const now = nowISO();
+    const row: Buyer = {
+      id: uid(),
+      nama: nama.trim(),
+      telepon: "",
+      email: "",
+      alamat: "",
+      catatan: "",
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    upsertBuyer(row);
+    setOrderBuyer(orderId, row.id);
+    setAssigning(null);
+  }
 
   function addItems(items: OrderItem[]) {
     for (const item of items) addOrder(item);
@@ -236,6 +292,9 @@ export function OrdersPage() {
                   {visible.status !== false && (
                     <th className={thClass}>Status</th>
                   )}
+                  {visible.buyer !== false && (
+                    <th className={thClass}>Pembeli</th>
+                  )}
                   {visible.createdAt !== false && (
                     <th className={thClass}>Dibuat</th>
                   )}
@@ -257,6 +316,12 @@ export function OrdersPage() {
                     onSetStatus={setOrderStatus}
                     onBuy={() => setBuyDate(g.tanggal)}
                     onLink={setLinking}
+                    buyers={buyers}
+                    buyerById={buyerById}
+                    assigning={assigning}
+                    onAssign={setAssigning}
+                    onSetBuyer={setOrderBuyer}
+                    onCreateBuyer={createBuyerFor}
                   />
                 ))}
               </tbody>
@@ -286,6 +351,13 @@ export function OrdersPage() {
           onClose={() => setLinking(null)}
         />
       )}
+
+      {backfillPending && !backfillClosed && withoutBuyer > 0 && (
+        <BuyerBackfillDialog
+          count={withoutBuyer}
+          onClose={() => setBackfillClosed(true)}
+        />
+      )}
     </div>
   );
 }
@@ -299,6 +371,12 @@ function GroupRows({
   onSetStatus,
   onBuy,
   onLink,
+  buyers,
+  buyerById,
+  assigning,
+  onAssign,
+  onSetBuyer,
+  onCreateBuyer,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
@@ -308,6 +386,12 @@ function GroupRows({
   onSetStatus: (id: string, status: OrderStatus) => void;
   onBuy: () => void;
   onLink: (item: OrderItem) => void;
+  buyers: Buyer[];
+  buyerById: Map<string, Buyer>;
+  assigning: string | null;
+  onAssign: (id: string | null) => void;
+  onSetBuyer: (id: string, buyerId: string) => void;
+  onCreateBuyer: (orderId: string, nama: string) => void;
 }) {
   // Date label spans every visible column left of "Total".
   const beforeCount = COLS_BEFORE_TOTAL.filter(
@@ -396,6 +480,22 @@ function GroupRows({
               </Select>
             </td>
           )}
+          {visible.buyer !== false && (
+            <td className={tdClass}>
+              <BuyerCell
+                item={it}
+                buyers={buyers}
+                buyerById={buyerById}
+                picking={assigning === it.id}
+                onPick={() => onAssign(it.id)}
+                onChange={(buyerId) => {
+                  onSetBuyer(it.id, buyerId);
+                  onAssign(null);
+                }}
+                onCreate={(nama) => onCreateBuyer(it.id, nama)}
+              />
+            </td>
+          )}
           {visible.createdAt !== false && (
             <td className={`${tdClass} text-xs text-slate-400 whitespace-nowrap`}>
               {formatDateTimeID(it.createdAt)}
@@ -430,5 +530,70 @@ function GroupRows({
         </tr>
       ))}
     </>
+  );
+}
+
+// Three states, and the middle one is the point: a row with no buyer gets a
+// grey chip, not the amber one an unlinked product gets. An unlinked product is
+// a data defect; a buyerless order is very often just the truth.
+function BuyerCell({
+  item,
+  buyers,
+  buyerById,
+  picking,
+  onPick,
+  onChange,
+  onCreate,
+}: {
+  item: OrderItem;
+  buyers: Buyer[];
+  buyerById: Map<string, Buyer>;
+  picking: boolean;
+  onPick: () => void;
+  onChange: (buyerId: string) => void;
+  onCreate: (nama: string) => void;
+}) {
+  if (picking)
+    return (
+      <div className="w-52">
+        <BuyerSelect
+          value={item.buyerId}
+          options={buyers}
+          onChange={onChange}
+          onCreate={onCreate}
+        />
+      </div>
+    );
+
+  if (!item.buyerId)
+    return (
+      <button
+        type="button"
+        className="text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap hover:bg-slate-100"
+        title="Belum ada pembeli — klik untuk memilih"
+        onClick={onPick}
+      >
+        — tanpa pembeli —
+      </button>
+    );
+
+  const buyer = buyerById.get(item.buyerId);
+  // deleteBuyer does not cascade, so a live order can point at a tombstoned
+  // buyer. Say so instead of rendering a link that lands on a not-found page.
+  if (!buyer)
+    return (
+      <span className="text-slate-400 italic whitespace-nowrap">
+        (pembeli dihapus)
+      </span>
+    );
+
+  return (
+    <Link
+      to="/pembeli/$id"
+      params={{ id: buyer.id }}
+      className="text-blue-600 hover:underline font-medium"
+    >
+      {buyer.nama}
+    </Link>
   );
 }

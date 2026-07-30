@@ -10,14 +10,19 @@ import {
   setOrderStatus,
   linkOrderProduct,
   linkPurchaseProduct,
+  upsertBuyer,
+  deleteBuyer,
+  setOrderBuyer,
+  backfillOrderBuyer,
   getProducts,
   getOrders,
   getPurchases,
   getStock,
+  getBuyers,
 } from "./store";
 import { hydrateAudit, getAudit } from "./audit";
-import { db, flushWrites, type Snapshot } from "./db";
-import type { Product, OrderItem, PurchaseItem } from "./types";
+import { db, flushWrites, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
+import type { Product, OrderItem, PurchaseItem, Buyer } from "./types";
 
 // These tests exist to prove the write path actually reaches IndexedDB. The
 // store API is synchronous and optimistic — memory updates and emits before the
@@ -45,6 +50,7 @@ function order(over: Partial<OrderItem> = {}): OrderItem {
     id: "o1",
     tanggal: "2026-07-15",
     productId: "p1",
+    buyerId: "",
     namaProduk: "Almond Kacang",
     satuan: "pcs",
     kuantitas: 5,
@@ -59,6 +65,21 @@ function order(over: Partial<OrderItem> = {}): OrderItem {
   };
 }
 
+function buyer(over: Partial<Buyer> = {}): Buyer {
+  return {
+    id: "b1",
+    nama: "Bu Ani",
+    telepon: "081200000000",
+    email: "",
+    alamat: "",
+    catatan: "",
+    createdAt: "2026-07-10T00:00:00.000Z",
+    updatedAt: "2026-07-10T00:00:00.000Z",
+    deletedAt: null,
+    ...over,
+  };
+}
+
 const empty: Snapshot = {
   products: [],
   orders: [],
@@ -67,6 +88,8 @@ const empty: Snapshot = {
   templates: [],
   audit: [],
   types: [],
+  buyers: [],
+  needsBuyerBackfill: false,
 };
 
 async function reset(seed: Partial<Snapshot> = {}) {
@@ -78,6 +101,8 @@ async function reset(seed: Partial<Snapshot> = {}) {
     db.stock.clear(),
     db.audit.clear(),
     db.types.clear(),
+    db.buyers.clear(),
+    db.meta.clear(),
   ]);
   const snap = { ...empty, ...seed };
   hydrateStores(snap);
@@ -373,5 +398,212 @@ describe("audit", () => {
     await flushWrites();
 
     expect(getAudit()).toHaveLength(before);
+  });
+});
+
+describe("upsertBuyer", () => {
+  beforeEach(() => reset());
+
+  it("persists a new buyer with a create audit entry", async () => {
+    upsertBuyer(buyer());
+    await flushWrites();
+
+    expect((await db.buyers.get("b1"))?.nama).toBe("Bu Ani");
+    expect(getBuyers()).toHaveLength(1);
+
+    const entries = await db.audit.toArray();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      entity: "buyer",
+      entityId: "b1",
+      action: "create",
+    });
+  });
+
+  it("updates in place, keeps createdAt, and logs a field-level diff", async () => {
+    // Renaming is the whole reason buyers are a table with an id rather than a
+    // name-keyed row: the orders pointing at "b1" must survive it.
+    await reset({ buyers: [buyer()] });
+
+    upsertBuyer(buyer({ nama: "Ibu Ani Warung Kopi", telepon: "081211112222" }));
+    await flushWrites();
+
+    expect(await db.buyers.count()).toBe(1);
+    const row = await db.buyers.get("b1");
+    expect(row?.nama).toBe("Ibu Ani Warung Kopi");
+    expect(row?.createdAt).toBe("2026-07-10T00:00:00.000Z");
+    expect(row?.updatedAt).not.toBe("2026-07-10T00:00:00.000Z");
+
+    const entries = await db.audit.toArray();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("update");
+    expect(entries[0].changes).toEqual(
+      expect.arrayContaining([
+        { field: "nama", from: "Bu Ani", to: "Ibu Ani Warung Kopi" },
+        { field: "telepon", from: "081200000000", to: "081211112222" },
+      ]),
+    );
+  });
+});
+
+describe("deleteBuyer", () => {
+  beforeEach(() => reset({ products: [product], buyers: [buyer()] }));
+
+  it("tombstones the buyer and leaves their orders pointing at it", async () => {
+    // Deliberately NOT a cascade (plan.md §1). Losing which sales belonged to
+    // whom because a contact was tidied up is worse than a dangling id, which
+    // the UI resolves to "(pembeli dihapus)".
+    addOrder(order({ buyerId: "b1" }));
+    await flushWrites();
+
+    deleteBuyer("b1");
+    await flushWrites();
+
+    expect(getBuyers()).toHaveLength(0);
+    expect((await db.buyers.get("b1"))?.deletedAt).toBeTruthy();
+    expect((await db.buyers.get("b1"))?.nama).toBe("Bu Ani");
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
+    expect(getOrders()[0].buyerId).toBe("b1");
+  });
+
+  it("is a no-op for an unknown id", async () => {
+    deleteBuyer("nope");
+    await flushWrites();
+    expect(getBuyers()).toHaveLength(1);
+  });
+});
+
+describe("setOrderBuyer", () => {
+  beforeEach(() => reset({ products: [product], buyers: [buyer()] }));
+
+  it("persists the buyer with an audit entry", async () => {
+    addOrder(order());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrderBuyer("o1", "b1");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
+    expect(await db.audit.count()).toBe(before + 1);
+  });
+
+  it("is a no-op when the buyer is unchanged", async () => {
+    addOrder(order({ buyerId: "b1" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    setOrderBuyer("o1", "b1");
+    await flushWrites();
+
+    expect(await db.audit.count()).toBe(before);
+  });
+
+  it("ignores an unknown buyer id but accepts \"\" as a clear", async () => {
+    addOrder(order({ buyerId: "b1" }));
+    await flushWrites();
+
+    setOrderBuyer("o1", "nope");
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
+
+    // "" is the one non-existent id that is legal: it means "no buyer".
+    setOrderBuyer("o1", "");
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.buyerId).toBe("");
+  });
+
+  it("is a no-op for an unknown order id", async () => {
+    setOrderBuyer("nope", "b1");
+    await flushWrites();
+    expect(await db.audit.count()).toBe(0);
+  });
+});
+
+describe("backfillOrderBuyer", () => {
+  beforeEach(() =>
+    reset({ products: [product], buyers: [buyer()], needsBuyerBackfill: true }),
+  );
+
+  it("writes every blank order, ONE audit entry, and the meta flag", async () => {
+    addOrder(order({ id: "o1" }));
+    addOrder(order({ id: "o2" }));
+    addOrder(order({ id: "o3" }));
+    await flushWrites();
+    const before = await db.audit.count();
+
+    backfillOrderBuyer("b1");
+    await flushWrites();
+
+    const rows = await db.orders.toArray();
+    expect(rows.map((o) => o.buyerId)).toEqual(["b1", "b1", "b1"]);
+    // Every row keeps its own trace of having changed, since the audit entry is
+    // a summary and not a per-row record.
+    expect(rows.every((o) => o.updatedAt !== "2026-07-15T00:00:00.000Z")).toBe(true);
+
+    // The point of the whole function: 3 orders, ONE entry — not 3. The audit
+    // log is the fastest-growing table and a 340-row backfill must not put 340
+    // rows in Riwayat.
+    expect(await db.audit.count()).toBe(before + 1);
+    const buyerEntries = (await db.audit.toArray()).filter((a) => a.entity === "buyer");
+    expect(buyerEntries).toHaveLength(1);
+    expect(buyerEntries[0]).toMatchObject({ entityId: "b1", action: "update" });
+    expect(buyerEntries[0].label).toContain("3 pesanan lama");
+
+    expect((await db.meta.get(BUYER_BACKFILL_KEY))?.value).toBe(true);
+  });
+
+  it("fills blanks only and never overwrites an existing buyer", async () => {
+    await reset({
+      products: [product],
+      buyers: [buyer(), buyer({ id: "b2", nama: "Pak Budi" })],
+      needsBuyerBackfill: true,
+    });
+    addOrder(order({ id: "o1" }));
+    addOrder(order({ id: "o2", buyerId: "b2" }));
+    await flushWrites();
+
+    backfillOrderBuyer("b1");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
+    expect((await db.orders.get("o2"))?.buyerId).toBe("b2");
+    expect((await db.orders.get("o2"))?.updatedAt).toBe("2026-07-15T00:00:00.000Z");
+  });
+
+  it("ignores an unknown buyer id", async () => {
+    addOrder(order());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    backfillOrderBuyer("nope");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.buyerId).toBe("");
+    expect(await db.audit.count()).toBe(before);
+    expect(await db.meta.get(BUYER_BACKFILL_KEY)).toBeUndefined();
+  });
+
+  it("is a no-op once the flag is already set", async () => {
+    addOrder(order());
+    await flushWrites();
+
+    backfillOrderBuyer("b1");
+    await flushWrites();
+    const before = await db.audit.count();
+
+    // The prompt is the only caller and it is terminal, so a second run has
+    // nothing to answer — it must not append another summary entry. Without the
+    // `buyerBackfillPending` guard this logged "… ke 0 pesanan lama" every time.
+    backfillOrderBuyer("b1");
+    await flushWrites();
+
+    expect(await db.audit.count()).toBe(before);
+    const buyerEntries = (await db.audit.toArray()).filter(
+      (a) => a.entity === "buyer",
+    );
+    expect(buyerEntries).toHaveLength(1);
+    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
   });
 });

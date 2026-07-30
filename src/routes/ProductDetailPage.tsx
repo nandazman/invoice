@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import type { StockReason } from "../lib/types";
+import type { Buyer, StockReason } from "../lib/types";
 import {
   useProducts,
   useOrders,
   useStock,
   useTypes,
+  useBuyers,
   upsertProduct,
 } from "../lib/store";
 import { useAudit } from "../lib/audit";
@@ -43,7 +44,15 @@ export function ProductDetailPage() {
   const stock = useStock();
   const audit = useAudit();
   const types = useTypes();
+  const buyers = useBuyers();
   const [editing, setEditing] = useState(false);
+
+  // "Who bought this" is the question this page is already for, so the Pesanan
+  // table resolves buyer ids through a Map rather than a find() per row.
+  const buyerById = useMemo(
+    () => new Map(buyers.map((b) => [b.id, b] as const)),
+    [buyers],
+  );
 
   const product = products.find((p) => p.id === id);
 
@@ -275,6 +284,7 @@ export function ProductDetailPage() {
               <thead>
                 <tr>
                   <th className={thClass}>Tanggal</th>
+                  <th className={thClass}>Pembeli</th>
                   <th className={thClass}>Satuan</th>
                   <th className={`${thClass} text-right`}>Qty</th>
                   <th className={`${thClass} text-right`}>Harga Satuan</th>
@@ -295,6 +305,12 @@ export function ProductDetailPage() {
                           Diubah {formatDateTimeID(o.updatedAt)}
                         </span>
                       )}
+                    </td>
+                    <td className={tdClass}>
+                      <BuyerLabel
+                        buyerId={o.buyerId}
+                        buyer={buyerById.get(o.buyerId) ?? null}
+                      />
                     </td>
                     <td className={tdClass}>{o.satuan}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>
@@ -356,6 +372,30 @@ export function ProductDetailPage() {
         />
       )}
     </div>
+  );
+}
+
+// Read-only here: assigning a buyer belongs on Pesanan, where the row lives.
+// An id with no matching buyer is a deleted buyer, not a bug — deleteBuyer
+// deliberately leaves orders pointing at the tombstone.
+function BuyerLabel({
+  buyerId,
+  buyer,
+}: {
+  buyerId: string;
+  buyer: Buyer | null;
+}) {
+  if (!buyerId) return <span className="text-slate-400">—</span>;
+  if (!buyer)
+    return <span className="text-slate-400 italic">(pembeli dihapus)</span>;
+  return (
+    <Link
+      to="/pembeli/$id"
+      params={{ id: buyer.id }}
+      className="text-blue-600 hover:underline font-medium"
+    >
+      {buyer.nama}
+    </Link>
   );
 }
 

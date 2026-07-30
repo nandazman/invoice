@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { db, migrateFromLocalStorage, readAll, purgeTombstones } from "./db";
+import Dexie from "dexie";
+import {
+  db,
+  migrateFromLocalStorage,
+  readAll,
+  purgeTombstones,
+  BUYER_BACKFILL_KEY,
+} from "./db";
 import { LEGACY_KEYS } from "./storage";
 
 // The migration is the one piece of this change that touches data the user
@@ -53,9 +60,24 @@ async function resetAll() {
     db.templates.clear(),
     db.audit.clear(),
     db.types.clear(),
+    db.buyers.clear(),
     db.meta.clear(),
   ]);
 }
+
+// The v1 schema, verbatim from db.ts. Duplicated on purpose: the upgrade test
+// below needs a database that was actually created by the old code, and the
+// only honest way to get one is to declare the old stores.
+const V1_STORES = {
+  products: "id, deletedAt, namaProduk, tipe",
+  orders: "id, deletedAt, tanggal, productId, status",
+  purchases: "id, deletedAt, tanggal, productId",
+  stock: "id, deletedAt, productId, orderId, purchaseId, tanggal",
+  templates: "id, deletedAt",
+  audit: "id, timestamp, entity",
+  types: "nama",
+  meta: "key",
+};
 
 describe("migrateFromLocalStorage", () => {
   beforeEach(resetAll);
@@ -161,6 +183,36 @@ describe("migrateFromLocalStorage", () => {
     expect(p?.deletedAt).toBeNull();
   });
 
+  it("stamps buyerId on migrated legacy orders", async () => {
+    localStorage.setItem(ORDERS_KEY, JSON.stringify([legacyOrder]));
+
+    await migrateFromLocalStorage();
+
+    // Explicitly "", not undefined: IndexedDB stores undefined verbatim and
+    // every `buyerId === ""` check downstream would silently miss.
+    const o = await db.orders.get("o1");
+    expect(o?.buyerId).toBe("");
+    expect("buyerId" in (o as object)).toBe(true);
+  });
+
+  it("answers the backfill prompt for a fresh install before it can be asked", async () => {
+    // A new user has no orders to backfill, so a modal asking about them is
+    // nonsense. The flag goes in inside the seeding transaction.
+    expect((await migrateFromLocalStorage()).status).toBe("seeded");
+
+    expect((await db.meta.get(BUYER_BACKFILL_KEY))?.value).toBe(true);
+    expect((await readAll()).needsBuyerBackfill).toBe(false);
+  });
+
+  it("leaves the backfill prompt pending for a migrated install", async () => {
+    localStorage.setItem(ORDERS_KEY, JSON.stringify([legacyOrder]));
+
+    expect((await migrateFromLocalStorage()).status).toBe("migrated");
+
+    expect(await db.meta.get(BUYER_BACKFILL_KEY)).toBeUndefined();
+    expect((await readAll()).needsBuyerBackfill).toBe(true);
+  });
+
   it("treats any legacy key as an existing install", async () => {
     // Stock only, no products: still a migration, not a fresh seed.
     localStorage.setItem(STOCK_KEY, JSON.stringify([]));
@@ -189,6 +241,41 @@ describe("readAll", () => {
   it("sorts types", async () => {
     await db.types.bulkPut([{ nama: "Dapur" }, { nama: "Bar" }]);
     expect((await readAll()).types).toEqual(["Bar", "Dapur"]);
+  });
+});
+
+describe("v1 -> v2 upgrade", () => {
+  beforeEach(resetAll);
+
+  it("stamps buyerId on order rows written before the field existed", async () => {
+    // Build a database that genuinely is at version 1: close the app's own
+    // handle, drop the database, and recreate it with only the v1 stores.
+    db.close();
+    await Dexie.delete("invoice");
+
+    const v1 = new Dexie("invoice");
+    v1.version(1).stores(V1_STORES);
+    await v1.open();
+    expect(v1.verno).toBe(1);
+    await v1.table("orders").put({ ...legacyOrder, deletedAt: null });
+    v1.close();
+
+    // Reopening the app's handle replays the version chain, running db.ts's
+    // own version(2).upgrade() over the row above.
+    await db.open();
+    expect(db.verno).toBe(2);
+
+    const o = await db.orders.get("o1");
+    // Not undefined — IndexedDB stores that verbatim and `buyerId === ""`
+    // would silently miss every pre-existing order.
+    expect(o?.buyerId).toBe("");
+    expect("buyerId" in (o as object)).toBe(true);
+    expect(o?.namaProduk).toBe("Almond Kacang");
+
+    // The new table arrives with the upgrade, empty.
+    expect(await db.buyers.count()).toBe(0);
+    // An upgraded install has NOT answered the backfill prompt.
+    expect((await readAll()).needsBuyerBackfill).toBe(true);
   });
 });
 

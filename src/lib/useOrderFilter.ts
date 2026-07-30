@@ -13,6 +13,9 @@ export type FilterableRow = LineItem & {
   id: string;
   productId?: string;
   status?: OrderStatus;
+  // Optional because PurchaseItem has no buyer — Beli Stok records what we
+  // bought, and its counterpart is a supplier, not a pembeli.
+  buyerId?: string;
 };
 
 export interface FilterValues {
@@ -22,6 +25,7 @@ export interface FilterValues {
   produk: string; // product-name substring search
   status: StatusFilter;
   tipe: string; // Product.tipe; "" = no constraint
+  pembeli: string; // Buyer id; "" = no constraint
 }
 
 const EMPTY: FilterValues = {
@@ -31,6 +35,7 @@ const EMPTY: FilterValues = {
   produk: "",
   status: "semua",
   tipe: "",
+  pembeli: "",
 };
 
 export interface OrderFilter<T extends FilterableRow> {
@@ -76,7 +81,7 @@ export function useOrderFilter<T extends FilterableRow>(
   // The product search filters every row on every keystroke; deferring it keeps
   // typing responsive as the list grows.
   const deferredProduk = useDeferredValue(values.produk);
-  const { exact, from, to, status, tipe } = values;
+  const { exact, from, to, status, tipe, pembeli } = values;
 
   const filtered = useMemo(() => {
     const q = deferredProduk.trim().toLowerCase();
@@ -95,12 +100,24 @@ export function useOrderFilter<T extends FilterableRow>(
       // productId "" (unmatched legacy rows) resolves to no tipe and drops out
       // whenever a type is selected. Intentional, and visible in the count.
       if (tipe && tipeById.get(o.productId ?? "") !== tipe) return false;
+      // Same shape as the status filter above: rows with no buyerId field
+      // (purchases) pass through untouched, so callers need no source-specific
+      // guard. An order with buyerId "" (unassigned) is a real value and does
+      // drop out once a buyer is selected.
+      if (pembeli && o.buyerId !== undefined && o.buyerId !== pembeli)
+        return false;
       return true;
     });
-  }, [rows, exact, from, to, deferredProduk, status, tipe, tipeById]);
+  }, [rows, exact, from, to, deferredProduk, status, tipe, tipeById, pembeli]);
 
   const hasFilter = Boolean(
-    exact || from || to || values.produk || tipe || status !== "semua",
+    exact ||
+      from ||
+      to ||
+      values.produk ||
+      tipe ||
+      pembeli ||
+      status !== "semua",
   );
 
   return { values, set, preset, filtered, clear, hasFilter };

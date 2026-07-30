@@ -27,12 +27,30 @@ export interface Product {
   deletedAt: string | null; // ISO datetime once soft-deleted; null while live
 }
 
+// A customer. Shaped after Product (uid key, timestamps, soft delete) rather
+// than TypeRow, which is keyed on its own name: buyers get renamed, carry
+// contact details, and need a stable key so their order history survives a
+// rename. Only `nama` is required; the rest are "" when unknown.
+// See docs/2026-07-29/plan.md §1.
+export interface Buyer {
+  id: string;
+  nama: string;
+  telepon: string;
+  email: string;
+  alamat: string;
+  catatan: string;
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
+  deletedAt: string | null; // ISO datetime once soft-deleted; null while live
+}
+
 export type OrderStatus = "pending" | "paid";
 
 export interface OrderItem {
   id: string;
   tanggal: string; // ISO date, yyyy-mm-dd (used for filtering/sorting)
   productId: string; // links to Product.id ("" for unmatched legacy rows)
+  buyerId: string; // links to Buyer.id ("" when no buyer is assigned)
   namaProduk: string;
   satuan: string; // chosen unit label (base satuan or a conversion nama)
   kuantitas: number;
@@ -78,7 +96,7 @@ export interface LineItem {
 export interface AuditEntry {
   id: string;
   timestamp: string; // ISO datetime
-  entity: "product" | "order" | "stock" | "type" | "purchase";
+  entity: "product" | "order" | "stock" | "type" | "purchase" | "buyer";
   entityId: string;
   action: "create" | "update" | "delete";
   label: string; // human summary, e.g. "Harga Jual 12.000 → 13.000"

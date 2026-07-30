@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { exportAll, importAll, BACKUP_VERSION } from "./backup";
-import { hydrateStores, getProducts, getOrders, getTypes } from "./store";
+import {
+  hydrateStores,
+  getProducts,
+  getOrders,
+  getTypes,
+  getBuyers,
+} from "./store";
 import { hydrateAudit, getAudit } from "./audit";
 import { hydrateTemplates, getTemplates } from "./template-store";
 import { db, flushWrites, readAll } from "./db";
@@ -48,6 +54,18 @@ const auditEntry = {
   label: "Produk dibuat",
 };
 
+const buyer = {
+  id: "b1",
+  nama: "Bu Ani",
+  telepon: "0812",
+  email: "",
+  alamat: "",
+  catatan: "",
+  createdAt: "2026-07-29T00:00:00.000Z",
+  updatedAt: "2026-07-29T00:00:00.000Z",
+  deletedAt: null,
+};
+
 // A v2 backup: the pre-IndexedDB shape. No `deletedAt` anywhere.
 function v2File(): string {
   return JSON.stringify({
@@ -63,6 +81,38 @@ function v2File(): string {
   });
 }
 
+// A v3 backup: `deletedAt` everywhere, but written before buyers existed — so
+// no `buyers` key and no `buyerId` on the order.
+function v3File(): string {
+  return JSON.stringify({
+    version: 3,
+    exportedAt: "2026-07-20T00:00:00.000Z",
+    products: [{ ...product, deletedAt: null }],
+    orders: [{ ...order, deletedAt: null }],
+    purchases: [],
+    stock: [],
+    types: ["Bar", "Dapur"],
+    templates: [],
+    audit: [auditEntry],
+  });
+}
+
+// A v4 backup: the current shape, written by exportAll itself.
+function v4File(): string {
+  return JSON.stringify({
+    version: 4,
+    exportedAt: "2026-07-29T00:00:00.000Z",
+    products: [{ ...product, deletedAt: null }],
+    orders: [{ ...order, buyerId: "b1", deletedAt: null }],
+    purchases: [],
+    stock: [],
+    types: ["Bar", "Dapur"],
+    buyers: [buyer],
+    templates: [],
+    audit: [auditEntry],
+  });
+}
+
 const emptySnapshot: Snapshot = {
   products: [],
   orders: [],
@@ -71,6 +121,8 @@ const emptySnapshot: Snapshot = {
   templates: [],
   audit: [],
   types: [],
+  buyers: [],
+  needsBuyerBackfill: false,
 };
 
 async function resetStores() {
@@ -83,6 +135,7 @@ async function resetStores() {
     db.templates.clear(),
     db.audit.clear(),
     db.types.clear(),
+    db.buyers.clear(),
   ]);
   hydrateStores(emptySnapshot);
   hydrateAudit(emptySnapshot);
@@ -121,7 +174,27 @@ describe("importAll — v2 files (pre-IndexedDB)", () => {
   });
 });
 
-describe("exportAll / importAll — v3 round-trip", () => {
+describe("importAll — v3 files (pre-buyers)", () => {
+  beforeEach(resetStores);
+
+  it("restores a v3 backup with no buyers at all", () => {
+    // v3 predates the buyers table, so the key is simply absent — not empty.
+    importAll(v3File());
+
+    expect(getBuyers()).toEqual([]);
+    expect(getOrders()).toHaveLength(1);
+  });
+
+  it("stamps buyerId: \"\" on every restored order", () => {
+    // Not undefined: IndexedDB stores that verbatim and every `buyerId === ""`
+    // check downstream would silently miss the row.
+    importAll(v3File());
+
+    for (const o of getOrders()) expect(o.buyerId).toBe("");
+  });
+});
+
+describe("exportAll / importAll — v4 round-trip", () => {
   beforeEach(resetStores);
 
   it("round-trips byte-identically apart from exportedAt", () => {
@@ -138,10 +211,25 @@ describe("exportAll / importAll — v3 round-trip", () => {
     expect(b).toEqual(a);
   });
 
+  it("round-trips a v4 file byte-identically apart from exportedAt", () => {
+    // Nothing to upgrade at v4, so what comes back out must be what went in —
+    // buyers and the orders pointing at them included.
+    importAll(v4File());
+    const out = exportAll();
+
+    const a = JSON.parse(v4File());
+    const b = JSON.parse(out);
+    delete a.exportedAt;
+    delete b.exportedAt;
+    expect(b).toEqual(a);
+    expect(b.buyers[0].nama).toBe("Bu Ani");
+    expect(b.orders[0].buyerId).toBe("b1");
+  });
+
   it("stamps the current version on export", () => {
     importAll(v2File());
     expect(JSON.parse(exportAll()).version).toBe(BACKUP_VERSION);
-    expect(BACKUP_VERSION).toBe(3);
+    expect(BACKUP_VERSION).toBe(4);
   });
 
   it("does not export tombstones", () => {
@@ -227,6 +315,12 @@ describe("importAll — validation", () => {
   it("rejects an unknown/future version", () => {
     const future = JSON.stringify({ ...JSON.parse(v2File()), version: 99 });
     expect(() => importAll(future)).toThrow(/tidak didukung/);
+  });
+
+  it("rejects the next version up, not just wildly future ones", () => {
+    // v5 does not exist yet; guessing at its shape is how a restore corrupts.
+    const next = JSON.stringify({ ...JSON.parse(v4File()), version: 5 });
+    expect(() => importAll(next)).toThrow(/tidak didukung/);
   });
 
   it("rejects a file with no version", () => {

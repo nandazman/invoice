@@ -5,6 +5,7 @@ import type {
   PurchaseItem,
   StockMovement,
   AuditEntry,
+  Buyer,
 } from "./types";
 import type { Template } from "./template-types";
 import {
@@ -46,6 +47,13 @@ export interface MetaRow {
 
 const MIGRATED_KEY = "migrated.v1";
 
+// Set once the user has answered the "which pembeli owns your existing orders?"
+// prompt — either way. Its ABSENCE is the only thing that means "never asked":
+// `buyerId === ""` cannot distinguish "not asked yet" from "asked, and the
+// answer was none", so checking the orders themselves would prompt forever.
+// See docs/2026-07-29/plan.md §3.
+export const BUYER_BACKFILL_KEY = "buyerBackfill.v1";
+
 class InvoiceDB extends Dexie {
   products!: Table<Product, string>;
   orders!: Table<OrderItem, string>;
@@ -54,6 +62,7 @@ class InvoiceDB extends Dexie {
   templates!: Table<Template, string>;
   audit!: Table<AuditEntry, string>;
   types!: Table<TypeRow, string>;
+  buyers!: Table<Buyer, string>;
   meta!: Table<MetaRow, string>;
 
   constructor() {
@@ -75,6 +84,29 @@ class InvoiceDB extends Dexie {
       types: "nama",
       meta: "key",
     });
+
+    // v2 — adds `buyers` and `OrderItem.buyerId` (docs/2026-07-29/plan.md).
+    //
+    // version(1) above stays VERBATIM. Dexie replays the version chain on an
+    // installed database, so deleting it breaks every upgrade path.
+    //
+    // Only the changed tables are listed; unlisted ones carry over unchanged.
+    this.version(2)
+      .stores({
+        buyers: "id, deletedAt, nama",
+        orders: "id, deletedAt, tanggal, productId, status, buyerId",
+      })
+      // Existing order rows predate the field. Without this they carry
+      // `undefined`, which IndexedDB stores verbatim and which every
+      // `buyerId === ""` check would then silently miss.
+      .upgrade((tx) =>
+        tx
+          .table<OrderItem>("orders")
+          .toCollection()
+          .modify((o) => {
+            o.buyerId = o.buyerId ?? "";
+          }),
+      );
   }
 }
 
@@ -127,6 +159,10 @@ export interface Snapshot {
   templates: Template[];
   audit: AuditEntry[];
   types: string[];
+  buyers: Buyer[];
+  // True when the buyer backfill prompt has never been answered. Resolved here
+  // so the check stays synchronous downstream, like every other store read.
+  needsBuyerBackfill: boolean;
 }
 
 // True when IndexedDB is usable at all. Private-mode Firefox and some embedded
@@ -161,7 +197,7 @@ function live<T extends { deletedAt: string | null }>(rows: T[]): T[] {
 
 // Bulk-read every table. One sequential read each, once, at boot.
 export async function readAll(): Promise<Snapshot> {
-  const [products, orders, purchases, stock, templates, audit, types] =
+  const [products, orders, purchases, stock, templates, audit, types, buyers, backfill] =
     await Promise.all([
       db.products.toArray(),
       db.orders.toArray(),
@@ -170,6 +206,8 @@ export async function readAll(): Promise<Snapshot> {
       db.templates.toArray(),
       db.audit.toArray(),
       db.types.toArray(),
+      db.buyers.toArray(),
+      db.meta.get(BUYER_BACKFILL_KEY),
     ]);
 
   return {
@@ -180,7 +218,15 @@ export async function readAll(): Promise<Snapshot> {
     templates: live(templates),
     audit, // append-only, no tombstones
     types: types.map((t) => t.nama).sort((a, b) => a.localeCompare(b)),
+    buyers: live(buyers),
+    needsBuyerBackfill: backfill?.value !== true,
   };
+}
+
+// Record that the buyer backfill prompt has been answered. Called for BOTH
+// answers (apply and skip) — the flag means "asked", not "has buyers".
+export async function markBuyerBackfillDone(): Promise<void> {
+  await db.meta.put({ key: BUYER_BACKFILL_KEY, value: true });
 }
 
 // ---------- Migration ----------
@@ -204,6 +250,14 @@ function withTombstoneField<T extends { deletedAt?: string | null }>(
   return rows.map((r) => ({ ...r, deletedAt: r.deletedAt ?? null }));
 }
 
+// Same rule for `buyerId`, which legacy order rows predate. Spread first,
+// assign after, so `undefined` can never reach IndexedDB.
+function withBuyerField<T extends { buyerId?: string }>(
+  rows: T[],
+): (T & { buyerId: string })[] {
+  return rows.map((r) => ({ ...r, buyerId: r.buyerId ?? "" }));
+}
+
 // One-time copy of localStorage -> IndexedDB.
 //
 // Ordering is the whole point: copy, VERIFY, and only then record that we are
@@ -222,6 +276,9 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
       await db.products.bulkPut(seeded);
       await db.types.bulkPut([{ nama: "Bar" }]);
       await db.meta.put({ key: MIGRATED_KEY, value: true });
+      // A fresh install has no orders to backfill, so the prompt would be a
+      // question about nothing. Answer it here, before it can ever be asked.
+      await db.meta.put({ key: BUYER_BACKFILL_KEY, value: true });
     });
     return { status: "seeded" };
   }
@@ -230,7 +287,7 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
   // legacy field (tipe, hargaDasar, productId, timestamps). Reimplementing that
   // here would be a second, divergent copy of the same rules.
   const products = withTombstoneField(loadProducts());
-  const orders = withTombstoneField(loadOrders());
+  const orders = withBuyerField(withTombstoneField(loadOrders()));
   const purchases = withTombstoneField(loadPurchases());
   const stock = withTombstoneField(loadStock());
   const audit = loadAudit();
@@ -307,7 +364,14 @@ function loadLegacyTemplates(): Template[] {
 // this is the one query that index is for.
 export async function purgeTombstones(days = 90): Promise<number> {
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-  const tables = [db.products, db.orders, db.purchases, db.stock, db.templates];
+  const tables = [
+    db.products,
+    db.orders,
+    db.purchases,
+    db.stock,
+    db.templates,
+    db.buyers,
+  ];
   let removed = 0;
   for (const table of tables) {
     removed += await (table as Table<{ deletedAt: string | null }, string>)

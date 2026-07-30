@@ -26,6 +26,7 @@ function order(over: Partial<OrderItem> = {}): OrderItem {
     id: "o1",
     tanggal: "2026-07-15",
     productId: "p1",
+    buyerId: "",
     namaProduk: "Almond Kacang",
     satuan: "pcs",
     kuantitas: 5,

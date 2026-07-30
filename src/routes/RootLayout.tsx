@@ -28,6 +28,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/harga", label: "Harga", icon: "🏷️" },
       { to: "/pesanan", label: "Pesanan", icon: "📦" },
+      { to: "/pembeli", label: "Pembeli", icon: "👥" },
       { to: "/stok", label: "Stok", icon: "🏬" },
       { to: "/beli-stok", label: "Beli Stock", icon: "🛒" },
       { to: "/riwayat", label: "Riwayat", icon: "🕓" },

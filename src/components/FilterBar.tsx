@@ -5,12 +5,13 @@ import { Input } from "./Input";
 import { Panel } from "./Panel";
 import { Select } from "./Select";
 import { PRESET_LABELS, type PresetKey } from "../lib/format";
-import { useTypes } from "../lib/store";
+import { useBuyers, useTypes } from "../lib/store";
 import type { FilterableRow, OrderFilter } from "../lib/useOrderFilter";
 
 const PRESETS = Object.keys(PRESET_LABELS) as PresetKey[];
 
-// The universal half of the filter UI: dates, presets, product search, type.
+// The universal half of the filter UI: dates, presets, product search, type,
+// buyer.
 // Anything one page shows and another does not comes in as `children` — that is
 // why there are no booleans here. Layout differs per page (Invoice stacks in a
 // sidebar, Orders and Excel run horizontally), so that is `className`, not a
@@ -30,6 +31,7 @@ export function FilterBar({
 }) {
   const { values, set, preset, filtered, clear, hasFilter } = filter;
   const types = useTypes();
+  const buyers = useBuyers();
 
   return (
     <Panel>
@@ -74,6 +76,24 @@ export function FilterBar({
               {types.map((t) => (
                 <option key={t} value={t}>
                   {t}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {/* A plain <Select>, not BuyerSelect — the same call as Tipe vs
+              TypeSelect: "+ Buat pembeli" belongs on a form that records an
+              order, not on a filter, where creating a buyer could only ever
+              narrow the list to nothing. Universal, so it lives here rather
+              than in `children`: Beli Stok simply matches every purchase. */}
+          <Field label="Pembeli" className={fieldClassName}>
+            <Select
+              value={values.pembeli}
+              onChange={(e) => set({ pembeli: e.target.value })}
+            >
+              <option value="">Semua pembeli</option>
+              {buyers.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nama}
                 </option>
               ))}
             </Select>

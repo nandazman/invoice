@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import type { Product, OrderItem } from "../lib/types";
+import type { Product, OrderItem, Buyer } from "../lib/types";
 import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
+import { useBuyers, upsertBuyer } from "../lib/store";
 import { Button, PrimaryButton, GhostButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Panel } from "./Panel";
 import { Field } from "./Field";
+import { BuyerSelect } from "./BuyerSelect";
 
 interface UnitOption {
   label: string; // displayed unit name
@@ -56,6 +58,28 @@ export function AddItemForm({ products, onAdd }: Props) {
     [products],
   );
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
+  const buyers = useBuyers();
+  // One buyer per form, not per row: a five-row form with five buyer dropdowns
+  // is five controls answering one question, and one buyer per save is how the
+  // form is actually used. Splitting a save across two buyers means two saves.
+  const [buyerId, setBuyerId] = useState("");
+
+  function createBuyer(nama: string) {
+    const now = nowISO();
+    const row: Buyer = {
+      id: uid(),
+      nama: nama.trim(),
+      telepon: "",
+      email: "",
+      alamat: "",
+      catatan: "",
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    upsertBuyer(row);
+    setBuyerId(row.id);
+  }
 
   function patchRow(id: string, patch: Partial<Row>) {
     setRows((prev) =>
@@ -99,6 +123,7 @@ export function AddItemForm({ products, onAdd }: Props) {
       id: uid(),
       tanggal: r.tanggal,
       productId: product.id,
+      buyerId,
       namaProduk: product.namaProduk,
       satuan: cleanUnit,
       kuantitas: qtyNum,
@@ -115,6 +140,10 @@ export function AddItemForm({ products, onAdd }: Props) {
   const validCount = rows.filter((r) => !isBlank(r) && !isInvalid(r)).length;
 
   function commit() {
+    // Pembeli is mandatory: every new order records who it is for. Legacy rows
+    // may still carry "" (the backfill's Lewati leaves them), but nothing
+    // created from here is allowed to add another one.
+    if (!buyerId) return;
     // Block the save if any row is invalid; keep rows as-is so it can be fixed.
     if (rows.some(isInvalid)) return;
     const items = rows
@@ -123,12 +152,25 @@ export function AddItemForm({ products, onAdd }: Props) {
       .filter(Boolean) as OrderItem[];
     if (items.length === 0) return;
     onAdd(items);
+    // Rows reset, the buyer does not. Consecutive orders for the same buyer are
+    // the common case, and clearing it forces a re-pick every single save.
     setRows([emptyRow()]);
   }
 
   return (
     <Panel>
       <strong className="text-slate-700">Tambah Item</strong>
+
+      <div className="mt-3">
+        <Field label="Pembeli" className="w-64">
+          <BuyerSelect
+            value={buyerId}
+            options={buyers}
+            onChange={setBuyerId}
+            onCreate={createBuyer}
+          />
+        </Field>
+      </div>
 
       <div className="flex flex-col gap-2 mt-3">
         {rows.map((r) => {
@@ -229,7 +271,12 @@ export function AddItemForm({ products, onAdd }: Props) {
       <div className="flex items-center gap-2 mt-3">
         <Button onClick={addRow}>+ Tambah item</Button>
         <span className="flex-1" />
-        <PrimaryButton onClick={commit} disabled={validCount === 0}>
+        {/* Say WHY the button is dead. A disabled Simpan with a filled-in form
+            and no explanation reads as a bug. */}
+        {validCount > 0 && !buyerId && (
+          <span className="text-sm text-red-600">Pilih pembeli dulu.</span>
+        )}
+        <PrimaryButton onClick={commit} disabled={validCount === 0 || !buyerId}>
           Simpan {validCount > 1 ? `(${validCount})` : ""}
         </PrimaryButton>
       </div>
