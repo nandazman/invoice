@@ -17,6 +17,7 @@ import { InvoicePage } from "./routes/InvoicePage";
 import { StockPage } from "./routes/StockPage";
 import { BeliStockPage } from "./routes/BeliStockPage";
 import { HistoryPage } from "./routes/HistoryPage";
+import { ReportPage } from "./routes/ReportPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -94,6 +95,12 @@ const historyRoute = createRoute({
   component: HistoryPage,
 });
 
+const reportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/laporan",
+  component: ReportPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   pricesRoute,
@@ -107,6 +114,7 @@ const routeTree = rootRoute.addChildren([
   templateRoute,
   invoiceRoute,
   historyRoute,
+  reportRoute,
 ]);
 
 export const router = createRouter({

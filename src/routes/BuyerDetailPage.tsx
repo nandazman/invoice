@@ -12,6 +12,7 @@ import {
 import { BuyerDialog } from "../components/BuyerDialog";
 import { PrimaryButton } from "../components/Button";
 import { Panel } from "../components/Panel";
+import { Stat } from "../components/Stat";
 
 const thClass =
   "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
@@ -229,27 +230,6 @@ export function BuyerDetailPage() {
           onClose={() => setEditing(false)}
         />
       )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">
-        {label}
-      </div>
-      <div className={`text-lg font-bold tabular-nums ${className}`}>
-        {value}
-      </div>
     </div>
   );
 }

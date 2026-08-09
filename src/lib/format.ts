@@ -9,12 +9,28 @@ const rupiah = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+// Anything that rounds to zero prints as "Rp 0", never "-Rp 0". Intl keeps the
+// sign of -0 and of any small negative, so a float residue left by a division —
+// or a subtraction of two equal amounts — surfaced as a minus sign on a zero,
+// which reads as a loss that is not there.
 export function formatRupiah(n: number): string {
-  return rupiah.format(n);
+  return rupiah.format(Math.round(n) === 0 ? 0 : n);
 }
 
 export function formatAngka(n: number): string {
   return new Intl.NumberFormat("id-ID").format(n);
+}
+
+// A signed percentage with one decimal, in Indonesian notation: "34,3%",
+// "-12,0%". Null (no revenue to divide by) has no percentage to print — see
+// `marginOf` in report.ts — and shows as an em dash.
+export function formatPersen(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "—";
+  const s = new Intl.NumberFormat("id-ID", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(n);
+  return `${s}%`;
 }
 
 // Whole-rupiah rounding used for every displayed money value (formatRupiah uses

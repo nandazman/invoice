@@ -42,6 +42,10 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/invoice", label: "Buat Invoice", icon: "🧾" },
     ],
   },
+  {
+    label: "Laporan",
+    items: [{ to: "/laporan", label: "Laba Rugi", icon: "📈" }],
+  },
 ];
 
 export function RootLayout() {
