@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import type { Buyer, OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
 import {
@@ -43,6 +50,20 @@ import { ColumnToggle } from "../components/ColumnToggle";
 
 interface DateGroup {
   tanggal: string;
+  items: OrderItem[];
+  total: number;
+}
+
+// One buyer's slice of the table, holding its own date groups. In flat mode
+// there is exactly one section with `label: null` and no header row, so both
+// modes render through the same code path rather than forking the table body.
+interface BuyerSection {
+  key: string;
+  label: string | null;
+  // null in flat mode: a date's "Beli stok" then covers that date outright,
+  // which is what it has always done.
+  buyerId: string | null;
+  dates: DateGroup[];
   items: OrderItem[];
   total: number;
 }
@@ -116,6 +137,58 @@ function usePersistentHidden(
   return [ids, toggle];
 }
 
+// A view preference stored as a plain boolean, same reasoning as the two hooks
+// above: it changes nothing in the database, so it does not belong in one.
+function usePersistentFlag(
+  storageKey: string,
+  fallback: boolean,
+): [boolean, (next: boolean) => void] {
+  const [on, setOn] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw === null ? fallback : raw === "1";
+    } catch {
+      return fallback;
+    }
+  });
+
+  const set = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      try {
+        localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        // Private-mode storage failure: the toggle still works this session.
+      }
+    },
+    [storageKey],
+  );
+
+  return [on, set];
+}
+
+// Newest date first, subtotals counting only rows the user has not hidden.
+function buildDateGroups(items: OrderItem[], hidden: Set<string>): DateGroup[] {
+  const byDate = new Map<string, OrderItem[]>();
+  for (const o of items) {
+    const arr = byDate.get(o.tanggal) ?? [];
+    arr.push(o);
+    byDate.set(o.tanggal, arr);
+  }
+  return [...byDate.keys()]
+    .sort((a, b) => b.localeCompare(a))
+    .map((tanggal) => {
+      const rows = byDate.get(tanggal)!;
+      return {
+        tanggal,
+        items: rows,
+        total: sumRupiah(
+          rows.filter((i) => !hidden.has(i.id)).map((i) => i.totalHarga),
+        ),
+      };
+    });
+}
+
 // A buyer created from a picker, where a name is all we have. The remaining
 // fields are "" rather than optional so the row matches one made in BuyerDialog
 // — see the Buyer comment in types.ts.
@@ -165,10 +238,25 @@ export function OrdersPage() {
   );
   const [hidden, toggleHidden] = usePersistentHidden("invoice.pesanan.hidden.v1");
 
+  // Group the table by pembeli instead of running one flat date list. Off by
+  // default: the flat list is the shape the page has always had, and a user who
+  // never touches this should not find their table reorganised.
+  const [perBuyer, setPerBuyer] = usePersistentFlag(
+    "invoice.pesanan.perBuyer.v1",
+    false,
+  );
+
   const filter = useOrderFilter(orders, products);
   const { filtered, hasFilter } = filter;
-  // The order date whose items are open in the "Beli stok dari pesanan" dialog.
-  const [buyDate, setBuyDate] = useState<string | null>(null);
+  // The slice of orders open in the "Beli stok dari pesanan" dialog. Scoped by
+  // buyer as well as date whenever the table is split per pembeli — otherwise
+  // the button under "Andi · 5 Agustus" would open Budi's items for the same
+  // day too, and the whole point of splitting is that you are looking at one
+  // buyer at a time.
+  const [buying, setBuying] = useState<{
+    tanggal: string;
+    buyerId: string | null;
+  } | null>(null);
   // The unlinked order row whose "Tautkan Produk" dialog is open.
   const [linking, setLinking] = useState<OrderItem | null>(null);
   // The order row whose buyer cell is currently showing the picker.
@@ -250,27 +338,57 @@ export function OrdersPage() {
   function removeItem(id: string) {
     deleteOrder(id);
   }
-  const groups = useMemo<DateGroup[]>(() => {
-    const byDate = new Map<string, OrderItem[]>();
+  const sections = useMemo<BuyerSection[]>(() => {
+    const sectionOf = (
+      key: string,
+      label: string | null,
+      buyerId: string | null,
+      items: OrderItem[],
+    ): BuyerSection => ({
+      key,
+      label,
+      buyerId,
+      items,
+      dates: buildDateGroups(items, hidden),
+      total: sumRupiah(
+        items.filter((i) => !hidden.has(i.id)).map((i) => i.totalHarga),
+      ),
+    });
+
+    if (!perBuyer) return [sectionOf("all", null, null, filtered)];
+
+    const byBuyer = new Map<string, OrderItem[]>();
     for (const o of filtered) {
-      const arr = byDate.get(o.tanggal) ?? [];
+      const arr = byBuyer.get(o.buyerId) ?? [];
       arr.push(o);
-      byDate.set(o.tanggal, arr);
+      byBuyer.set(o.buyerId, arr);
     }
-    return [...byDate.keys()]
-      .sort((a, b) => b.localeCompare(a)) // newest first
-      .map((tanggal) => {
-        const items = byDate.get(tanggal)!;
-        return {
-          tanggal,
-          items,
-          // Subtotal counts only rows the user hasn't hidden.
-          total: sumRupiah(
-            items.filter((i) => !hidden.has(i.id)).map((i) => i.totalHarga),
-          ),
-        };
-      });
-  }, [filtered, hidden]);
+    return [...byBuyer.keys()]
+      .sort((a, b) => {
+        // Unassigned rows sink to the bottom: they are a to-do list, not a
+        // pembeli, and sorting "" first would head the table with them.
+        if (!a) return 1;
+        if (!b) return -1;
+        const na = buyerById.get(a)?.nama ?? "";
+        const nb = buyerById.get(b)?.nama ?? "";
+        return na.localeCompare(nb);
+      })
+      .map((id) =>
+        sectionOf(
+          id || "__none__",
+          !id
+            ? "— tanpa pembeli —"
+            : (buyerById.get(id)?.nama ?? "(pembeli dihapus)"),
+          id,
+          byBuyer.get(id)!,
+        ),
+      );
+  }, [filtered, hidden, perBuyer, buyerById]);
+
+  // Full-width span for the buyer header row: the checkbox column, every
+  // visible data column, and the actions column.
+  const totalCols =
+    2 + COLUMNS.filter((c) => visible[c.id] !== false).length;
 
   const counted = filtered.filter((i) => !hidden.has(i.id));
   const grandTotal = sumRupiah(counted.map((i) => i.totalHarga));
@@ -304,6 +422,17 @@ export function OrdersPage() {
             <option value="paid">Paid</option>
           </Select>
         </Field>
+        {/* A view switch, not a filter — so it sits here rather than in
+            FilterBar's own row, and Reset deliberately leaves it alone. */}
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer h-9 shrink-0">
+          <input
+            type="checkbox"
+            checked={perBuyer}
+            onChange={(e) => setPerBuyer(e.target.checked)}
+            className="w-4 h-4 accent-blue-600 cursor-pointer"
+          />
+          Pisahkan per pembeli
+        </label>
       </FilterBar>
 
       <Panel>
@@ -330,7 +459,7 @@ export function OrdersPage() {
           />
         )}
 
-        {groups.length === 0 ? (
+        {sections.every((s) => s.dates.length === 0) ? (
           <div className="text-center text-slate-400 py-8">
             {hasFilter
               ? "Tidak ada item cocok dengan filter."
@@ -380,27 +509,68 @@ export function OrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {groups.map((g) => (
-                  <GroupRows
-                    key={g.tanggal}
-                    group={g}
-                    visible={visible}
-                    hidden={hidden}
-                    onToggleHidden={toggleHidden}
-                    onRemove={removeItem}
-                    onSetStatus={setOrderStatus}
-                    onBuy={() => setBuyDate(g.tanggal)}
-                    onLink={setLinking}
-                    buyers={buyers}
-                    buyerById={buyerById}
-                    assigning={assigning}
-                    onAssign={setAssigning}
-                    onSetBuyer={setOrderBuyer}
-                    onCreateBuyer={createBuyerFor}
-                    selected={chosen}
-                    onToggleSelected={toggleSelected}
-                    onToggleAll={toggleAll}
-                  />
+                {sections.map((s) => (
+                  <Fragment key={s.key}>
+                    {s.label !== null && (
+                      <tr className="bg-blue-50 border-t-2 border-blue-200">
+                        <td className={tdClass}>
+                          <SelectAllBox
+                            ids={s.items.map((i) => i.id)}
+                            selected={chosen}
+                            onToggle={toggleAll}
+                            title={`Pilih semua item ${s.label}`}
+                          />
+                        </td>
+                        <td
+                          className={`${tdClass} font-bold text-blue-800`}
+                          colSpan={Math.max(1, totalCols - 2)}
+                        >
+                          {s.label}
+                          <span className="ml-2 font-normal text-blue-500">
+                            · {s.items.length} item
+                          </span>
+                        </td>
+                        {/* Only when there is a column left to put it in. With
+                            every data column hidden the header would otherwise
+                            emit more cells than the table has, stretching it
+                            past its own <thead>. */}
+                        {totalCols > 2 && (
+                          <td
+                            className={`${tdClass} text-right font-bold tabular-nums text-blue-800`}
+                          >
+                            {formatRupiah(s.total)}
+                          </td>
+                        )}
+                      </tr>
+                    )}
+                    {s.dates.map((g) => (
+                      <GroupRows
+                        key={g.tanggal}
+                        group={g}
+                        visible={visible}
+                        hidden={hidden}
+                        onToggleHidden={toggleHidden}
+                        onRemove={removeItem}
+                        onSetStatus={setOrderStatus}
+                        onBuy={() =>
+                          setBuying({
+                            tanggal: g.tanggal,
+                            buyerId: s.buyerId,
+                          })
+                        }
+                        onLink={setLinking}
+                        buyers={buyers}
+                        buyerById={buyerById}
+                        assigning={assigning}
+                        onAssign={setAssigning}
+                        onSetBuyer={setOrderBuyer}
+                        onCreateBuyer={createBuyerFor}
+                        selected={chosen}
+                        onToggleSelected={toggleSelected}
+                        onToggleAll={toggleAll}
+                      />
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -408,13 +578,17 @@ export function OrdersPage() {
         )}
       </Panel>
 
-      {buyDate && (
+      {buying && (
         <BuyFromOrderDialog
-          tanggal={buyDate}
-          items={orders.filter((o) => o.tanggal === buyDate)}
+          tanggal={buying.tanggal}
+          items={orders.filter(
+            (o) =>
+              o.tanggal === buying.tanggal &&
+              (buying.buyerId === null || o.buyerId === buying.buyerId),
+          )}
           products={products}
           onConfirm={commitPurchases}
-          onClose={() => setBuyDate(null)}
+          onClose={() => setBuying(null)}
         />
       )}
 
