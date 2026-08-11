@@ -33,10 +33,14 @@ function releaseMetaPlugin(): Plugin {
   };
 }
 
-// Project page on GitHub Pages: served at /invoice/.
+// Where the built site is mounted. GitHub Pages serves this as a project page
+// under /invoice/, Cloudflare Pages serves it at the domain root; the deploy
+// workflow sets VITE_BASE to override the GitHub Pages default.
 // Hash routing is used in the app so refreshes never 404.
+const BASE = process.env.VITE_BASE ?? "/invoice/";
+
 export default defineConfig({
-  base: "/invoice/",
+  base: BASE,
   define: {
     __RELEASE__: JSON.stringify(RELEASE),
   },

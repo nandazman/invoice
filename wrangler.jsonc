@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "invoice",
+  "compatibility_date": "2026-08-11",
+
+  // Static-assets-only Worker: there is no script, so requests are served
+  // straight from the uploaded files and never count as Worker invocations.
+  "assets": {
+    "directory": "./dist",
+    // The app uses hash routing, so this rarely fires — but it keeps a stray
+    // path request serving index.html instead of a 404.
+    "not_found_handling": "single-page-application"
+  },
+
+  // The point of using Workers over Pages: no public *.workers.dev URL, so the
+  // custom domain below is the only way in and Access can't be sidestepped.
+  "workers_dev": false,
+
+  // custom_domain creates the DNS record in the xutopia.my.id zone and issues
+  // the certificate. Cloudflare Access guards this hostname.
+  "routes": [
+    {
+      "pattern": "invoice.xutopia.my.id",
+      "custom_domain": true
+    }
+  ]
+}

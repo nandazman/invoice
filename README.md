@@ -205,7 +205,8 @@ bun run preview   # pratinjau hasil build
 ```
 
 > Routing memakai **hash history** (`/#/harga`) agar refresh tidak 404 di
-> GitHub Pages. `base` di `vite.config.ts` di-set ke `/invoice/` (nama repo).
+> GitHub Pages. `base` di `vite.config.ts` default-nya `/invoice/` (nama repo),
+> dan bisa di-override lewat env `VITE_BASE` (dipakai deploy Cloudflare).
 
 ---
 
@@ -219,7 +220,29 @@ Sudah ada workflow di `.github/workflows/deploy.yml`:
 
 Situs tersedia di `https://<username>.github.io/invoice/`.
 
-Jika nama repo bukan `invoice`, ubah `base` di `vite.config.ts` agar cocok.
+Jika nama repo bukan `invoice`, ubah default `BASE` di `vite.config.ts` agar cocok.
+
+---
+
+## Deploy ke Cloudflare Workers (privat)
+
+Situs yang sama juga hidup di **https://invoice.xutopia.my.id**, di belakang
+Cloudflare Access — harus login dulu, tidak ada URL publik lain yang bisa dipakai
+untuk menembusnya. Deploy langsung dari lokal, tanpa push:
+
+```powershell
+bun run test
+$env:VITE_BASE = "/"; bun run build
+bunx wrangler deploy
+$env:VITE_BASE = $null
+```
+
+> **`bun run test` wajib ditulis manual.** Jalur ini tidak lewat CI, jadi tidak ada
+> pengaman yang menggagalkan deploy kalau tes merah.
+
+Konfigurasi ada di `wrangler.jsonc`. Kenapa Workers dan bukan Pages, cara setup
+Access, serta catatan soal cache / rate limit / R2: lihat
+**[docs/cloudflare.md](docs/cloudflare.md)**.
 
 ---
 
