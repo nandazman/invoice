@@ -1,0 +1,70 @@
+name: Deploy to Cloudflare Workers
+
+# Manual only. GitHub Pages stays the automatic deploy on push (deploy.yml) and
+# serves the public copy; this workflow publishes the same commit to the private
+# copy at invoice.xutopia.my.id, which sits behind Cloudflare Access.
+#
+# Deploying from a laptop with `bunx wrangler deploy` is the usual route and is
+# perfectly fine. The reason to use this workflow instead is the test gate: the
+# local route has none, so a red test suite still ships.
+on:
+  workflow_dispatch:
+
+# Two overlapping deploys would race to publish different versions of the same
+# Worker. Queue them rather than cancelling: a half-finished asset upload is
+# worse than a slightly stale one.
+concurrency:
+  group: cloudflare-workers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-workers
+      url: https://invoice.xutopia.my.id
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The whole point of preferring this workflow over a local deploy.
+      - name: Test
+        run: bun run test
+
+      # Cloudflare serves the site at the domain root, unlike the /invoice/
+      # project path GitHub Pages uses.
+      - name: Build
+        run: bun run build
+        env:
+          VITE_BASE: "/"
+
+      # Guards against publishing a build made for GitHub Pages. Those assets are
+      # referenced under /invoice/, which 404s at the domain root and leaves a
+      # blank page behind a login nobody can see past.
+      - name: Verify the asset paths
+        run: |
+          if grep -q 'src="/invoice/\|href="/invoice/' dist/index.html; then
+            echo "::error::dist/ was built for GitHub Pages (/invoice/ base). VITE_BASE was not applied."
+            exit 1
+          fi
+          echo "Asset paths are root-relative."
+
+      # Publishes dist/ per wrangler.jsonc. That config declares assets but no
+      # main script, so requests are served from the edge without invoking a
+      # Worker and never count against the 100k/day free limit.
+      - name: Publish
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

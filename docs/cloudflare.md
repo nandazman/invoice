@@ -75,6 +75,26 @@ Catatan:
   GitHub Pages secara lokal, jalankan `bun run build` biasa dulu.
 - Lihat versi yang sedang live: `bunx wrangler deployments list`.
 
+### Alternatif: lewat GitHub Actions
+
+Workflow `.github/workflows/deploy-cloudflare.yml` jalan **hanya lewat manual
+trigger** (tab **Actions → Deploy to Cloudflare Workers → Run workflow**).
+Bedanya dengan jalur lokal: workflow ini menjalankan `bun run test` dulu, jadi
+tes gagal = deploy batal. Ada juga guard yang menggagalkan deploy kalau `dist/`
+ternyata ter-build untuk GitHub Pages (aset ber-path `/invoice/`, yang di root
+domain cuma menghasilkan halaman kosong).
+
+Perlu kredensial karena runner tidak bisa `wrangler login`. Di repo:
+**Settings → Secrets and variables → Actions**, isi `CLOUDFLARE_API_TOKEN` dan
+`CLOUDFLARE_ACCOUNT_ID`. Token dibuat di
+https://dash.cloudflare.com/profile/api-tokens dengan permission:
+
+| Scope | Permission | Level |
+| --- | --- | --- |
+| Account | Workers Scripts | Edit |
+| Zone | Workers Routes | Edit |
+| Zone | DNS | Edit |
+
 ---
 
 ## Cloudflare Access (Zero Trust)
