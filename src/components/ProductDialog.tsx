@@ -32,6 +32,9 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
     product?.stokMin ? String(product.stokMin) : "",
   );
 
+  const [namaError, setNamaError] = useState("");
+  const [hargaError, setHargaError] = useState("");
+
   const laba = (Number(hargaJual) || 0) - (Number(hargaDasar) || 0);
   const [konversi, setKonversi] = useState<Conversion[]>(
     product?.konversi ?? [],
@@ -49,14 +52,16 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
 
   function submit() {
     if (!namaProduk.trim()) {
-      alert("Nama produk wajib diisi.");
+      setNamaError("Nama produk wajib diisi.");
       return;
     }
+    setNamaError("");
     const harga = Number(hargaJual);
     if (!Number.isFinite(harga) || harga < 0) {
-      alert("Harga satuan tidak valid.");
+      setHargaError("Harga satuan tidak valid.");
       return;
     }
+    setHargaError("");
     const cleanKonv = konversi
       .filter((k) => k.nama.trim())
       .map((k) => {
@@ -90,10 +95,17 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
         </h2>
 
         <div className="flex gap-3 flex-wrap mb-3">
-          <Field label="Nama Produk *" className="flex-[2] min-w-[200px]">
+          <Field
+            label="Nama Produk *"
+            className="flex-[2] min-w-[200px]"
+            error={namaError}
+          >
             <Input
               value={namaProduk}
-              onChange={(e) => setNama(e.target.value)}
+              onChange={(e) => {
+                setNama(e.target.value);
+                setNamaError("");
+              }}
               autoFocus
             />
           </Field>
@@ -131,11 +143,18 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
               placeholder="mis. 30000"
             />
           </Field>
-          <Field label="Harga Satuan *" className="flex-1 min-w-[120px]">
+          <Field
+            label="Harga Satuan *"
+            className="flex-1 min-w-[120px]"
+            error={hargaError}
+          >
             <Input
               type="number"
               value={hargaJual}
-              onChange={(e) => setHarga(e.target.value)}
+              onChange={(e) => {
+                setHarga(e.target.value);
+                setHargaError("");
+              }}
               placeholder="mis. 45000"
             />
           </Field>

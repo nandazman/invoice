@@ -24,7 +24,10 @@ import {
 
 // ---------- Public types ----------
 
-export type Role = "none" | "read" | "write" | "admin";
+// Two rungs plus "not on the list". `none` means BLOCKED, not "reader": there
+// is no longer a role that may look without saving — see
+// docs/2026-08-15/permissions-plan.md decision 3.
+export type Role = "none" | "write" | "admin";
 
 export interface SyncStatus {
   // False when the API is not there at all — the GitHub Pages copy, which has
@@ -33,6 +36,10 @@ export interface SyncStatus {
   available: boolean;
   email: string | null;
   role: Role;
+  // True only once a live /api/sync/me has ANSWERED with a role. Without it
+  // `role` is a guess — either the initial "none" or the localStorage cache —
+  // and a guess must never gate anybody out of the app. See `isBlocked`.
+  roleKnown: boolean;
   online: boolean;
   busy: boolean;
   lastPushAt: string | null;
@@ -53,10 +60,18 @@ export interface SyncStatus {
 // storage system holding a piece of the sync state.
 const WATERMARKS_KEY = "sync.watermarks.v1";
 
-// Scratch mode is genuinely a UI preference, not sync state: it re-enables the
-// editors for a `read` user who understands the edits stay on this device. It
-// is read synchronously by the admin page, so localStorage is the right home.
-const SCRATCH_KEY = "sync.scratch.v1";
+// The last role /api/sync/me confirmed, so the UI has something better than
+// "none" to show before the network answers — see `isBlocked`. localStorage
+// rather than the Dexie `meta` table because it is read SYNCHRONOUSLY, during
+// the first render, and Dexie cannot answer that early.
+//
+// A stale entry here is deliberately not defended against, in either
+// direction. It only decides what the UI shows: every endpoint re-reads the
+// role from D1 on every request, so a revoked user carrying a cached "write"
+// sees the app and gets 403 on their next sync — the correct outcome, and the
+// reason the server-side checks in src/worker/ must stay. Do not add
+// expiry, signing or a revocation channel here; there is nothing to protect.
+const ROLE_CACHE_KEY = "sync.role.v1";
 
 // D1 caps a row at ~2MB. Templates embed base64 dataURLs (template-store.ts) so
 // they are the only table that can reach it. Leave headroom for the JSON quoting
@@ -69,20 +84,55 @@ const DEBOUNCE_MS = 3000;
 
 // ---------- Status store ----------
 
-const initialStatus: SyncStatus = {
-  available: false,
-  email: null,
-  role: "none",
-  online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
-  busy: false,
-  lastPushAt: null,
-  lastPullAt: null,
-  pending: {},
-  pendingTotal: 0,
-  error: null,
-};
+// The wire value is widened to a string on the way in so a role this build does
+// not know about lands on `none` rather than on `undefined`. Failing closed is
+// the right direction: the worst case is a UI that under-reports its own
+// abilities, and the server decides anyway.
+function asRole(raw: unknown): Role {
+  return raw === "admin" ? "admin" : raw === "write" ? "write" : "none";
+}
 
-let status: SyncStatus = initialStatus;
+function readCachedRole(): Role {
+  try {
+    return asRole(localStorage.getItem(ROLE_CACHE_KEY));
+  } catch {
+    return "none";
+  }
+}
+
+function cacheRole(role: Role): void {
+  try {
+    localStorage.setItem(ROLE_CACHE_KEY, role);
+  } catch {
+    // Private-mode browsers can throw on write. A lost cache costs nothing —
+    // the next successful /api/sync/me refills it.
+  }
+}
+
+// A function rather than a constant because the cached role is read from
+// localStorage each time: the test seam resets through here too, and a stale
+// snapshot taken at import time would outlive a cleared store.
+function freshStatus(): SyncStatus {
+  return {
+    available: false,
+    email: null,
+    // Optimistic on purpose. The role is unknown until the network answers, and
+    // showing the last one we were told keeps a returning admin's nav from
+    // flashing in late — and, more importantly, keeps `role` from reading as a
+    // denial while it is really just unanswered.
+    role: readCachedRole(),
+    roleKnown: false,
+    online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
+    busy: false,
+    lastPushAt: null,
+    lastPullAt: null,
+    pending: {},
+    pendingTotal: 0,
+    error: null,
+  };
+}
+
+let status: SyncStatus = freshStatus();
 
 const listeners = new Set<() => void>();
 function emit() {
@@ -114,24 +164,29 @@ export function canWrite(): boolean {
   return status.role === "write" || status.role === "admin";
 }
 
-// ---------- Scratch mode ----------
+// ---------- The gate ----------
 
-export function isScratchMode(): boolean {
-  try {
-    return localStorage.getItem(SCRATCH_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setScratchMode(on: boolean): void {
-  try {
-    if (on) localStorage.setItem(SCRATCH_KEY, "1");
-    else localStorage.removeItem(SCRATCH_KEY);
-  } catch {
-    // Private-mode browsers can throw on write. A lost preference is not worth
-    // failing a click over.
-  }
+// "This Access identity is signed in but is not on the roles list, and the
+// server said so." The one condition the gate screen (RootLayout) may fire on.
+//
+// All three terms are load-bearing, and dropping any of them blanks the app for
+// somebody who is entitled to it:
+//
+//   - `available` — false on the GitHub Pages copy, which has no Worker behind
+//     it at all. `initSync` returns before setting it, so `role === "none"`
+//     alone would blank that entire build.
+//   - `roleKnown` — false until a live /api/sync/me has answered. `available`
+//     is not enough on its own: a lapsed Access session sets it true from the
+//     failure path, with the role still unanswered.
+//   - `role === "none"` — the actual denial, only ever trusted alongside the
+//     two above.
+//
+// Offline at boot therefore does NOT gate: /api/sync/me never answers, so
+// `roleKnown` stays false and the cached role stands. A user whose train went
+// into a tunnel keeps the whole app, which is the offline-first property this
+// design exists to protect.
+export function isBlocked(s: SyncStatus): boolean {
+  return s.available && s.roleKnown && s.role === "none";
 }
 
 // ---------- Watermarks ----------
@@ -587,6 +642,7 @@ export async function syncNow(): Promise<void> {
   // Coalesce: a second caller joins the run in flight rather than starting a
   // concurrent sweep of the same tables.
   if (running) return running;
+  lastSyncStartedAt = Date.now();
   running = (async () => {
     patch({ busy: true });
     try {
@@ -640,6 +696,51 @@ function flushNow(): void {
   void syncNow();
 }
 
+// ---------- Periodic pull ----------
+
+// Every trigger above is caused by THIS device: a local write debounces one,
+// reconnecting flushes one, boot runs one. None of them fire when someone else
+// changes a row, so a tab that is merely open shows whatever it saw the last
+// time its own user touched something — and with more than one person on the
+// data, "open and idle" is the normal state of a tab, not the exception. Two
+// people editing stale copies of the same order is the thing the mirror exists
+// to prevent, so freshness cannot depend on the reader happening to type.
+//
+// A minute, not ten seconds: a pull carries only rows past the watermark, so a
+// steady-state poll is a near-empty response, but it is still a request per
+// tab per interval against a free-tier Worker.
+const POLL_MS = 60_000;
+
+// Coming back to a tab is the moment staleness actually matters, so visibility
+// syncs immediately instead of waiting out the interval. Alt-tabbing is
+// frequent enough that it needs a floor, or a user moving between windows would
+// fire a sync per switch.
+const VISIBILITY_MIN_MS = 10_000;
+
+let poll: ReturnType<typeof setInterval> | null = null;
+let lastSyncStartedAt = 0;
+
+// Hidden tabs are skipped rather than polled. A background tab has no reader,
+// so the request buys nothing — and browsers throttle background timers anyway,
+// which would make the interval a promise the platform does not keep. The
+// visibility listener is what makes skipping safe: what you are looking at is
+// never a minute stale, only what you are not.
+function startPolling(): void {
+  if (typeof window === "undefined" || poll !== null) return;
+
+  poll = setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    if (!status.online) return;
+    void syncNow();
+  }, POLL_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (Date.now() - lastSyncStartedAt < VISIBILITY_MIN_MS) return;
+    void syncNow();
+  });
+}
+
 // ---------- Boot ----------
 
 let initialized = false;
@@ -648,18 +749,25 @@ export async function initSync(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  const result = await api<{ email: string; role: Role }>("/api/sync/me");
+  const result = await api<{ email: string; role: string }>("/api/sync/me");
   if (result.kind !== "ok") {
     // Quietly, always. Sync being unreachable is not a reason for the app to
     // fail to boot — every read is local and every write already landed.
+    // `roleKnown` stays false, so nothing downstream reads the unanswered role
+    // as a denial.
     reportFailure(result);
     return;
   }
 
+  const role = asRole(result.data.role);
+  // Written only here: this is the one place a role is confirmed by the server.
+  cacheRole(role);
+
   patch({
     available: true,
     email: result.data.email,
-    role: result.data.role,
+    role,
+    roleKnown: true,
     error: null,
   });
 
@@ -673,6 +781,9 @@ export async function initSync(): Promise<void> {
       flushNow();
     });
     window.addEventListener("offline", () => patch({ online: false }));
+    // Only once the API is known to be there. On the GitHub Pages copy
+    // `initSync` has already returned above, so no timer is ever created.
+    startPolling();
   }
 
   // Deliberately not awaited: `initSync` is on the boot path and a slow network
@@ -689,7 +800,10 @@ export function __resetSyncForTests(): void {
   running = null;
   if (timer !== null) clearTimeout(timer);
   timer = null;
-  status = { ...initialStatus };
+  if (poll !== null) clearInterval(poll);
+  poll = null;
+  lastSyncStartedAt = 0;
+  status = freshStatus();
   listeners.clear();
   onWrite(() => {});
 }

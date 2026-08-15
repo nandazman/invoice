@@ -95,54 +95,69 @@ function tombstone<T extends Attribution & { deletedAt: string | null; updatedAt
 // caller is replacing the entire dataset, so the cost genuinely is O(table).
 // `clear()` drops tombstones too — a restore is an authoritative replacement,
 // not a merge.
+//
+// Every one of them runs the incoming rows through `fresh`, for the same reason
+// the single-row writers use it: a backup file carries the attribution the
+// SERVER stamped whenever it was exported, and restoring it is a local write
+// the server has not seen. Keeping those names would have the app assert that
+// someone made a change they had no part in — the restore is the one edit here,
+// and it was made by whoever clicked "Pulihkan". "—" until the next pull.
+//
+// `setTypes` is deliberately absent: the types table is bare names with no
+// attribution columns at all.
 
 export function setProducts(next: Product[]): void {
-  products = next;
+  const rows = next.map(fresh);
+  products = rows;
   emit();
   persist("setProducts", () =>
     db.transaction("rw", db.products, async () => {
       await db.products.clear();
-      await db.products.bulkPut(next);
+      await db.products.bulkPut(rows);
     }),
   );
 }
 export function setOrders(next: OrderItem[]): void {
-  orders = next;
+  const rows = next.map(fresh);
+  orders = rows;
   emit();
   persist("setOrders", () =>
     db.transaction("rw", db.orders, async () => {
       await db.orders.clear();
-      await db.orders.bulkPut(next);
+      await db.orders.bulkPut(rows);
     }),
   );
 }
 export function setPurchases(next: PurchaseItem[]): void {
-  purchases = next;
+  const rows = next.map(fresh);
+  purchases = rows;
   emit();
   persist("setPurchases", () =>
     db.transaction("rw", db.purchases, async () => {
       await db.purchases.clear();
-      await db.purchases.bulkPut(next);
+      await db.purchases.bulkPut(rows);
     }),
   );
 }
 export function setStock(next: StockMovement[]): void {
-  stock = next;
+  const rows = next.map(fresh);
+  stock = rows;
   emit();
   persist("setStock", () =>
     db.transaction("rw", db.stock, async () => {
       await db.stock.clear();
-      await db.stock.bulkPut(next);
+      await db.stock.bulkPut(rows);
     }),
   );
 }
 export function setBuyers(next: Buyer[]): void {
-  buyers = next;
+  const rows = next.map(fresh);
+  buyers = rows;
   emit();
   persist("setBuyers", () =>
     db.transaction("rw", db.buyers, async () => {
       await db.buyers.clear();
-      await db.buyers.bulkPut(next);
+      await db.buyers.bulkPut(rows);
     }),
   );
 }

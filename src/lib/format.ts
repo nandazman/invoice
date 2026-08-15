@@ -139,6 +139,44 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+// Byte counts for humans: "812 B", "41,2 KB", "3,7 MB". Decimal units (1000,
+// not 1024) because that is what Cloudflare's own D1 numbers use, and a size
+// that disagrees with the dashboard is worse than no size at all.
+export function formatBytes(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "—";
+  if (n < 1000) return `${formatAngka(Math.round(n))} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = n / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const s = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(value);
+  return `${s} ${units[unit]}`;
+}
+
+// "2 jam lalu". Coarse on purpose — this answers "is sync alive?", so the
+// difference between 118 and 119 minutes is noise, while the difference between
+// minutes and days is the whole point. Anything in the future (a clock skewed
+// between two devices) reads as "baru saja" rather than a negative age.
+export function formatRelatifID(iso: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const detik = Math.round((Date.now() - t) / 1000);
+  if (detik < 60) return "baru saja";
+  const menit = Math.floor(detik / 60);
+  if (menit < 60) return `${menit} menit lalu`;
+  const jam = Math.floor(menit / 60);
+  if (jam < 24) return `${jam} jam lalu`;
+  const hari = Math.floor(jam / 24);
+  if (hari < 30) return `${hari} hari lalu`;
+  const bulan = Math.floor(hari / 30);
+  if (bulan < 12) return `${bulan} bulan lalu`;
+  return `${Math.floor(bulan / 12)} tahun lalu`;
+}
+
 // "2026-06-27T08:30:00.000Z" -> "27 Jun 2026, 15.30" (best effort, local time)
 export function formatDateTimeID(iso: string): string {
   if (!iso) return "—";

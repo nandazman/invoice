@@ -10,6 +10,10 @@
     "deploy:cf": "bun run build:cf && wrangler deploy",
     "d1:migrate:local": "wrangler d1 migrations apply invoice --local",
     "d1:migrate": "wrangler d1 migrations apply invoice --remote",
+    "d1:sql": "wrangler d1 execute invoice --local --command",
+    "d1:sql:remote": "wrangler d1 execute invoice --remote --command",
+    "d1:export": "wrangler d1 export invoice --remote --output d1-export.sql",
+    "d1:path": "node scripts/d1-path.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

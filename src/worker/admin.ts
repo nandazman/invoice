@@ -1,6 +1,6 @@
 import { HttpError, json } from "./http";
 import type { Role } from "./roles";
-import { recentRows, tableStats } from "./sync";
+import { databaseSize, recentRows, tableStats, writeVolume } from "./sync";
 
 // Role management. Every route here sits behind the admin Access application,
 // so reaching this code already means Access matched the owner-only policy.
@@ -10,13 +10,16 @@ interface RoleRow {
   role: Role;
   createdAt: string;
   createdBy: string | null;
+  lastSeenAt: string | null;
 }
 
-const VALID: Role[] = ["read", "write", "admin"];
+const VALID: Role[] = ["write", "admin"];
 
 export async function listRoles(db: D1Database): Promise<Response> {
   const { results } = await db
-    .prepare("SELECT email, role, createdAt, createdBy FROM roles ORDER BY email")
+    .prepare(
+      "SELECT email, role, createdAt, createdBy, lastSeenAt FROM roles ORDER BY email",
+    )
     .all<RoleRow>();
   return json({ roles: results });
 }
@@ -49,8 +52,29 @@ export async function deleteRole(db: D1Database, email: string | null): Promise<
   return json({ email: normalized, role: "none" });
 }
 
+// The D1 dashboard. Everything here is derived from D1 itself — size comes off
+// the query metadata, activity off the same `updatedAt` the sync cursor uses —
+// so no Cloudflare API token and no new Worker secret are involved.
 export async function stats(db: D1Database): Promise<Response> {
-  return json({ tables: await tableStats(db), recent: await recentRows(db) });
+  return json({
+    tables: await tableStats(db),
+    recent: await recentRows(db),
+    size: await databaseSize(db),
+    volume: await writeVolume(db),
+    people: await peopleSeen(db),
+  });
+}
+
+// Who has been let in, and whether the grant was ever used. NULL lastSeenAt =
+// never booted the app since the grant (or since migration 0002, which starts
+// everyone at NULL).
+async function peopleSeen(db: D1Database): Promise<
+  { email: string; role: Role; lastSeenAt: string | null }[]
+> {
+  const { results } = await db
+    .prepare("SELECT email, role, lastSeenAt FROM roles ORDER BY email")
+    .all<{ email: string; role: Role; lastSeenAt: string | null }>();
+  return results;
 }
 
 function normalizeEmail(raw: unknown): string {

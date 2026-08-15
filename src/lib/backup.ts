@@ -1,4 +1,5 @@
 import type {
+  Attribution,
   Product,
   OrderItem,
   PurchaseItem,
@@ -57,20 +58,45 @@ export interface BackupFile {
 // Exports LIVE rows only: the stores hold no tombstones, and a tombstone is
 // bookkeeping for a delete that already happened — not something a restore on
 // another machine needs. A v4 backup therefore round-trips byte-identically.
+//
+// And it exports NO attribution — see `shed` below, which is the other half of
+// why that round-trip still holds now that rows carry `createdBy`/`updatedBy`.
 export function exportAll(): string {
   const data: BackupFile = {
     version: BACKUP_VERSION,
     exportedAt: nowISO(),
-    products: getProducts(),
-    orders: getOrders(),
-    purchases: getPurchases(),
-    stock: getStock(),
+    products: shed(getProducts()),
+    orders: shed(getOrders()),
+    purchases: shed(getPurchases()),
+    stock: shed(getStock()),
     types: getTypes(),
-    buyers: getBuyers(),
-    templates: getTemplates(),
-    audit: getAudit(),
+    buyers: shed(getBuyers()),
+    templates: shed(getTemplates()),
+    audit: shed(getAudit()),
   };
   return JSON.stringify(data, null, 2);
+}
+
+// Attribution does not go in the file.
+//
+// `createdBy`/`updatedBy` are stamped by the Worker from a verified Access
+// token, and they assert something narrow: the SERVER saw this person do this.
+// A JSON file on someone's disk cannot make that claim — it is editable by
+// anyone who has it — and a restore cannot honour it, because the restore is
+// itself a local write the server has not seen (which is why store.ts's bulk
+// setters run every incoming row through `fresh`).
+//
+// So the file simply does not carry the field. This is the same rule `pick()`
+// enforces on the push path, applied to the other direction data leaves the
+// app: attribution travels out of the server and nowhere else. It is also what
+// keeps "a v4 backup round-trips byte-identically" true rather than
+// almost-true — export drops the field, restore would have cleared it anyway.
+//
+// The bare `_` names are unused on purpose: this is the destructuring form of
+// "everything except these two", and it is the only form that removes a key
+// rather than setting it to undefined.
+function shed<T extends Attribution>(rows: T[]): T[] {
+  return rows.map(({ createdBy: _c, updatedBy: _u, ...rest }) => rest as T);
 }
 
 // Stamp `deletedAt: null` onto rows from a v2 file, which predates the field.

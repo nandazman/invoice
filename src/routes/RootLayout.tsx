@@ -3,7 +3,12 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
 import { flushWrites } from "../lib/db";
 import { downloadJSON, pickJSONFile } from "../lib/io";
-import { useSyncStatus } from "../lib/sync/client";
+import { useSyncStatus, isBlocked } from "../lib/sync/client";
+import { PrimaryButton } from "../components/Button";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { GateScreen } from "../components/GateScreen";
+import { Modal } from "../components/Modal";
+import { SyncChip } from "../components/SyncChip";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
 const GROUPS_KEY = "invoice.sidebar.groups";
@@ -50,16 +55,15 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // Admin-only nav. Its own group, not Alat: this is about the app itself — who
-// you are and what has reached the cloud — rather than anything you do to the
-// data.
+// has access and what the cloud database looks like — rather than anything you
+// do to the data.
 //
-// Only the NAV ENTRY is admin-gated. The /admin ROUTE stays registered and
-// reachable by direct URL on purpose (see router.tsx): the page gates its own
-// sections, and a `read` user still needs "Mode coba-coba" and "Buang
-// perubahan lokal" when an admin sends them the link. Do not delete the route.
+// Everything a non-admin used to open /admin for now lives in the sync chip at
+// the bottom of this sidebar, so the page behind this entry is genuinely
+// admin-only: roles and the D1 dashboard, nothing else.
 const SYSTEM_GROUP: NavGroup = {
   label: "Sistem",
-  items: [{ to: "/admin", label: "Sinkronisasi", icon: "☁️" }],
+  items: [{ to: "/admin", label: "Pengaturan", icon: "⚙️" }],
 };
 
 export function RootLayout() {
@@ -69,10 +73,10 @@ export function RootLayout() {
   // positively — rather than hiding on a known-non-admin — is what keeps the
   // entry from flashing in during boot and disappearing again. Unreachable API
   // means the role is unknown, which is also not admin, so it stays hidden.
-  const { role } = useSyncStatus();
+  const status = useSyncStatus();
   const groups = useMemo(
-    () => (role === "admin" ? [...NAV_GROUPS, SYSTEM_GROUP] : NAV_GROUPS),
-    [role],
+    () => (status.role === "admin" ? [...NAV_GROUPS, SYSTEM_GROUP] : NAV_GROUPS),
+    [status.role],
   );
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1",
@@ -105,21 +109,39 @@ export function RootLayout() {
     });
   }
 
+  // Restore is the one action that can wipe everything, so it gets three pieces
+  // of state: the confirmation, the in-flight flag that keeps it from firing
+  // twice, and the outcome — which has to be reported somewhere now that
+  // alert() is gone.
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  // `intact` is not cosmetic: the reassurance shown on failure is a claim about
+  // the user's data, and it is only true while nothing has been replaced yet.
+  const [result, setResult] = useState<
+    { ok: boolean; message: string; intact?: boolean } | null
+  >(null);
+
   function doBackup() {
     const stamp = new Date().toISOString().slice(0, 10);
     downloadJSON(`invoice-backup-${stamp}.json`, exportAll());
   }
 
+  // Runs with the confirmation still on screen and `busy`, so both its buttons
+  // are dead until the restore finishes — a second click cannot start a second
+  // import over the first one's half-written stores. Escape and the backdrop
+  // still close it, which is the way out if the file picker is dismissed
+  // instead of used (that leaves pickJSONFile's promise pending forever).
   async function doRestore() {
-    if (
-      !confirm(
-        "Pulihkan dari cadangan? Ini akan mengganti SEMUA data (produk, pesanan, stok, tipe, template, riwayat). Tindakan ini tidak bisa dibatalkan.",
-      )
-    )
-      return;
+    setRestoring(true);
+    // Flips the moment the stores have actually been replaced. Everything up to
+    // and including importAll validates before it writes, so a failure there
+    // leaves the old data whole — after it, that is no longer true, and
+    // flushWrites can still throw.
+    let replaced = false;
     try {
       const text = await pickJSONFile();
       importAll(text);
+      replaced = true;
       // Every store writes to IndexedDB fire-and-forget, so the restore is NOT
       // durable when importAll returns — only the in-memory arrays are. Wait
       // for the writes to land before reporting success, or a tab closed right
@@ -130,11 +152,27 @@ export function RootLayout() {
       // outright. No reload is needed: every store is reactive, so the UI has
       // already updated.
       await flushWrites();
-      alert("Data berhasil dipulihkan.");
+      setResult({ ok: true, message: "Data berhasil dipulihkan." });
     } catch (e) {
-      alert("Gagal memulihkan: " + (e as Error).message);
+      setResult({
+        ok: false,
+        message: "Gagal memulihkan: " + (e as Error).message,
+        intact: !replaced,
+      });
+    } finally {
+      setRestoring(false);
+      setConfirmingRestore(false);
     }
   }
+
+  // The gate. Below every hook on purpose — an early return above them would
+  // change the hook count between renders the moment /api/sync/me answers.
+  //
+  // The condition is entirely inside `isBlocked` (client.ts), which is where
+  // the reasoning about its three terms lives. In particular this must NOT
+  // become `status.role === "none"`: that blanks the GitHub Pages copy, which
+  // has no API to ask and therefore no role.
+  if (isBlocked(status)) return <GateScreen email={status.email} />;
 
   return (
     <div className="flex min-h-screen">
@@ -212,6 +250,10 @@ export function RootLayout() {
         </nav>
 
         <div className="mt-auto pt-3 flex flex-col gap-1">
+          {/* Above the backup buttons, and rendering nothing at all on the
+              copy with no API behind it. A chip rather than a nav link because
+              it has to report state, not just offer a destination. */}
+          <SyncChip collapsed={collapsed} />
           <button
             onClick={doBackup}
             title="Backup semua data"
@@ -221,7 +263,7 @@ export function RootLayout() {
             {!collapsed && "Backup semua"}
           </button>
           <button
-            onClick={doRestore}
+            onClick={() => setConfirmingRestore(true)}
             title="Pulihkan dari cadangan"
             className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
           >
@@ -241,6 +283,73 @@ export function RootLayout() {
           <Outlet />
         </div>
       </main>
+
+      {confirmingRestore && (
+        <ConfirmDialog
+          danger
+          title="Pulihkan dari cadangan?"
+          confirmLabel="Ya, pulihkan"
+          busy={restoring}
+          onConfirm={() => void doRestore()}
+          onClose={() => setConfirmingRestore(false)}
+        >
+          <p className="font-semibold text-red-700">
+            SEMUA data di perangkat ini — produk, pesanan, stok, tipe, template,
+            dan riwayat — diganti oleh isi berkas cadangan.
+          </p>
+          <p>
+            Setelah menekan tombol di bawah, Anda memilih berkas cadangannya
+            dulu; penggantian baru berjalan sesudah berkas itu terbaca.
+          </p>
+          <p className="font-semibold">
+            Tidak bisa dibatalkan. Kalau masih ragu, batalkan dan tekan “Backup
+            semua” lebih dulu agar data sekarang punya salinan.
+          </p>
+          {restoring && <p>Sedang memulihkan — jangan tutup tab ini…</p>}
+        </ConfirmDialog>
+      )}
+
+      {/* The outcome, not a question — so it is a plain Modal, not a
+          ConfirmDialog. It has to be a modal rather than a line in the sidebar
+          because the sidebar collapses to 4rem wide, where the message would
+          have nowhere to go. */}
+      {result && (
+        <Modal onClose={() => setResult(null)}>
+          <h2
+            className={`text-lg font-bold mb-2 ${
+              result.ok ? "text-emerald-700" : "text-red-700"
+            }`}
+          >
+            {result.ok ? "Pemulihan selesai" : "Pemulihan gagal"}
+          </h2>
+          <p className="text-sm text-slate-600 mb-5">{result.message}</p>
+          {!result.ok && result.intact && (
+            // Only when nothing was replaced. importAll validates the whole
+            // file before it touches any store, so a berkas that fails there
+            // never lands halfway — but a failure AFTER it did land must not be
+            // dressed up as one that did not.
+            <p className="text-sm text-slate-600 mb-5">
+              Berkas cadangan diperiksa sebelum data lama diganti, jadi data di
+              perangkat ini masih utuh.
+            </p>
+          )}
+          {!result.ok && !result.intact && (
+            // The bad case: the stores are already the backup's, but the write
+            // to IndexedDB did not confirm. Reloading is how the user finds out
+            // which of the two they actually have.
+            <p className="text-sm text-slate-600 mb-5">
+              Data sudah diganti sebelum kesalahan ini terjadi, tetapi belum
+              tentu tersimpan. Muat ulang halaman untuk memeriksa, lalu pulihkan
+              sekali lagi bila perlu.
+            </p>
+          )}
+          <div className="flex justify-end">
+            <PrimaryButton autoFocus onClick={() => setResult(null)}>
+              Tutup
+            </PrimaryButton>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ export function BuyerDialog({ buyer, onSave, onClose }: Props) {
   const [email, setEmail] = useState(buyer?.email ?? "");
   const [alamat, setAlamat] = useState(buyer?.alamat ?? "");
   const [catatan, setCatatan] = useState(buyer?.catatan ?? "");
+  const [namaError, setNamaError] = useState("");
 
   function submit() {
     // Only `nama` is checked. Nothing else in this app validates an email or a
@@ -25,9 +26,10 @@ export function BuyerDialog({ buyer, onSave, onClose }: Props) {
     // would be the first place a user is stopped from writing down what they
     // actually have.
     if (!nama.trim()) {
-      alert("Nama pembeli wajib diisi.");
+      setNamaError("Nama pembeli wajib diisi.");
       return;
     }
+    setNamaError("");
     const now = nowISO();
     onSave({
       id: buyer?.id ?? uid(),
@@ -52,10 +54,13 @@ export function BuyerDialog({ buyer, onSave, onClose }: Props) {
       </h2>
 
       <div className="flex gap-3 flex-wrap mb-3">
-        <Field label="Nama *" className="flex-[2] min-w-[200px]">
+        <Field label="Nama *" className="flex-[2] min-w-[200px]" error={namaError}>
           <Input
             value={nama}
-            onChange={(e) => setNama(e.target.value)}
+            onChange={(e) => {
+              setNama(e.target.value);
+              setNamaError("");
+            }}
             placeholder="mis. Bu Ani"
             autoFocus
           />

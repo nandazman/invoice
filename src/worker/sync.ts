@@ -182,6 +182,10 @@ export interface TableStat {
   total: number;
   live: number;
   deleted: number;
+  // MAX(cursor) — the newest write this table has seen, or null for a table
+  // that is empty or has no cursor at all (`types`). "412 baris, terakhir 2 jam
+  // lalu" says sync is alive in a way a count on its own never does.
+  lastWriteAt: string | null;
 }
 
 export interface RecentRow {
@@ -200,15 +204,68 @@ export async function tableStats(db: D1Database): Promise<TableStat[]> {
     // audit and types have no deletedAt, so everything in them is live by
     // definition rather than by query.
     const hasTombstones = spec.columns.includes("deletedAt");
-    const sql = hasTombstones
-      ? `SELECT COUNT(*) AS total, SUM(CASE WHEN deletedAt IS NULL THEN 1 ELSE 0 END) AS live FROM ${spec.name}`
-      : `SELECT COUNT(*) AS total, COUNT(*) AS live FROM ${spec.name}`;
-    const row = await db.prepare(sql).first<{ total: number; live: number | null }>();
+    const live = hasTombstones
+      ? "SUM(CASE WHEN deletedAt IS NULL THEN 1 ELSE 0 END)"
+      : "COUNT(*)";
+    // `types` is cursor-less (replaced wholesale on every push), so it has no
+    // column that could answer "when was this last written" — NULL, not 0.
+    const last = spec.cursor === null ? "NULL" : `MAX(${spec.cursor})`;
+    const row = await db
+      .prepare(
+        `SELECT COUNT(*) AS total, ${live} AS live, ${last} AS lastWriteAt FROM ${spec.name}`,
+      )
+      .first<{ total: number; live: number | null; lastWriteAt: string | null }>();
     const total = row?.total ?? 0;
-    const live = row?.live ?? 0;
-    out.push({ table: spec.name, total, live, deleted: total - live });
+    const liveCount = row?.live ?? 0;
+    out.push({
+      table: spec.name,
+      total,
+      live: liveCount,
+      deleted: total - liveCount,
+      lastWriteAt: row?.lastWriteAt ?? null,
+    });
   }
   return out;
+}
+
+// How many rows were written in the last 24 hours and the last 7 days, counted
+// off each table's own cursor. Cursor-less `types` is skipped: with nothing to
+// compare against, including it would mean either guessing or counting its
+// handful of rows as "just written" on every call.
+export interface WriteVolume {
+  day: number;
+  week: number;
+}
+
+export async function writeVolume(db: D1Database, now = new Date()): Promise<WriteVolume> {
+  const day = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const week = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // ISO-8601 compares lexically, which is why a plain `>` works on TEXT
+  // timestamps here and everywhere else in this file.
+  const statements = INCREMENTAL.map((spec) =>
+    db
+      .prepare(
+        `SELECT SUM(CASE WHEN ${spec.cursor} > ? THEN 1 ELSE 0 END) AS day, ` +
+          `SUM(CASE WHEN ${spec.cursor} > ? THEN 1 ELSE 0 END) AS week FROM ${spec.name}`,
+      )
+      .bind(day, week),
+  );
+
+  const results = await db.batch<{ day: number | null; week: number | null }>(statements);
+  return results.flatMap((r) => r.results).reduce<WriteVolume>(
+    (acc, r) => ({ day: acc.day + (r.day ?? 0), week: acc.week + (r.week ?? 0) }),
+    { day: 0, week: 0 },
+  );
+}
+
+// D1 reports the database's size on the `meta` of every query result, so this
+// costs one trivial query rather than an API token (permissions-plan.md
+// decision 6). Templates embed base64 logos, so this is the number most likely
+// to bite first.
+export async function databaseSize(db: D1Database): Promise<number | null> {
+  const result = await db.prepare("SELECT 1").all();
+  return result.meta?.size_after ?? null;
 }
 
 // The most recently touched rows across every incremental table, so the admin

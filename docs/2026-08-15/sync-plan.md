@@ -11,14 +11,15 @@ Every read in the app is **synchronous**, served off module-level arrays in
 
 Therefore:
 
-- **IndexedDB stays the source of truth for reading.** Both roles read locally.
+- **IndexedDB stays the source of truth for reading.** Everyone reads locally.
 - **A write lands in IndexedDB first, always, for everyone.** D1 is a mirror
   that follows. This is what makes offline writes free: offline just means the
   mirror lags.
 - **A pull writes into IndexedDB**, then re-runs `readAll()` + the `hydrate*()`
   functions. It cannot bypass IndexedDB and feed the stores directly.
 
-The role decides only **whether a local write is allowed to leave the device**.
+The role decides only **whether a local write is allowed to leave the device**
+— and, since `permissions-plan.md`, whether the app opens at all.
 
 ## Identity and roles
 
@@ -46,11 +47,18 @@ The admin *page* is only pixels; it renders "tidak berwenang" when
 
 Roles live in a D1 `roles` table keyed by email:
 
-- `read` — may pull. Read-only UI, with an explicit opt-in "Mode coba-coba"
-  that re-enables local editing and states plainly that those edits stay on this
-  device and are dropped on the next pull.
-- `write` — may pull and push.
-- `admin` — `write`, plus managing the `roles` table.
+- **not on the list** — blocked. Every endpoint returns 403 and the app shows a
+  gate screen instead of itself.
+- `write` — full use of the app; changes pull and push.
+- `admin` — `write`, plus managing the `roles` table and the D1 dashboard.
+
+> **Revised by `permissions-plan.md` (decision 3).** As first built this was a
+> three-rung ladder whose bottom rung, `read`, could pull but not push, and got
+> a read-only UI with an opt-in "Mode coba-coba" that re-enabled local editing
+> on that device only. Both the rung and that mode have been deleted. Being on
+> the list is now itself the grant, which is what makes blocking a non-listed
+> user outright possible — see decision 4 for why gating one screen beat
+> disabling editing across eleven pages.
 
 `push` re-checks the role in D1 on **every** request rather than trusting the
 role at token-issue time, so a demotion takes effect immediately. Writes are
@@ -63,17 +71,21 @@ Every row carries `updatedAt`, and a soft delete bumps it (`tombstone()` in
 
 > which local rows have a cursor newer than my last successful sync?
 
-The same sweep serves both roles, which is the point:
+One sweep produces both readings, which is the point:
 
-| | `write` | `read` |
-|---|---|---|
-| sweep result is | the push set | the **divergence** set |
-| sends to D1 | yes, then advances the watermark | never |
-| pulls from D1 | yes | yes, on boot and on demand |
+| the sweep result is | when |
+|---|---|
+| the **push set** | normally — sent to D1, then the watermark advances |
+| the **divergence** set | when the push did not happen or did not succeed |
 
-A reader's local edits therefore need no extra bookkeeping — they are just a
-push set that is never pushed, surfaced in the admin page as "N baris lokal
+Local edits that have not reached the cloud therefore need no extra bookkeeping
+— they are just a push set that has not been pushed, surfaced as "N baris lokal
 berbeda dari cloud".
+
+> As built, the second column was a permanent condition for the `read` role,
+> which pulled but never pushed. With `read` deleted
+> (`permissions-plan.md` decision 3) divergence is a transient state — offline,
+> a rejected push, a row over D1's size cap — not a way of life.
 
 **Offline is free.** A failed push does not advance the watermark, so
 reconnecting resumes exactly where it stopped. There is no outbox to lose and

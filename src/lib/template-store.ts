@@ -247,13 +247,18 @@ export function getTemplates(): Template[] {
 // Whole-table replace. Only correct for Restore, where the caller is replacing
 // the entire dataset; `clear()` drops tombstones because a restore is an
 // authoritative replacement, not a merge. Every other mutation writes one row.
+//
+// `fresh` for the same reason store.ts's bulk setters use it: the backup file
+// carries whatever the server had stamped at export time, and replaying it is a
+// local write the server has not seen. See the block above those setters.
 export function setTemplates(next: Template[]): void {
-  templates = next;
+  const rows = next.map(fresh);
+  templates = rows;
   emit();
   persist("setTemplates", () =>
     db.transaction("rw", db.templates, async () => {
       await db.templates.clear();
-      await db.templates.bulkPut(next);
+      await db.templates.bulkPut(rows);
     }),
   );
 }

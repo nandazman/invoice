@@ -12,6 +12,7 @@ import {
 } from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
@@ -59,17 +60,17 @@ export function BuyersPage() {
     );
   }, [buyers, filter]);
 
-  function removeBuyer(b: Buyer) {
-    // Deleting a buyer deliberately does not touch their orders, so say out loud
-    // what will be left behind — otherwise "Hapus" silently produces N rows
-    // reading "(pembeli dihapus)". See docs/2026-07-29/plan.md §1.
-    const n = statsByBuyer.get(b.id)?.count ?? 0;
-    const tail =
-      n === 0
-        ? "Pembeli ini belum punya pesanan."
-        : `${formatAngka(n)} pesanan tetap tercatat atas pembeli ini dan akan tampil sebagai "(pembeli dihapus)".`;
-    if (!confirm(`Hapus pembeli "${b.nama}"?\n\n${tail}`)) return;
-    deleteBuyer(b.id);
+  // Which buyer is waiting for its delete confirmation. One slot: only ever one
+  // dialog is on screen.
+  const [deleting, setDeleting] = useState<Buyer | null>(null);
+  // Deleting a buyer deliberately does not touch their orders, so say out loud
+  // what will be left behind — otherwise "Hapus" silently produces N rows
+  // reading "(pembeli dihapus)". See docs/2026-07-29/plan.md §1.
+  const leftBehind = deleting ? (statsByBuyer.get(deleting.id)?.count ?? 0) : 0;
+
+  function removeBuyer() {
+    if (deleting) deleteBuyer(deleting.id);
+    setDeleting(null);
   }
 
   function upsert(buyer: Buyer) {
@@ -151,7 +152,7 @@ export function BuyersPage() {
                         <Button size="sm" onClick={() => setEditing(b)}>
                           Ubah
                         </Button>
-                        <DangerButton size="sm" onClick={() => removeBuyer(b)}>
+                        <DangerButton size="sm" onClick={() => setDeleting(b)}>
                           Hapus
                         </DangerButton>
                       </div>
@@ -171,6 +172,30 @@ export function BuyersPage() {
           {buyers.length} pembeli
         </div>
       </Panel>
+
+      {deleting && (
+        <ConfirmDialog
+          danger
+          title={`Hapus pembeli "${deleting.nama}"?`}
+          confirmLabel="Ya, hapus pembeli"
+          onConfirm={removeBuyer}
+          onClose={() => setDeleting(null)}
+        >
+          <p>
+            Data pembeli ini — nama, telepon, dan email — dihapus dari daftar.
+            Tidak bisa dibatalkan.
+          </p>
+          {leftBehind === 0 ? (
+            <p>Pembeli ini belum punya pesanan.</p>
+          ) : (
+            <p>
+              <strong>{formatAngka(leftBehind)} pesanan</strong> tetap tercatat
+              atas pembeli ini dan tidak ikut terhapus. Setelah ini pesanan
+              tersebut akan tampil sebagai “(pembeli dihapus)”.
+            </p>
+          )}
+        </ConfirmDialog>
+      )}
 
       {(creating || editing) && (
         <BuyerDialog

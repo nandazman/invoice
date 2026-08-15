@@ -1,35 +1,45 @@
 import { useCallback, useEffect, useState } from "react";
+// Sync actions and pending counts are not imported here on purpose: they live
+// in the sync chip now (see components/SyncChip.tsx). This page is roles and
+// the D1 dashboard, nothing else.
+import { useSyncStatus, type SyncStatus } from "../lib/sync/client";
 import {
-  useSyncStatus,
-  syncNow,
-  pullNow,
-  discardLocalChanges,
-  isScratchMode,
-  setScratchMode,
-  canWrite,
-  type SyncStatus,
-  type Role,
-} from "../lib/sync/client";
-import { TABLES } from "../lib/sync/tables";
-import { formatAngka, formatDateTimeID } from "../lib/format";
-import { Button, PrimaryButton, DangerButton } from "../components/Button";
+  formatAngka,
+  formatBytes,
+  formatDateTimeID,
+  formatRelatifID,
+} from "../lib/format";
+import { PrimaryButton, DangerButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { Input } from "../components/Input";
-import { Select } from "../components/Select";
 import { Stat } from "../components/Stat";
 
 const thClass =
   "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
 const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
+// Two roles, and being on the list is itself the grant — see
+// docs/2026-08-15/permissions-plan.md decision 3. `none` is not a role the
+// server stores; it is the answer for an email that has no row, and it means
+// blocked, not "may look but not save".
+type Grant = "write" | "admin";
+type Role = Grant | "none";
+
+// The wire value is widened to a string on the way in so a role this build does
+// not know about — an old 'read' row read by a client that has not reloaded
+// since the migration — lands on `none` (blocked) rather than rendering
+// `undefined` in a badge. Failing closed is the right direction here.
+function asRole(raw: string): Role {
+  return raw === "admin" ? "admin" : raw === "write" ? "write" : "none";
+}
+
 // Role labels live here rather than in client.ts because they are pixels, not
-// protocol: the Worker only ever sees the four wire values.
+// protocol: the Worker only ever sees the wire values.
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
-  write: "Penulis",
-  read: "Pembaca",
+  write: "Pengguna",
   none: "Tidak punya akses",
 };
 
@@ -39,28 +49,24 @@ const ROLE_LABEL: Record<Role, string> = {
 const ROLE_BADGE: Record<Role, string> = {
   admin: "bg-blue-50 text-blue-700 border-blue-200",
   write: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  read: "bg-slate-100 text-slate-600 border-slate-200",
   none: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
-const ASSIGNABLE: Role[] = ["read", "write", "admin"];
-
 // What a role actually lets someone do, in consequences rather than in nouns.
 // Used by the confirmation dialogs, which have to answer "and then what?" — a
-// dialog that only says "peran akan diubah menjadi Penulis" has told the reader
-// nothing they did not already see in the dropdown.
+// dialog that only names the new role has told the reader nothing they did not
+// already see on the checkbox.
 const ROLE_EFFECT: Record<Role, string> = {
-  read: "Pembaca boleh mengambil data dari cloud dan melihat semuanya, tapi perubahan yang dia buat tidak pernah terkirim — semua editannya berhenti di perangkatnya sendiri.",
   write:
-    "Penulis boleh mengambil data dan mengirim perubahan, jadi apa pun yang dia catat masuk ke cloud dan terlihat oleh semua orang.",
+    "Pengguna memakai aplikasi ini sepenuhnya: melihat semua data, mencatat, dan mengubah. Apa pun yang dia catat otomatis terkirim ke cloud dan terlihat oleh semua orang.",
   admin:
-    "Admin boleh mengambil, mengirim, dan mengatur daftar peran ini — termasuk memberi dan mencabut akses orang lain, Anda sendiri termasuk.",
-  none: "Tanpa peran, permintaan dari orang ini ditolak server.",
+    "Admin memakai aplikasi ini sepenuhnya, ditambah halaman pengaturan ini — daftar peran dan kondisi database, termasuk memberi dan mencabut akses orang lain, Anda sendiri termasuk.",
+  none: "Tanpa peran, orang ini tidak bisa memakai aplikasi sama sekali: permintaannya ditolak server dan layarnya kosong.",
 };
 
 // Rank only exists to tell a promotion from a demotion, so the dialog can wear
 // danger styling when abilities are being taken away rather than given.
-const ROLE_RANK: Record<Role, number> = { none: 0, read: 1, write: 2, admin: 3 };
+const ROLE_RANK: Record<Role, number> = { none: 0, write: 1, admin: 2 };
 
 // Indonesian names for the wire table names in tables.ts. Kept out of that file
 // on purpose — it is compiled by the Worker too, and the Worker has no UI.
@@ -81,22 +87,26 @@ function tableLabel(name: string): string {
 
 // ---------- admin API ----------
 
+// `role` is the raw wire string on both of these, narrowed with asRole() at the
+// point of use — see the note on asRole.
 interface Me {
   email: string;
-  role: Role;
+  role: string;
 }
 
 interface RoleRow {
   email: string;
-  role: Role;
+  role: string;
   createdAt: string;
   createdBy: string;
+  lastSeenAt: string | null;
 }
 
 interface TableStat {
   table: string;
   live: number;
   deleted: number;
+  lastWriteAt: string | null;
 }
 
 interface RecentRow {
@@ -107,9 +117,21 @@ interface RecentRow {
   deleted?: boolean;
 }
 
+interface PersonSeen {
+  email: string;
+  role: string;
+  lastSeenAt: string | null;
+}
+
 interface AdminStats {
   tables: TableStat[];
   recent: RecentRow[];
+  // Bytes, straight from D1's query metadata. Null if the server could not
+  // report it — every field here is best effort, never a reason to blank the
+  // whole panel.
+  size: number | null;
+  volume: { day: number; week: number };
+  people: PersonSeen[];
 }
 
 // Every failure the page can render carries a machine code, because the three
@@ -222,8 +244,8 @@ function AdminSections({ status }: { status: SyncStatus }) {
       .catch((e: unknown) => {
         if (!alive) return;
         setOwner(false);
-        // 403 is not an error to shout about — it is the normal answer for a
-        // reader or writer. Anything else is worth printing.
+        // 403 is not an error to shout about — it is the normal answer for
+        // someone who is not an admin. Anything else is worth printing.
         setAdminError(
           e instanceof ApiFailure && e.status === 403 ? null : messageOf(e),
         );
@@ -236,9 +258,6 @@ function AdminSections({ status }: { status: SyncStatus }) {
   return (
     <>
       <IdentityPanel status={status} me={me} />
-      <SyncStatusPanel status={status} />
-      <ActionsPanel status={status} />
-      {status.role === "read" && <ScratchPanel />}
       {owner === false && (
         <Panel>
           <h2 className="text-lg font-bold mb-1">Pengaturan pemilik</h2>
@@ -264,7 +283,7 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
   // status.email comes from the sync endpoint, me.email from the admin one.
   // They are the same Access identity; prefer whichever has arrived.
   const email = me?.email ?? status.email;
-  const role = me?.role ?? status.role;
+  const role = asRole(me?.role ?? status.role);
   return (
     <Panel>
       <h2 className="text-lg font-bold mb-3">Identitas</h2>
@@ -288,7 +307,14 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
           </span>
         </div>
       </div>
-      {role === "none" && (
+      {/* Guarded on roleKnown, not on the role alone. Before /api/sync/me
+          answers, `status.role` is the unanswered default "none" — showing the
+          warning then would tell an admin on slow signal that they have no
+          access, seconds before their own roles panel loads. Once the server
+          has answered, a real "none" cannot get this far anyway: the gate
+          screen catches it. This is the last-resort branch, not the usual
+          path. */}
+      {status.roleKnown && role === "none" && (
         <p className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Email Anda belum diberi peran, jadi data di perangkat ini tidak
           tersambung ke cloud. Hubungi pemilik aplikasi untuk minta akses.
@@ -303,308 +329,50 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
   );
 }
 
-// ---------- 2. Status sinkron ----------
-
-function SyncStatusPanel({ status }: { status: SyncStatus }) {
-  // A reader's pending rows are NOT a queue: they will never be pushed, so
-  // calling them "menunggu dikirim" would promise something that never happens.
-  // For a reader the same number means local divergence. See sync-plan.md.
-  const reader = status.role === "read";
-  const pendingLabel = reader ? "Berbeda dari cloud" : "Menunggu dikirim";
-  const rows = TABLES.map((t) => ({
-    name: t.name,
-    count: status.pending[t.name] ?? 0,
-  })).filter((r) => r.count > 0);
-
-  return (
-    <Panel>
-      <h2 className="text-lg font-bold mb-3">Status sinkron</h2>
-      <div className="flex gap-6 flex-wrap">
-        <Stat
-          label="Koneksi"
-          value={status.online ? "Online" : "Offline"}
-          className={status.online ? "text-emerald-700" : "text-amber-600"}
-        />
-        <Stat
-          label={pendingLabel}
-          value={`${formatAngka(status.pendingTotal)} baris`}
-          className={status.pendingTotal > 0 ? "text-amber-600" : ""}
-        />
-        <Stat
-          label="Terakhir dikirim"
-          value={status.lastPushAt ? formatDateTimeID(status.lastPushAt) : "—"}
-        />
-        <Stat
-          label="Terakhir diambil"
-          value={status.lastPullAt ? formatDateTimeID(status.lastPullAt) : "—"}
-        />
-      </div>
-
-      {status.pendingTotal > 0 && (
-        <>
-          <p className="mt-4 mb-2 text-sm text-slate-500">
-            {reader
-              ? "Baris berikut hanya ada di perangkat ini dan berbeda dari cloud. Peran Pembaca tidak pernah mengirim, jadi perubahan ini akan tetap di sini sampai dibuang."
-              : "Baris berikut sudah tersimpan di perangkat ini dan menunggu giliran dikirim ke cloud."}
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={thClass}>Tabel</th>
-                  <th className={`${thClass} text-right`}>Baris</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.name} className="hover:bg-slate-50">
-                    <td className={tdClass}>{tableLabel(r.name)}</td>
-                    <td className={`${tdClass} text-right tabular-nums`}>
-                      {formatAngka(r.count)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {status.pendingTotal === 0 && (
-        <p className="mt-3 text-sm text-slate-400">
-          Semua data di perangkat ini sudah sama dengan cloud.
-        </p>
-      )}
-
-      {status.error && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-          Sinkronisasi terakhir gagal: {status.error}
-        </p>
-      )}
-    </Panel>
-  );
-}
-
-// ---------- 3. Aksi ----------
-
-type ActionKey = "sync" | "pull" | "discard";
-
-function ActionsPanel({ status }: { status: SyncStatus }) {
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Which action is waiting for confirmation. One slot, not one flag per
-  // button: only ever one dialog is on screen.
-  const [confirming, setConfirming] = useState<ActionKey | null>(null);
-  // canWrite() is read at render rather than cached: a demotion lands on the
-  // next status tick, and the button must disappear with it.
-  const writable = canWrite();
-
-  // Every action shares one runner so a thrown error can never leave the page
-  // silently unchanged — `busy` comes from the client, not from local state.
-  async function run(fn: () => void | Promise<void>, ok: string) {
-    setError(null);
-    setNote(null);
-    try {
-      await fn();
-      setNote(ok);
-    } catch (e) {
-      setError(messageOf(e));
-    }
-  }
-
-  // Confirmation is a dialog, never window.confirm(): a native confirm freezes
-  // the entire page while it is up — no re-render, no status tick, no way to
-  // scroll the warning it is too small to show anyway — which is exactly wrong
-  // for a screen whose whole job is reporting live state.
-  function confirmed() {
-    const key = confirming;
-    setConfirming(null);
-    if (key === "sync") void run(syncNow, "Sinkronisasi selesai.");
-    else if (key === "pull") void run(pullNow, "Data terbaru sudah diambil.");
-    else if (key === "discard")
-      void run(
-        discardLocalChanges,
-        "Perubahan lokal dibuang dan data diambil ulang dari cloud.",
-      );
-  }
-
-  const diverging = status.pendingTotal;
-
-  return (
-    <Panel>
-      <h2 className="text-lg font-bold mb-1">Aksi</h2>
-      <p className="text-sm text-slate-500 mb-3">
-        Sinkronisasi berjalan sendiri setiap kali ada perubahan. Tombol di sini
-        untuk memaksanya sekarang.
-      </p>
-      <div className="flex gap-2 flex-wrap items-center">
-        {writable && (
-          <PrimaryButton
-            onClick={() => setConfirming("sync")}
-            disabled={status.busy}
-          >
-            Sinkronkan sekarang
-          </PrimaryButton>
-        )}
-        <Button onClick={() => setConfirming("pull")} disabled={status.busy}>
-          Ambil dari cloud
-        </Button>
-        <DangerButton
-          onClick={() => setConfirming("discard")}
-          disabled={status.busy}
-        >
-          Buang perubahan lokal
-        </DangerButton>
-        {status.busy && (
-          <span className="text-sm text-slate-400">Sedang berjalan…</span>
-        )}
-      </div>
-
-      {confirming === "sync" && (
-        <ConfirmDialog
-          title="Sinkronkan sekarang?"
-          confirmLabel="Ya, sinkronkan"
-          onConfirm={confirmed}
-          onClose={() => setConfirming(null)}
-        >
-          <p>
-            Perubahan yang tersimpan di perangkat ini dikirim ke cloud, lalu
-            data terbaru dari cloud diambil ke perangkat ini. Ini persis
-            sinkronisasi yang biasanya jalan sendiri — tombolnya hanya
-            mempercepat.
-          </p>
-          <p>
-            Tidak ada yang dihapus, dan baris yang Anda ubah di sini tidak
-            ditimpa oleh versi cloud.
-          </p>
-        </ConfirmDialog>
-      )}
-
-      {confirming === "pull" && (
-        <ConfirmDialog
-          title="Ambil data dari cloud?"
-          confirmLabel="Ya, ambil"
-          onConfirm={confirmed}
-          onClose={() => setConfirming(null)}
-        >
-          <p>
-            Data terbaru dari cloud dimasukkan ke perangkat ini, jadi tampilan
-            di layar akan menyusul isi cloud.
-          </p>
-          <p>
-            Baris yang Anda ubah di perangkat ini dan belum ada di cloud{" "}
-            <strong>tidak ditimpa</strong> — perubahan itu tetap utuh. Tidak ada
-            yang dihapus, dan tidak ada apa pun yang dikirim ke cloud.
-          </p>
-        </ConfirmDialog>
-      )}
-
-      {confirming === "discard" && (
-        <ConfirmDialog
-          danger
-          title="Buang semua perubahan lokal?"
-          confirmLabel="Ya, buang perubahan lokal"
-          onConfirm={confirmed}
-          onClose={() => setConfirming(null)}
-        >
-          <p className="font-semibold text-red-700">
-            {diverging > 0
-              ? `${formatAngka(diverging)} baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus.`
-              : "Semua baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus."}
-          </p>
-          <p>
-            Setelah itu seluruh data diambil ulang dari cloud, jadi isi
-            perangkat ini akan sama persis dengan isi cloud. Termasuk hasil
-            “Mode coba-coba”, kalau pernah dipakai.
-          </p>
-          <p className="font-semibold">
-            Tidak bisa dibatalkan. Tidak ada salinan yang disimpan lebih dulu —
-            kalau masih ragu, batalkan dan tekan “Backup semua” di bawah menu
-            kiri.
-          </p>
-          <p>
-            Yang sudah tersimpan di cloud aman: tindakan ini tidak menghapus apa
-            pun di sana, dan tidak menyentuh perangkat orang lain.
-          </p>
-        </ConfirmDialog>
-      )}
-
-      {!writable && (
-        <p className="mt-3 text-sm text-slate-500">
-          Peran Anda tidak boleh mengirim data, jadi hanya pengambilan dari
-          cloud yang tersedia.
-        </p>
-      )}
-
-      {note && (
-        <p className="mt-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-          {note}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-          {error}
-        </p>
-      )}
-    </Panel>
-  );
-}
-
-// ---------- 4. Mode coba-coba ----------
-
-function ScratchPanel() {
-  // Not derived from a prop: setScratchMode is a plain setter with no
-  // subscription behind it, so the checkbox owns the rendered value and reads
-  // the stored one exactly once, at mount.
-  const [on, setOn] = useState(() => isScratchMode());
-
-  function toggle(next: boolean) {
-    setScratchMode(next);
-    setOn(next);
-  }
-
-  return (
-    <Panel>
-      <h2 className="text-lg font-bold mb-1">Mode coba-coba</h2>
-      <p className="text-sm text-slate-500 mb-3">
-        Peran Pembaca tidak bisa mengubah data. Mode ini membuka kunci
-        pengeditan di perangkat ini saja — untuk mencoba-coba, bukan untuk
-        mencatat sungguhan.
-      </p>
-      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-        <input
-          type="checkbox"
-          className="align-middle accent-blue-600"
-          checked={on}
-          onChange={(e) => toggle(e.target.checked)}
-        />
-        Izinkan pengeditan lokal
-      </label>
-      <p className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        Yang Anda ubah dalam mode ini tersimpan di perangkat ini saja, tidak
-        pernah dikirim ke cloud, dan akan hilang saat data berikutnya diambil
-        dari cloud. Jangan pakai mode ini untuk mencatat pesanan sungguhan.
-      </p>
-    </Panel>
-  );
-}
-
-// ---------- 5. Peran ----------
+// ---------- 2. Peran ----------
 
 // The pending confirmation, carrying everything the dialog needs to describe
 // what is about to happen. Held as one value rather than three booleans so the
 // copy can name the exact email and the exact before/after role.
+// `role`/`next` are Grant, not Role: `none` is what the server answers for an
+// email with no row, and it is reached by deleting the row (kind: "remove"),
+// never by writing it — so it cannot be the target of an add or a change.
 type RoleAction =
-  | { kind: "add"; email: string; role: Role }
-  | { kind: "change"; row: RoleRow; next: Role }
+  | { kind: "add"; email: string; role: Grant }
+  | { kind: "change"; row: RoleRow; next: Grant }
   | { kind: "remove"; row: RoleRow };
+
+// The only thing left to choose per person. Being on the list already grants
+// full use of the app (decision 3), so `admin` is a checkbox rather than a
+// second entry in a dropdown of one.
+function grantOf(admin: boolean): Grant {
+  return admin ? "admin" : "write";
+}
+
+// Shown next to the Admin checkbox and again inside any dialog that hands out
+// the role. Two places, one wording: the warning has to be readable before the
+// click and still be there at the moment of confirming.
+function AdminAccessWarning() {
+  return (
+    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+      <strong>Centang Admin saja belum cukup.</strong> Halaman ini dijaga
+      Cloudflare Access dengan daftar terpisah yang hanya berisi pemilik, jadi
+      orang yang baru dicentang di sini tetap ditolak Access sebelum sampai ke
+      server. Supaya benar-benar berlaku, tambahkan juga emailnya ke policy
+      aplikasi Access khusus admin di dashboard Cloudflare.
+    </p>
+  );
+}
 
 function RolesPanel() {
   const [rows, setRows] = useState<RoleRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("read");
+  // The add form defaults to plain use. An admin grant is the rarer and the
+  // more expensive mistake, so it is never the value someone gets by not
+  // looking at the form.
+  const [admin, setAdmin] = useState(false);
   const [pending, setPending] = useState<RoleAction | null>(null);
 
   const load = useCallback(async () => {
@@ -640,7 +408,7 @@ function RolesPanel() {
     }
   }
 
-  function put(address: string, next: Role) {
+  function put(address: string, next: Grant) {
     return apiFetch("/api/admin/roles", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -674,11 +442,15 @@ function RolesPanel() {
   function askAdd() {
     const address = email.trim().toLowerCase();
     if (!address) return;
-    setPending({ kind: "add", email: address, role });
+    setPending({ kind: "add", email: address, role: grantOf(admin) });
   }
 
-  function askChange(row: RoleRow, next: Role) {
-    if (next === row.role) return;
+  // Toggling the box back to the value it already had is not a change worth a
+  // dialog — and a PUT that rewrites the same role would still count against
+  // the last-admin guard for no reason.
+  function askChange(row: RoleRow, nextAdmin: boolean) {
+    const next = grantOf(nextAdmin);
+    if (next === asRole(row.role)) return;
     setPending({ kind: "change", row, next });
   }
 
@@ -686,11 +458,13 @@ function RolesPanel() {
     <Panel>
       <h2 className="text-lg font-bold mb-1">Peran</h2>
       <p className="text-sm text-slate-500 mb-3">
-        Siapa saja yang boleh mengakses data di cloud. Pembaca hanya bisa
-        mengambil, Penulis bisa mengirim, Admin juga bisa mengatur daftar ini.
+        Siapa saja yang boleh memakai aplikasi ini. Ada di daftar berarti bisa
+        memakainya sepenuhnya — melihat, mencatat, dan mengubah, dengan semua
+        perubahannya otomatis terkirim ke cloud. Centang Admin kalau orangnya
+        juga boleh membuka halaman ini.
       </p>
 
-      <div className="flex gap-3 flex-wrap items-end mb-3">
+      <div className="flex gap-3 flex-wrap items-end mb-2">
         <Field label="Email" className="flex-1 min-w-[220px]">
           <Input
             type="email"
@@ -699,22 +473,25 @@ function RolesPanel() {
             placeholder="nama@contoh.com"
           />
         </Field>
-        <Field label="Peran" className="w-40">
-          <Select
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-          >
-            {ASSIGNABLE.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <label className="flex items-center gap-2 text-sm h-9 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="accent-blue-600"
+            checked={admin}
+            onChange={(e) => setAdmin(e.target.checked)}
+          />
+          Admin
+        </label>
         <PrimaryButton onClick={askAdd} disabled={busy || email.trim() === ""}>
           + Tambah / Ubah
         </PrimaryButton>
       </div>
+
+      {/* Decision 5 in permissions-plan.md: the admin Access application in
+          front of /api/admin/* still lists only the owner, so a grant made here
+          is stopped by Access before the Worker ever runs. Without this notice
+          the checkbox looks like it worked and the feature reads as a bug. */}
+      <AdminAccessWarning />
 
       {rows === null && !error ? (
         <p className="text-sm text-slate-400 py-4 text-center">Memuat…</p>
@@ -725,6 +502,7 @@ function RolesPanel() {
               <tr>
                 <th className={thClass}>Email</th>
                 <th className={thClass}>Peran</th>
+                <th className={thClass}>Admin</th>
                 <th className={thClass}>Ditambahkan</th>
                 <th className={thClass}>Oleh</th>
                 <th className={thClass}></th>
@@ -735,18 +513,24 @@ function RolesPanel() {
                 <tr key={r.email} className="hover:bg-slate-50">
                   <td className={`${tdClass} font-medium`}>{r.email}</td>
                   <td className={tdClass}>
-                    <Select
-                      className="w-36"
-                      value={r.role}
-                      disabled={busy}
-                      onChange={(e) => askChange(r, e.target.value as Role)}
+                    <span
+                      className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-md border ${ROLE_BADGE[asRole(r.role)]}`}
                     >
-                      {ASSIGNABLE.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {ROLE_LABEL[opt]}
-                        </option>
-                      ))}
-                    </Select>
+                      {ROLE_LABEL[asRole(r.role)]}
+                    </span>
+                  </td>
+                  <td className={tdClass}>
+                    {/* Unchecking is a demotion to plain use, not a removal —
+                        "Cabut" is the only thing that takes someone off the
+                        list. */}
+                    <input
+                      type="checkbox"
+                      className="accent-blue-600"
+                      aria-label={`Jadikan ${r.email} admin`}
+                      checked={asRole(r.role) === "admin"}
+                      disabled={busy}
+                      onChange={(e) => askChange(r, e.target.checked)}
+                    />
                   </td>
                   <td className={`${tdClass} text-slate-500`}>
                     {formatDateTimeID(r.createdAt)}
@@ -795,6 +579,7 @@ function RolesPanel() {
             Kalau email itu sudah ada di daftar, peran lamanya diganti dengan
             yang ini. Berlaku langsung, dan bisa diubah atau dicabut kapan saja.
           </p>
+          {pending.role === "admin" && <AdminAccessWarning />}
         </ConfirmDialog>
       )}
 
@@ -802,7 +587,7 @@ function RolesPanel() {
         <ConfirmDialog
           // Taking abilities away deserves the red treatment; handing them out
           // does not.
-          danger={ROLE_RANK[pending.next] < ROLE_RANK[pending.row.role]}
+          danger={ROLE_RANK[pending.next] < ROLE_RANK[asRole(pending.row.role)]}
           title="Ubah peran orang ini?"
           confirmLabel="Ya, ubah peran"
           busy={busy}
@@ -811,7 +596,7 @@ function RolesPanel() {
         >
           <p>
             <strong>{pending.row.email}</strong> berubah dari{" "}
-            <strong>{ROLE_LABEL[pending.row.role]}</strong> menjadi{" "}
+            <strong>{ROLE_LABEL[asRole(pending.row.role)]}</strong> menjadi{" "}
             <strong>{ROLE_LABEL[pending.next]}</strong>.
           </p>
           <p>{ROLE_EFFECT[pending.next]}</p>
@@ -820,6 +605,7 @@ function RolesPanel() {
             pengiriman data, jadi orangnya tidak perlu masuk ulang. Data yang
             sudah pernah dia kirim tetap ada dan tidak berubah.
           </p>
+          {pending.next === "admin" && <AdminAccessWarning />}
         </ConfirmDialog>
       )}
 
@@ -859,7 +645,7 @@ function RolesPanel() {
   );
 }
 
-// ---------- 6. Aktivitas ----------
+// ---------- 3. Aktivitas ----------
 
 function ActivityPanel() {
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -892,6 +678,7 @@ function ActivityPanel() {
 
   const recent = stats?.recent ?? [];
   const tables = stats?.tables ?? [];
+  const people = stats?.people ?? [];
 
   return (
     <Panel>
@@ -906,6 +693,20 @@ function ActivityPanel() {
         <p className="text-sm text-slate-400 py-4 text-center">Memuat…</p>
       ) : (
         <>
+          {/* Ukuran database lebih dulu: templat menyimpan logo base64, jadi
+              angka inilah yang paling cepat jadi masalah. */}
+          <div className="flex gap-6 flex-wrap mb-4">
+            <Stat label="Ukuran database" value={formatBytes(stats.size)} />
+            <Stat
+              label="Perubahan 24 jam"
+              value={`${formatAngka(stats.volume.day)} baris`}
+            />
+            <Stat
+              label="Perubahan 7 hari"
+              value={`${formatAngka(stats.volume.week)} baris`}
+            />
+          </div>
+
           <div className="overflow-x-auto mb-4">
             <table className="w-full border-collapse">
               <thead>
@@ -913,6 +714,7 @@ function ActivityPanel() {
                   <th className={thClass}>Tabel</th>
                   <th className={`${thClass} text-right`}>Baris aktif</th>
                   <th className={`${thClass} text-right`}>Terhapus</th>
+                  <th className={`${thClass} text-right`}>Tulisan terakhir</th>
                 </tr>
               </thead>
               <tbody>
@@ -926,6 +728,56 @@ function ActivityPanel() {
                       className={`${tdClass} text-right tabular-nums text-slate-500`}
                     >
                       {formatAngka(t.deleted)}
+                    </td>
+                    {/* `types` diganti utuh setiap kali dikirim, jadi tidak
+                        punya kolom waktu sama sekali — server mengirim null,
+                        dan itu bukan tanda tabelnya diam. */}
+                    <td
+                      className={`${tdClass} text-right text-slate-500 whitespace-nowrap`}
+                    >
+                      {t.lastWriteAt ? (
+                        formatRelatifID(t.lastWriteAt)
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="font-semibold mb-1">Pemakaian akses</h3>
+          <p className="text-sm text-slate-500 mb-2">
+            Kapan terakhir setiap orang di daftar peran membuka aplikasi ini.
+            Dicatat sekali tiap sesi, waktu aplikasinya dibuka — bukan tiap kali
+            data terkirim.
+          </p>
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={thClass}>Email</th>
+                  <th className={thClass}>Peran</th>
+                  <th className={`${thClass} text-right`}>Terakhir membuka</th>
+                </tr>
+              </thead>
+              <tbody>
+                {people.map((p) => (
+                  <tr key={p.email} className="hover:bg-slate-50">
+                    <td className={`${tdClass} font-medium`}>{p.email}</td>
+                    <td className={tdClass}>{ROLE_LABEL[asRole(p.role)]}</td>
+                    {/* NULL berarti aksesnya belum pernah dipakai sama sekali —
+                        kolom kosong akan terbaca sebagai data yang hilang,
+                        bukan sebagai jawaban. */}
+                    <td
+                      className={`${tdClass} text-right text-slate-500 whitespace-nowrap`}
+                    >
+                      {p.lastSeenAt ? (
+                        formatRelatifID(p.lastSeenAt)
+                      ) : (
+                        <span className="text-amber-700">Belum pernah dipakai</span>
+                      )}
                     </td>
                   </tr>
                 ))}

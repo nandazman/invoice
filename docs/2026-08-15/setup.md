@@ -3,7 +3,9 @@
 Everything in the repo is done. What remains is the five things that touch your
 Cloudflare account, which the code cannot do for itself.
 
-Design: [sync-plan.md](./sync-plan.md).
+Design: [sync-plan.md](./sync-plan.md), revised by
+[permissions-plan.md](./permissions-plan.md). Looking at the data once it is
+there: [d1-access.md](./d1-access.md).
 
 ---
 
@@ -50,7 +52,14 @@ Now copy two **Application Audience (AUD) tags** — each is on its application'
 Overview tab — into the `vars` block in `wrangler.jsonc`:
 
 ```jsonc
-"ACCESS_TEAM_DOMAIN": "xutopia",              // team name only, not the full URL
+// Team name only, not the full URL, and NOT the site's domain — it is the
+// Zero Trust team name, found under Settings → Custom Pages / your team
+// domain in the Zero Trust dashboard. The Worker builds
+// https://<team>.cloudflareaccess.com/cdn-cgi/access/certs from it; a wrong
+// value fetches nothing and every request fails to authenticate with no
+// obvious cause. The deployed value is below — copy it from wrangler.jsonc,
+// not from memory.
+"ACCESS_TEAM_DOMAIN": "long-shadow-af9f",
 "ACCESS_AUD_SYNC":    "<EXISTING hostname app's AUD>",
 "ACCESS_AUD_ADMIN":   "<new invoice-admin app's AUD>"
 ```
@@ -80,8 +89,16 @@ lower-cases the token's email before looking it up.
 
 Everyone after you gets their role from the admin page. Note the two layers:
 Access decides who reaches the API at all, the `roles` table decides what they
-may do once there. Adding someone means both — put them in the invoice-sync
-policy *and* give them a role.
+may do once there.
+
+**Adding someone means both, and neither half works alone.** Put them in the
+policy of the Access application guarding the hostname — there is no separate
+"invoice-sync" application; step 3 explains why — *and* give them a role. Since `permissions-plan.md` this is
+sharper than it used to be: being on the roles list is now the only thing that
+grants use of the app at all. Someone Access lets through who is not on the list
+does not get a read-only app — they get a screen saying they have not been
+granted access, and 403 from every endpoint. The two additions happen in the
+same sitting or the person is left staring at a gate.
 
 ## 5. Deploy
 
@@ -127,16 +144,23 @@ on local data.
 
 ## What each role does
 
+Two roles, since `permissions-plan.md`. The `read` rung and its **Mode
+coba-coba** escape hatch are gone — both existed to serve a user who could look
+but not save, and there is no such user any more.
+
 | Role | Pull | Push | Admin page |
 |---|---|---|---|
-| `admin` | yes | yes | full |
-| `write` | yes | yes | status and actions only |
-| `read` | yes | **no** | status and actions only |
-| none | no | no | "tidak punya akses" |
+| `admin` | yes | yes | full: roles list and D1 dashboard |
+| `write` | yes | yes | not reachable |
+| not on the list | no | no | no — gate screen, "belum diberi akses" |
 
-A `read` user gets a read-only UI, with an opt-in **Mode coba-coba** that
-re-enables local editing. Those edits stay on that device, are never pushed, and
-show up as divergence until discarded.
+Being on the list *is* the grant: `write` means full use of the app with
+automatic sync. `admin` adds the admin page and nothing else about how the app
+behaves day to day.
+
+Granting `admin` in this app is not sufficient on its own — that person is still
+stopped by the owner-only Access application in front of `/api/admin/*` until
+their email is added to its policy in the Cloudflare dashboard too.
 
 The role is re-checked in D1 on **every** push, not read from a cached token —
 so a demotion takes effect on the next request, not whenever a session expires.
@@ -156,10 +180,11 @@ writes/day).
 - **Templates over ~1.8MB are not synced.** They embed base64 logos and D1 caps
   a row at ~2MB. They are named in the admin page's error, and the watermark is
   held below them so they keep being reported and sync themselves once shrunk.
-- **The divergence count is an upper bound for a reader.** While a table has
-  local divergence its watermark is held back, so rows just pulled from the
-  server also sit above it and get counted. A per-row dirty flag would fix it —
-  i.e. the outbox this design deliberately does without.
+- **The divergence count is an upper bound.** While a table has local divergence
+  its watermark is held back, so rows just pulled from the server also sit above
+  it and get counted. A per-row dirty flag would fix it — i.e. the outbox this
+  design deliberately does without. This used to be mainly a reader's problem;
+  with `read` gone it only shows up after a failed push.
 - **The Access JWT path has not been exercised against a real token.** It is the
   one thing that cannot be tested without a live Access application in front of
   it. Check `/api/sync/me` first after deploying.

@@ -68,6 +68,7 @@ export function CatalogDialog({
   const templates = useTemplates();
   const [saved, setSaved] = useState<SavedOptions>(loadOptions);
   const [uploadedLogo, setUploadedLogo] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Tipe that no longer exist are dropped; an empty selection means "all", so a
@@ -104,13 +105,14 @@ export function CatalogDialog({
 
   async function onUpload(file: File | undefined) {
     if (!file) return;
+    setUploadError("");
     try {
       setUploadedLogo(
         await downscaleImage(file, LOGO_STORE_MAX, LOGO_STORE_MAX),
       );
       patch({ logoTemplateId: "" });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal memuat gambar");
+      setUploadError(e instanceof Error ? e.message : "Gagal memuat gambar");
     }
   }
 
@@ -288,6 +290,14 @@ export function CatalogDialog({
               <Button size="sm" onClick={() => fileRef.current?.click()}>
                 Unggah logo…
               </Button>
+              {uploadError && (
+                <p
+                  role="alert"
+                  className="text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-1.5"
+                >
+                  {uploadError}
+                </p>
+              )}
               <p className="text-xs text-slate-400">
                 Logo unggahan hanya dipakai sekali. Untuk logo tetap, simpan di
                 halaman Desain Template.

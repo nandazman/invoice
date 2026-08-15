@@ -20,12 +20,16 @@ import { Inspector } from "../components/template/Inspector";
 import { Panel } from "../components/Panel";
 import { Select } from "../components/Select";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 export function TemplatePage() {
   const templates = useTemplates();
   const [activeId, setActiveId] = useState<string | null>(templates[0]?.id ?? null);
   const [draft, setDraft] = useState<Template | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Whether the delete confirmation is up. A flag, not the template: the dialog
+  // always speaks about the draft that is open right now.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
 
@@ -284,11 +288,11 @@ export function TemplatePage() {
   }
 
   function handleDelete() {
-    if (!confirm(`Hapus template "${draft!.nama}"?`)) return;
     deleteTemplate(draft!.id);
     const next = templates.find((t) => t.id !== draft!.id);
     setActiveId(next?.id ?? null);
     setDraft(null);
+    setConfirmingDelete(false);
   }
 
   return (
@@ -308,7 +312,9 @@ export function TemplatePage() {
         </Select>
         <Button onClick={handleNew}>+ Baru</Button>
         <Button onClick={handleDuplicate}>Duplikat</Button>
-        <DangerButton onClick={handleDelete}>Hapus</DangerButton>
+        <DangerButton onClick={() => setConfirmingDelete(true)}>
+          Hapus
+        </DangerButton>
         <span className="text-xs text-slate-400 ml-auto">Tersimpan otomatis</span>
       </div>
 
@@ -369,6 +375,26 @@ export function TemplatePage() {
           />
         </div>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          danger
+          title={`Hapus template "${draft.nama}"?`}
+          confirmLabel="Ya, hapus template"
+          onConfirm={handleDelete}
+          onClose={() => setConfirmingDelete(false)}
+        >
+          <p>
+            Seluruh desain template ini — teks, gambar, dan tata letaknya —
+            dihapus. Tidak bisa dibatalkan, dan “Urungkan” tidak
+            mengembalikannya.
+          </p>
+          <p>
+            Invoice yang sudah dibuat tidak berubah, dan template lain tidak
+            tersentuh.
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

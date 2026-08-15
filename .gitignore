@@ -24,6 +24,12 @@ yarn-error.log*
 
 # Generated output
 *.xlsx
+# D1 snapshots — a full copy of production data, including the roles table.
+# Anchored to the repo root and prefix-matched, not *.sql: migrations/*.sql must
+# stay tracked. `backup-*` covers the pre-migration exports taken by hand, which
+# are the same production data under a different name.
+/d1-export*.sql
+/backup-*.sql
 
 # Environment
 .env

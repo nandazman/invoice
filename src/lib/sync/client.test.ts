@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { db, flushWrites } from "../db";
 import {
   initSync,
@@ -7,8 +7,7 @@ import {
   discardLocalChanges,
   getSyncStatus,
   canWrite,
-  isScratchMode,
-  setScratchMode,
+  isBlocked,
   __resetSyncForTests,
   type Role,
 } from "./client";
@@ -149,10 +148,13 @@ async function readWatermarks(): Promise<Record<string, string | null>> {
 }
 
 async function reset(): Promise<void> {
+  // localStorage FIRST: the status the reset seam builds reads the cached role
+  // out of it, so clearing afterwards would leave one test's role seeding the
+  // next test's initial status.
+  localStorage.clear();
   __resetSyncForTests();
   calls = [];
   routes = {};
-  localStorage.clear();
   await db.open();
   await Promise.all([
     db.products.clear(),
@@ -176,6 +178,15 @@ async function boot(role: Role = "write"): Promise<void> {
   await initSync();
   await syncNow();
   await flushWrites();
+}
+
+// Boot a client that will not push, so a test can assert on the pull half on
+// its own. `none` is the only role left that cannot push. In production such a
+// client never reaches a pull at all — the gate screen hides the app and the
+// Worker answers 403 — but the fetch stub here does not enforce roles, so it
+// serves purely as a push-suppressing seam and keeps these tests about pulling.
+async function bootWithoutPush(): Promise<void> {
+  await boot("none");
 }
 
 beforeEach(async () => {
@@ -279,11 +290,11 @@ describe("push sweep", () => {
     expect(rows.map((r) => r.id)).toEqual(["new"]);
   });
 
-  it("never pushes for a reader — the sweep becomes the divergence count", async () => {
+  it("never pushes without a role, and the sweep becomes the divergence count", async () => {
     await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
     await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
 
-    await boot("read");
+    await bootWithoutPush();
 
     expect(calls.some((c) => c.url === "/api/sync/push")).toBe(false);
     expect(canWrite()).toBe(false);
@@ -348,7 +359,7 @@ describe("pull", () => {
         tables: { products: [product("s1", "2026-08-10T00:00:00.000Z")] },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     expect((await db.products.get("s1"))?.namaProduk).toBe("Produk s1");
     expect(getSyncStatus().lastPullAt).toBe("T9");
@@ -372,7 +383,7 @@ describe("pull", () => {
         },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     // The local edit survives: nothing is discarded without an explicit click.
     expect((await db.products.get("p1"))?.namaProduk).toBe("Lokal");
@@ -389,7 +400,7 @@ describe("pull", () => {
 
   it("sends the stored watermarks as `since`", async () => {
     await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
-    await boot("read");
+    await bootWithoutPush();
 
     const pull = calls.find((c) => c.url.startsWith("/api/sync/pull"));
     const since = JSON.parse(
@@ -405,7 +416,7 @@ describe("pull", () => {
     routes.pull = () =>
       res({ serverTime: "T9", tables: { types: [{ nama: "Bar" }, { nama: "Dapur" }] } });
 
-    await boot("read");
+    await bootWithoutPush();
 
     expect((await db.types.toArray()).map((t) => t.nama).sort()).toEqual([
       "Bar",
@@ -451,7 +462,7 @@ describe("attribution", () => {
         },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     const row = (await db.products.get("s1")) as unknown as Record<string, unknown>;
     expect(row.createdBy).toBe("andi@example.com");
@@ -466,7 +477,7 @@ describe("attribution", () => {
         tables: { products: [product("s1", "2026-08-10T00:00:00.000Z")] },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     const row = (await db.products.get("s1")) as unknown as Record<string, unknown>;
     expect("createdBy" in row).toBe(false);
@@ -487,7 +498,7 @@ describe("attribution", () => {
         },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     expect((await db.products.get("s1"))?.updatedAt).toBe(
       "2026-08-10T00:00:00.000Z",
@@ -553,7 +564,7 @@ describe("attribution", () => {
         },
       });
 
-    await boot("read");
+    await bootWithoutPush();
 
     expect(getSyncStatus().pending.products).toBeUndefined();
     expect(getSyncStatus().pendingTotal).toBe(0);
@@ -579,7 +590,7 @@ describe("discardLocalChanges", () => {
         },
       });
 
-    await boot("read");
+    await bootWithoutPush();
     expect((await db.products.get("p1"))?.namaProduk).toBe("Lokal");
 
     await discardLocalChanges();
@@ -658,12 +669,181 @@ describe("oversized templates", () => {
   });
 });
 
-describe("scratch mode", () => {
-  it("round-trips through localStorage", () => {
-    expect(isScratchMode()).toBe(false);
-    setScratchMode(true);
-    expect(isScratchMode()).toBe(true);
-    setScratchMode(false);
-    expect(isScratchMode()).toBe(false);
+// The poll is the one trigger this environment cannot see on its own:
+// `startPolling` is guarded on `typeof window`, and node has none. Stubbing the
+// three members it touches is enough to pin what actually matters — that the
+// interval gets created at all, that a hidden tab is skipped, and that coming
+// back to a tab syncs without waiting out the interval — instead of leaving the
+// whole feature untested over an environment detail.
+describe("periodic pull", () => {
+  let visibility = "visible";
+  let onVisibilityChange: (() => void) | null = null;
+
+  const pulls = () => calls.filter((c) => c.url.startsWith("/api/sync/pull")).length;
+
+  beforeEach(() => {
+    visibility = "visible";
+    onVisibilityChange = null;
+    Object.defineProperty(globalThis, "window", {
+      value: { addEventListener: () => {} },
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, "document", {
+      value: {
+        get visibilityState() {
+          return visibility;
+        },
+        addEventListener: (type: string, fn: () => void) => {
+          if (type === "visibilitychange") onVisibilityChange = fn;
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    // ONLY the interval and the clock. fake-indexeddb schedules its own work on
+    // setTimeout, so faking that too deadlocks every Dexie call in `boot()` —
+    // the suite hangs rather than fails, which is a much worse way to find out.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as { window?: unknown }).window;
+    delete (globalThis as { document?: unknown }).document;
+  });
+
+  it("pulls again after the interval without any local write", async () => {
+    await setWatermarks();
+    await boot("write");
+    const before = pulls();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // The point of the whole feature: nothing on this device changed, and the
+    // tab still went and looked.
+    expect(pulls()).toBe(before + 1);
+  });
+
+  it("skips the tick while the tab is hidden", async () => {
+    await setWatermarks();
+    await boot("write");
+    const before = pulls();
+
+    visibility = "hidden";
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(pulls()).toBe(before);
+  });
+
+  it("syncs on becoming visible again, but not more than once per 10s", async () => {
+    await setWatermarks();
+    await boot("write");
+
+    // The visibility handler fires `syncNow` without awaiting it, and the run
+    // goes through Dexie — which is on the REAL setTimeout here (see the
+    // `toFake` list). So settling it is a real tick, not a timer advance.
+    const settle = () => new Promise((r) => setTimeout(r, 20));
+
+    // Straight after a sync, a visibility flip is swallowed — alt-tabbing
+    // between two windows must not fire a request per switch.
+    visibility = "visible";
+    onVisibilityChange?.();
+    await settle();
+    expect(pulls()).toBe(1);
+
+    // Past the floor it goes through, without waiting out the full interval.
+    vi.advanceTimersByTime(11_000);
+    onVisibilityChange?.();
+    await settle();
+    expect(pulls()).toBe(2);
+  });
+});
+
+// The gate screen blanks the entire app, so the interesting cases here are the
+// ones where it must NOT fire. Each of them is a worse bug than the one the
+// gate fixes, and each would ship unnoticed on a machine where the API is up
+// and the role is granted.
+describe("the gate condition", () => {
+  it("does not gate when the API is absent — the GitHub Pages copy", async () => {
+    // No Worker behind this build: /api/sync/me 404s into index.html, which is
+    // a 200 of HTML. `initSync` returns before `available` is ever set.
+    routes.me = () => html();
+    await setWatermarks();
+    await initSync();
+
+    const s = getSyncStatus();
+    expect(s.available).toBe(false);
+    expect(s.role).toBe("none");
+    // The whole point: role alone says "blocked", and believing it would blank
+    // a build that has no roles at all.
+    expect(isBlocked(s)).toBe(false);
+  });
+
+  it("does not gate when the network is down at boot", async () => {
+    // fetch rejecting is the offline case. The role is UNKNOWN, not denied.
+    globalThis.fetch = (() => Promise.reject(new Error("offline"))) as never;
+    await setWatermarks();
+    await initSync();
+
+    const s = getSyncStatus();
+    expect(s.roleKnown).toBe(false);
+    expect(isBlocked(s)).toBe(false);
+  });
+
+  it("does not gate when the Access session lapsed", async () => {
+    // 401 sets `available` true from the failure path, with the role still
+    // unanswered — which is why `available && role === "none"` is not enough
+    // on its own.
+    routes.me = () => res({ code: "unauthenticated", message: "no jwt" }, 401);
+    await setWatermarks();
+    await initSync();
+
+    const s = getSyncStatus();
+    expect(s.available).toBe(true);
+    expect(s.roleKnown).toBe(false);
+    expect(isBlocked(s)).toBe(false);
+  });
+
+  it("gates only on a confirmed 'none' from a live /api/sync/me", async () => {
+    await setWatermarks();
+    await bootWithoutPush();
+
+    const s = getSyncStatus();
+    expect(s.available).toBe(true);
+    expect(s.roleKnown).toBe(true);
+    expect(isBlocked(s)).toBe(true);
+  });
+
+  it("does not gate a granted role", async () => {
+    await setWatermarks();
+    await boot("write");
+
+    expect(isBlocked(getSyncStatus())).toBe(false);
+  });
+});
+
+describe("the cached role", () => {
+  it("stands in for the role until the server answers", async () => {
+    await setWatermarks();
+    await boot("admin");
+
+    // A reload with the network down: the cache is what keeps the admin nav
+    // from vanishing, and keeps the role from reading as a denial.
+    __resetSyncForTests();
+    expect(getSyncStatus().role).toBe("admin");
+    expect(getSyncStatus().roleKnown).toBe(false);
+  });
+
+  it("is overwritten by whatever the server last confirmed", async () => {
+    await setWatermarks();
+    await boot("admin");
+
+    __resetSyncForTests();
+    await setWatermarks();
+    await boot("write");
+
+    __resetSyncForTests();
+    expect(getSyncStatus().role).toBe("write");
   });
 });

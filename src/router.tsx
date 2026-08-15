@@ -105,11 +105,18 @@ const reportRoute = createRoute({
 // Hash routing means the server never sees this path, so it cannot be guarded
 // by an Access policy. Enforcement lives on /api/admin/* — see sync-plan.md.
 //
-// The sidebar only shows "Sinkronisasi" to an admin, but this route stays
-// registered for EVERYONE on purpose. A `read` user reaches it by direct URL —
-// an admin pastes them the link — and needs it for "Mode coba-coba" and "Buang
-// perubahan lokal". AdminPage already gates each section by role. Hiding the
-// nav entry is the whole change; do not "finish the job" by removing the route.
+// This page is now genuinely admin-only: roles and the D1 dashboard, nothing
+// else. It used to stay registered for everyone because a `read` user needed
+// it for "Mode coba-coba" and "Buang perubahan lokal" — that role no longer
+// exists, scratch mode is deleted, and discard moved to the sync chip in the
+// sidebar (docs/2026-08-15/permissions-plan.md §C). Nobody but an admin has a
+// reason to open it.
+//
+// The route is still registered for everyone, and that is deliberate: hiding
+// it from the router would only turn a direct URL into a blank "not found"
+// instead of the page's own explanation of why the panels are empty. The check
+// that matters is the Access application in front of /api/admin/*, not this
+// table.
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",

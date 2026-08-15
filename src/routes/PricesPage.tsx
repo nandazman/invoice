@@ -25,6 +25,7 @@ import {
 import { ByCell } from "../components/Attribution";
 import { ProductDialog } from "../components/ProductDialog";
 import { CatalogDialog } from "../components/CatalogDialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
@@ -74,9 +75,14 @@ export function PricesPage() {
     COLUMN_DEFAULTS,
   );
 
-  function removeProduct(id: string) {
-    if (!confirm("Hapus produk ini?")) return;
-    deleteProduct(id);
+  // Which product is waiting for its delete confirmation. Holding the row —
+  // not just the id — is what lets the dialog name the product it is about to
+  // remove; a native confirm could only ever say "produk ini".
+  const [deleting, setDeleting] = useState<Product | null>(null);
+
+  function removeProduct() {
+    if (deleting) deleteProduct(deleting.id);
+    setDeleting(null);
   }
 
   function upsert(product: Product) {
@@ -194,7 +200,7 @@ export function PricesPage() {
             </Button>
             <DangerButton
               size="sm"
-              onClick={() => removeProduct(c.row.original.id)}
+              onClick={() => setDeleting(c.row.original)}
             >
               Hapus
             </DangerButton>
@@ -332,6 +338,25 @@ export function PricesPage() {
           types={types}
           onClose={() => setCatalogOpen(false)}
         />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          danger
+          title="Hapus produk ini?"
+          confirmLabel="Ya, hapus produk"
+          onConfirm={removeProduct}
+          onClose={() => setDeleting(null)}
+        >
+          <p>
+            <strong>{deleting.namaProduk}</strong> akan hilang dari daftar
+            harga. Tidak bisa dibatalkan.
+          </p>
+          <p>
+            Pesanan, pembelian, dan stok yang sudah tercatat tidak ikut
+            terhapus.
+          </p>
+        </ConfirmDialog>
       )}
     </div>
   );

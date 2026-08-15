@@ -1,7 +1,7 @@
 import { authenticate } from "./access";
 import { deleteRole, listRoles, putRole, stats } from "./admin";
 import { HttpError, fail, json, type Env } from "./http";
-import { atLeast, roleOf } from "./roles";
+import { atLeast, roleOf, touchLastSeen } from "./roles";
 import { handlePull, handlePush } from "./sync";
 
 // The sync API.
@@ -37,13 +37,21 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (path === "/api/sync/me" && method === "GET") {
     const { email } = await authenticate(request, env, env.ACCESS_AUD_SYNC);
-    return json({ email, role: await roleOf(env.DB, email) });
+    const role = await roleOf(env.DB, email);
+    // The one place lastSeenAt is stamped. This endpoint is called once, on
+    // boot; the 60s poll hits /pull and never lands here, which is what keeps
+    // this at one write per session. Keep it that way.
+    await touchLastSeen(env.DB, email);
+    return json({ email, role });
   }
 
   if (path === "/api/sync/pull" && method === "GET") {
     const { email } = await authenticate(request, env, env.ACCESS_AUD_SYNC);
     const role = await roleOf(env.DB, email);
-    if (!atLeast(role, "read")) {
+    // The check stays, raised from 'read' to 'write'. Access is the read gate
+    // and the client has a gate screen, but neither is server-side
+    // authorization: a blocked account must get 403 from every endpoint.
+    if (!atLeast(role, "write")) {
       throw new HttpError(403, "forbidden", "Akun ini belum diberi akses.");
     }
     return handlePull(env.DB, url);
@@ -56,7 +64,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     // its session expired.
     const role = await roleOf(env.DB, email);
     if (!atLeast(role, "write")) {
-      throw new HttpError(403, "forbidden", "Akun ini hanya bisa membaca.");
+      // Not "hanya bisa membaca" any more: there is no read-only role left, so
+      // the only way to fail this check is to be absent from the roles table.
+      throw new HttpError(403, "forbidden", "Akun ini belum diberi akses.");
     }
     return handlePush(env.DB, await readJson(request), email);
   }
