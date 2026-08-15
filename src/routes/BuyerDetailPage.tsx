@@ -9,6 +9,13 @@ import {
   formatDateTimeID,
   sumRupiah,
 } from "../lib/format";
+import { usePersistentAttribution } from "../lib/columns";
+import {
+  AttributionToggle,
+  ByCells,
+  ByHeaders,
+  bothBy,
+} from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
 import { PrimaryButton } from "../components/Button";
 import { Panel } from "../components/Panel";
@@ -29,6 +36,9 @@ export function BuyerDetailPage() {
   const orders = useOrders();
   const audit = useAudit();
   const [editing, setEditing] = useState(false);
+  const [showBy, setShowBy] = usePersistentAttribution(
+    "invoice.pembeli.detail.by.v1",
+  );
 
   const buyer = buyers.find((b) => b.id === id);
 
@@ -128,7 +138,13 @@ export function BuyerDetailPage() {
 
       {/* 3. Pesanan */}
       <Panel>
-        <h2 className="text-lg font-bold mb-3">Pesanan</h2>
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          <h2 className="text-lg font-bold">Pesanan</h2>
+          <span className="flex-1" />
+          {buyerOrders.length > 0 && (
+            <AttributionToggle show={showBy} onChange={setShowBy} />
+          )}
+        </div>
         {buyerOrders.length === 0 ? (
           <p className="text-sm text-slate-400">Belum ada pesanan.</p>
         ) : (
@@ -143,6 +159,7 @@ export function BuyerDetailPage() {
                   <th className={`${thClass} text-right`}>Harga Satuan</th>
                   <th className={`${thClass} text-right`}>Total</th>
                   <th className={thClass}>Status</th>
+                  <ByHeaders show={bothBy(showBy)} className={thClass} />
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +210,11 @@ export function BuyerDetailPage() {
                         {STATUS_LABEL[o.status] ?? o.status}
                       </span>
                     </td>
+                    <ByCells
+                      show={bothBy(showBy)}
+                      row={o}
+                      className={tdClass}
+                    />
                   </tr>
                 ))}
               </tbody>

@@ -17,7 +17,12 @@ import {
   deleteProduct,
 } from "../lib/store";
 import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
-import { usePersistentVisibility } from "../lib/columns";
+import {
+  ATTRIBUTION_COLUMNS,
+  ATTRIBUTION_COLUMN_IDS,
+  usePersistentVisibility,
+} from "../lib/columns";
+import { ByCell } from "../components/Attribution";
 import { ProductDialog } from "../components/ProductDialog";
 import { CatalogDialog } from "../components/CatalogDialog";
 import { ColumnToggle } from "../components/ColumnToggle";
@@ -36,10 +41,14 @@ const TOGGLE_COLUMNS = [
   { id: "konversi", label: "Konversi" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
+  ...ATTRIBUTION_COLUMNS,
 ];
 
-// createdAt/updatedAt are hidden by default; users can re-enable them.
-const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
+// createdAt/updatedAt and the two attribution columns are hidden by default;
+// users can re-enable them. No storage-key bump: usePersistentVisibility merges
+// the saved object over `defaults` key by key, so an id the saved state has
+// never heard of resolves to its default rather than to `undefined`.
+const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt", ...ATTRIBUTION_COLUMN_IDS];
 const COLUMN_DEFAULTS = Object.fromEntries(
   TOGGLE_COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
@@ -163,6 +172,16 @@ export function PricesPage() {
             {formatDateTimeID(c.getValue())}
           </span>
         ),
+      }),
+      // Server-stamped, so they are display-only and never sortable-by-accident
+      // in a way that matters — they sort like any other string column.
+      col.accessor("createdBy", {
+        header: "Dibuat oleh",
+        cell: (c) => <ByCell email={c.getValue()} />,
+      }),
+      col.accessor("updatedBy", {
+        header: "Diubah oleh",
+        cell: (c) => <ByCell email={c.getValue()} />,
       }),
       col.display({
         id: "aksi",

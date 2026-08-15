@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import type {
+  Attribution,
   Product,
   OrderItem,
   PurchaseItem,
@@ -35,7 +36,7 @@ import { seedProducts } from "./seed";
 // A product type ("Bar", "Dapur", ...). Legacy shape was a bare string[]; it is
 // a table here so it is a row like everything else. No deletedAt: nothing
 // deletes types today.
-export interface TypeRow {
+export interface TypeRow extends Attribution {
   nama: string;
 }
 
@@ -107,6 +108,18 @@ class InvoiceDB extends Dexie {
             o.buyerId = o.buyerId ?? "";
           }),
       );
+
+    // NO version(3) for `createdBy`/`updatedBy`. A Dexie schema string declares
+    // the primary key and the INDEXES, nothing else — the record itself is a
+    // structured clone of whatever object you put, so an unindexed field needs
+    // no migration and is readable the moment it is written. Neither attribution
+    // field is indexed (nothing queries by them; they are display-only), so
+    // there is no schema change to version. `buyerId` above is the contrast: it
+    // IS an index, which is exactly why it needed version(2).
+    //
+    // No backfill either. `buyerId` needed one because `undefined` broke an
+    // equality check; here absence is the honest answer for a row that has never
+    // been pushed, and the types say so (`createdBy?: string | null`).
   }
 }
 
@@ -127,6 +140,18 @@ export function onPersistError(handler: PersistErrorHandler): void {
   onError = handler;
 }
 
+// ---------- Write notification ----------
+
+// Same registration pattern as `onPersistError`, and for the same reason: the
+// D1 sync client needs to know a write happened, but this module must not
+// import it. `db -> sync -> db` would be a cycle, and `db` is the lower layer.
+type WriteHandler = () => void;
+let onWritten: WriteHandler = () => {};
+
+export function onWrite(handler: WriteHandler): void {
+  onWritten = handler;
+}
+
 // In-flight writes. Tracked so `flushWrites()` can await them; nothing else
 // should depend on this, since the UI deliberately never waits on a write.
 let pending = new Set<Promise<unknown>>();
@@ -134,7 +159,19 @@ let pending = new Set<Promise<unknown>>();
 // Fire-and-forget a write, routing any failure to the handler. Callers stay
 // synchronous; this is what lets the store API keep its sync signatures.
 export function persist(op: string, run: () => Promise<unknown>): void {
-  const p = run().catch((err) => onError(err, op));
+  // The notification fires AFTER the write resolves, never before: the sync
+  // sweep reads Dexie, so a handler run at call time would miss the very row
+  // that triggered it. A throwing handler must not become a persist failure.
+  const p = run().then(
+    () => {
+      try {
+        onWritten();
+      } catch (err) {
+        console.error("[db] write handler failed", err);
+      }
+    },
+    (err) => onError(err, op),
+  );
   pending.add(p);
   void p.finally(() => pending.delete(p));
 }
@@ -146,6 +183,36 @@ export async function flushWrites(): Promise<void> {
   while (pending.size > 0) {
     await Promise.all([...pending]);
   }
+}
+
+// ---------- Attribution on local writes ----------
+
+// `updatedBy` is stamped by the Worker from a verified Access token, so the
+// column means exactly one thing: "the server saw this person do it". A local
+// edit INVALIDATES it — the row changed, but the value still names whoever
+// edited it last time, so between the write and the next pull the UI would
+// confidently show the wrong person. Clearing it renders "—", which is the
+// honest state for a change the server has not seen yet.
+//
+// Nothing is stamped locally on purpose. An unverified address sitting in the
+// same column as a verified one would end the column's only guarantee, and
+// there would be no way to tell the two apart by looking.
+//
+// `createdAt`/`createdBy` are untouched: the creator did not change, and the
+// Worker's COALESCE keeps the stored value across an update anyway.
+export function touch<T extends Attribution & { updatedAt: string }>(
+  row: T,
+  now: string,
+): T {
+  return { ...row, updatedAt: now, updatedBy: null };
+}
+
+// The same rule for a row BORN from another one — a duplicate, an import. Here
+// `createdBy` is wrong too: this row was made by whoever is sitting here now,
+// not by the person who made the row it was copied from. `structuredClone`
+// copies both fields happily, which is exactly the trap this closes.
+export function fresh<T extends Attribution>(row: T): T {
+  return { ...row, createdBy: null, updatedBy: null };
 }
 
 // ---------- Boot ----------

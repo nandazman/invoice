@@ -34,7 +34,12 @@ import {
   uid,
   nowISO,
 } from "../lib/format";
-import { usePersistentVisibility } from "../lib/columns";
+import {
+  ATTRIBUTION_COLUMNS,
+  ATTRIBUTION_COLUMN_IDS,
+  usePersistentVisibility,
+} from "../lib/columns";
+import { ByCells, ByHeaders } from "../components/Attribution";
 import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
 import { AddItemForm } from "../components/AddItemForm";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
@@ -82,7 +87,13 @@ const COLS_BEFORE_TOTAL = [
 // Columns shown right of the "Total" column, in display order. Every new column
 // has to be listed here (or above) or the date-group subtotal stops lining up
 // under "Total" — the group row's colSpans are counted from these two lists.
-const COLS_AFTER_TOTAL = ["status", "buyer", "createdAt", "updatedAt"] as const;
+const COLS_AFTER_TOTAL = [
+  "status",
+  "buyer",
+  "createdAt",
+  "updatedAt",
+  ...ATTRIBUTION_COLUMN_IDS,
+] as const;
 
 const COLUMNS = [
   { id: "namaProduk", label: "Produk" },
@@ -94,6 +105,7 @@ const COLUMNS = [
   { id: "buyer", label: "Pembeli" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
+  ...ATTRIBUTION_COLUMNS,
 ];
 
 // createdAt/updatedAt are hidden by default; users can re-enable them. Pembeli
@@ -101,7 +113,7 @@ const COLUMNS = [
 // form insists on. No storage-key bump needed: usePersistentVisibility merges
 // the saved object over `defaults` key by key (`columns.ts`), so an id the saved
 // state has never heard of resolves to its default rather than to `undefined`.
-const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
+const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt", ...ATTRIBUTION_COLUMN_IDS];
 const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
@@ -385,6 +397,13 @@ export function OrdersPage() {
       );
   }, [filtered, hidden, perBuyer, buyerById]);
 
+  // The two attribution columns are ordinary ColumnToggle entries here, so they
+  // are independently toggleable and this just re-reads the same map.
+  const byVisible = {
+    created: visible.createdBy !== false,
+    updated: visible.updatedBy !== false,
+  };
+
   // Full-width span for the buyer header row: the checkbox column, every
   // visible data column, and the actions column.
   const totalCols =
@@ -505,6 +524,7 @@ export function OrdersPage() {
                   {visible.updatedAt !== false && (
                     <th className={thClass}>Diperbarui</th>
                   )}
+                  <ByHeaders show={byVisible} className={thClass} />
                   <th className={thClass}></th>
                 </tr>
               </thead>
@@ -782,6 +802,14 @@ function GroupRows({
               {formatDateTimeID(it.updatedAt)}
             </td>
           )}
+          <ByCells
+            show={{
+              created: visible.createdBy !== false,
+              updated: visible.updatedBy !== false,
+            }}
+            row={it}
+            className={tdClass}
+          />
           <td className={`${tdClass} text-right whitespace-nowrap`}>
             <GhostButton
               size="sm"

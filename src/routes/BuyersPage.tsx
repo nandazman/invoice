@@ -3,6 +3,13 @@ import { Link } from "@tanstack/react-router";
 import type { Buyer } from "../lib/types";
 import { useBuyers, useOrders, upsertBuyer, deleteBuyer } from "../lib/store";
 import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
+import { usePersistentAttribution } from "../lib/columns";
+import {
+  AttributionToggle,
+  ByCells,
+  ByHeaders,
+  bothBy,
+} from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { Input } from "../components/Input";
@@ -19,6 +26,9 @@ export function BuyersPage() {
   const [editing, setEditing] = useState<Buyer | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
+  const [showBy, setShowBy] = usePersistentAttribution(
+    "invoice.pembeli.by.v1",
+  );
 
   // One pass over the orders, keyed by buyer. A `.filter()` per row would be
   // O(buyers × orders) on every render, and both lists grow without bound.
@@ -87,6 +97,9 @@ export function BuyersPage() {
           <PrimaryButton onClick={() => setCreating(true)}>
             + Tambah Pembeli
           </PrimaryButton>
+          <div className="h-9 flex items-center">
+            <AttributionToggle show={showBy} onChange={setShowBy} />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -98,6 +111,7 @@ export function BuyersPage() {
                 <th className={thClass}>Email</th>
                 <th className={`${thClass} text-right`}>Pesanan</th>
                 <th className={`${thClass} text-right`}>Total Nilai</th>
+                <ByHeaders show={bothBy(showBy)} className={thClass} />
                 <th className={thClass}></th>
               </tr>
             </thead>
@@ -127,6 +141,11 @@ export function BuyersPage() {
                     <td className={`${tdClass} text-right tabular-nums font-semibold`}>
                       {formatRupiah(stats?.total ?? 0)}
                     </td>
+                    <ByCells
+                      show={bothBy(showBy)}
+                      row={b}
+                      className={tdClass}
+                    />
                     <td className={tdClass}>
                       <div className="flex gap-1 justify-end">
                         <Button size="sm" onClick={() => setEditing(b)}>

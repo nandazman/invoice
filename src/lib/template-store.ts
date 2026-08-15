@@ -10,7 +10,7 @@ import {
   defaultFields,
 } from "./template-types";
 import { uid, nowISO } from "./format";
-import { db, persist, type Snapshot } from "./db";
+import { db, persist, touch, fresh, type Snapshot } from "./db";
 
 // Templates were the store that actually hit the 5MB localStorage cap: logos and
 // image elements are base64 data URLs (~33% larger than the bytes they encode),
@@ -303,14 +303,14 @@ export function duplicateTemplate(id: string): Template | null {
   const src = templates.find((t) => t.id === id);
   if (!src) return null;
   const now = nowISO();
-  const copy: Template = {
+  const copy: Template = fresh({
     ...structuredClone(src),
     id: uid(),
     nama: `${src.nama} (salinan)`,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
-  };
+  });
   putTemplate(copy);
   return copy;
 }
@@ -318,12 +318,7 @@ export function duplicateTemplate(id: string): Template | null {
 export function saveTemplate(t: Template): void {
   const prev = templates.find((x) => x.id === t.id);
   if (!prev) return;
-  putTemplate({
-    ...t,
-    createdAt: prev.createdAt,
-    updatedAt: nowISO(),
-    deletedAt: null,
-  });
+  putTemplate(touch({ ...t, createdAt: prev.createdAt, deletedAt: null }, nowISO()));
 }
 
 // Soft delete: the row stays in IndexedDB with a `deletedAt` and only leaves the
@@ -332,7 +327,7 @@ export function deleteTemplate(id: string): void {
   const prev = templates.find((t) => t.id === id);
   if (!prev) return;
   const now = nowISO();
-  const row: Template = { ...prev, deletedAt: now, updatedAt: now };
+  const row: Template = touch({ ...prev, deletedAt: now }, now);
   templates = templates.filter((t) => t.id !== id);
   emit();
   persist("deleteTemplate", () => db.templates.put(row));

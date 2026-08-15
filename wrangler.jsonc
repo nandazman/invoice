@@ -2,26 +2,59 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "invoice",
   "compatibility_date": "2026-08-11",
-
-  // Static-assets-only Worker: there is no script, so requests are served
-  // straight from the uploaded files and never count as Worker invocations.
+  // The sync API. This was a static-assets-only Worker with no script, so that
+  // requests never counted as Worker invocations; adding `main` ends that for
+  // /api/* only. Every other path is still served straight from the uploaded
+  // files and still bypasses the script entirely — see `run_worker_first`.
+  "main": "src/worker/index.ts",
   "assets": {
     "directory": "./dist",
     // The app uses hash routing, so this rarely fires — but it keeps a stray
     // path request serving index.html instead of a 404.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Bound so the Worker can forward non-/api/* requests back to the assets.
+    // With `main` set, the Worker is in the request path and has to hand those
+    // on itself.
+    "binding": "ASSETS",
+    // Load-bearing, not a tuning knob: assets are matched BEFORE the Worker by
+    // default, and `not_found_handling: "single-page-application"` matches
+    // everything. Without this, /api/sync/pull would be answered with
+    // index.html and the API would silently never run.
+    "run_worker_first": ["/api/*"],
   },
-
+  // The mirror of IndexedDB. Schema lives in migrations/, described by
+  // src/lib/sync/tables.ts.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "invoice",
+      "database_id": "65936d38-f8dc-4aeb-9678-cc159cead889",
+    },
+  ],
+  // Identity config. Not secrets — the AUD tags and team name are public
+  // identifiers; the security comes from verifying the JWT signature against
+  // the team's keys, which is why these can live in the repo.
+  "vars": {
+    // Team name only. The Worker builds
+    // https://<team>.cloudflareaccess.com/cdn-cgi/access/certs from it to fetch
+    // the public keys every Access JWT is verified against.
+    "ACCESS_TEAM_DOMAIN": "long-shadow-af9f",
+    // AUD tag of the EXISTING Access application guarding the whole hostname.
+    // Access matches the most specific path, so that application already
+    // covers /api/sync/* — there is no separate sync application to create.
+    "ACCESS_AUD_SYNC": "ceb4ebe9dc0f848dffe73c4ee9028c395f4a1476f82fb8e8fa37d5af4095fb29",
+    // AUD tag of the owner-only Access application covering /api/admin/*
+    "ACCESS_AUD_ADMIN": "6d1286bba0a3625f7001e77882694e1a907fae8f51a81ef73b871b659bef8c52",
+  },
   // The point of using Workers over Pages: no public *.workers.dev URL, so the
   // custom domain below is the only way in and Access can't be sidestepped.
   "workers_dev": false,
-
   // custom_domain creates the DNS record in the xutopia.my.id zone and issues
   // the certificate. Cloudflare Access guards this hostname.
   "routes": [
     {
       "pattern": "invoice.xutopia.my.id",
-      "custom_domain": true
-    }
-  ]
+      "custom_domain": true,
+    },
+  ],
 }

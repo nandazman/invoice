@@ -17,5 +17,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The Worker compiles against the Workers runtime types, not DOM — the two
+  // sets of globals conflict. It has its own config: tsconfig.worker.json.
+  "exclude": ["src/worker"]
 }

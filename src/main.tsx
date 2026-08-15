@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { bootstrap } from "./lib/bootstrap";
+import { initSync } from "./lib/sync/client";
 import "./styles.css";
 
 // Expose the build's release hash so the running code version can be
@@ -42,5 +43,12 @@ bootstrap()
         <RouterProvider router={router} />
       </React.StrictMode>,
     );
+
+    // AFTER the render, and deliberately not awaited. The D1 mirror is not part
+    // of booting: every read is served from IndexedDB and every write has
+    // already landed there, so a slow or unreachable sync must never delay the
+    // first paint — and must never reach `renderBootError`, which would replace
+    // a working app with an error page over a mirror that is merely behind.
+    void initSync();
   })
   .catch(renderBootError);

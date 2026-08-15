@@ -17,6 +17,13 @@ import {
   formatTanggalID,
   formatDateTimeID,
 } from "../lib/format";
+import { usePersistentAttribution } from "../lib/columns";
+import {
+  AttributionToggle,
+  ByCells,
+  ByHeaders,
+  bothBy,
+} from "../components/Attribution";
 import { ProductDialog } from "../components/ProductDialog";
 import { PrimaryButton } from "../components/Button";
 import { Panel } from "../components/Panel";
@@ -46,6 +53,11 @@ export function ProductDetailPage() {
   const types = useTypes();
   const buyers = useBuyers();
   const [editing, setEditing] = useState(false);
+  // One preference for the whole page: both tables below list rows from the
+  // same mirror, so a reader who wants the "who" on one wants it on the other.
+  const [showBy, setShowBy] = usePersistentAttribution(
+    "invoice.produk.detail.by.v1",
+  );
 
   // "Who bought this" is the question this page is already for, so the Pesanan
   // table resolves buyer ids through a Map rather than a find() per row.
@@ -192,7 +204,13 @@ export function ProductDetailPage() {
 
       {/* 3. Stok */}
       <Panel>
-        <h2 className="text-lg font-bold mb-3">Stok</h2>
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          <h2 className="text-lg font-bold">Stok</h2>
+          <span className="flex-1" />
+          {movements.length > 0 && (
+            <AttributionToggle show={showBy} onChange={setShowBy} />
+          )}
+        </div>
         <div className="flex gap-6 flex-wrap mb-4">
           <Stat
             label="Stok saat ini"
@@ -217,6 +235,7 @@ export function ProductDetailPage() {
                   <th className={`${thClass} text-right`}>Qty</th>
                   <th className={`${thClass} text-right`}>Modal/satuan</th>
                   <th className={`${thClass} text-right`}>Nilai</th>
+                  <ByHeaders show={bothBy(showBy)} className={thClass} />
                 </tr>
               </thead>
               <tbody>
@@ -264,6 +283,11 @@ export function ProductDetailPage() {
                             ? `−${formatRupiah(-mv)}`
                             : formatRupiah(0)}
                       </td>
+                      <ByCells
+                        show={bothBy(showBy)}
+                        row={m}
+                        className={tdClass}
+                      />
                     </tr>
                   );
                 })}
@@ -275,7 +299,13 @@ export function ProductDetailPage() {
 
       {/* 4. Pesanan */}
       <Panel>
-        <h2 className="text-lg font-bold mb-3">Pesanan</h2>
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          <h2 className="text-lg font-bold">Pesanan</h2>
+          <span className="flex-1" />
+          {productOrders.length > 0 && (
+            <AttributionToggle show={showBy} onChange={setShowBy} />
+          )}
+        </div>
         {productOrders.length === 0 ? (
           <p className="text-sm text-slate-400">Belum ada pesanan.</p>
         ) : (
@@ -290,6 +320,7 @@ export function ProductDetailPage() {
                   <th className={`${thClass} text-right`}>Harga Satuan</th>
                   <th className={`${thClass} text-right`}>Total</th>
                   <th className={thClass}>Status</th>
+                  <ByHeaders show={bothBy(showBy)} className={thClass} />
                 </tr>
               </thead>
               <tbody>
@@ -333,6 +364,11 @@ export function ProductDetailPage() {
                         {STATUS_LABEL[o.status] ?? o.status}
                       </span>
                     </td>
+                    <ByCells
+                      show={bothBy(showBy)}
+                      row={o}
+                      className={tdClass}
+                    />
                   </tr>
                 ))}
               </tbody>

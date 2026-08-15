@@ -30,6 +30,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Wrangler local-only vars. MUST stay ignored: it carries DEV_IDENTITY, which
+# bypasses Cloudflare Access authentication (see src/worker/access.ts).
+.dev.vars
+.wrangler/
+
 # OS
 .DS_Store
 Thumbs.db

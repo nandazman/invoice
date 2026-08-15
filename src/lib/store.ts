@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type {
+  Attribution,
   Product,
   OrderItem,
   OrderStatus,
@@ -9,7 +10,7 @@ import type {
 } from "./types";
 import { nowISO, uid } from "./format";
 import { logAudit, diff, auditRow } from "./audit";
-import { db, persist, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
+import { db, persist, touch, fresh, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
 
 // In-memory mirror of the LIVE rows (deletedAt === null). Filled once by
 // `hydrateStores()` at boot; every read below is served from here, so the whole
@@ -78,11 +79,14 @@ export function useBuyerBackfillPending(): boolean {
 
 // Stamp a row as deleted. The row is NOT removed: it stays in IndexedDB with a
 // `deletedAt`, and only leaves the in-memory arrays. See types.ts for why.
-function tombstone<T extends { deletedAt: string | null; updatedAt: string }>(
+// A delete is a write like any other, so it goes through `touch` too: the row
+// the server last saw was the live one, and whoever deleted it is not yet known
+// to the server.
+function tombstone<T extends Attribution & { deletedAt: string | null; updatedAt: string }>(
   row: T,
   now: string,
 ): T {
-  return { ...row, deletedAt: now, updatedAt: now };
+  return touch({ ...row, deletedAt: now }, now);
 }
 
 // ---------- Bulk replace (JSON import + backup restore) ----------
@@ -195,12 +199,7 @@ export function upsertProduct(p: Product): void {
   const prev = products.find((x) => x.id === p.id);
 
   if (prev) {
-    const row: Product = {
-      ...p,
-      createdAt: prev.createdAt,
-      updatedAt: now,
-      deletedAt: null,
-    };
+    const row: Product = touch({ ...p, createdAt: prev.createdAt, deletedAt: null }, now);
     products = products.map((x) => (x.id === p.id ? row : x));
     emit();
 
@@ -225,7 +224,7 @@ export function upsertProduct(p: Product): void {
       }),
     );
   } else {
-    const row: Product = { ...p, createdAt: now, updatedAt: now, deletedAt: null };
+    const row: Product = fresh({ ...p, createdAt: now, updatedAt: now, deletedAt: null });
     products = [...products, row];
     emit();
 
@@ -283,12 +282,7 @@ export function upsertBuyer(b: Buyer): void {
   const prev = buyers.find((x) => x.id === b.id);
 
   if (prev) {
-    const row: Buyer = {
-      ...b,
-      createdAt: prev.createdAt,
-      updatedAt: now,
-      deletedAt: null,
-    };
+    const row: Buyer = touch({ ...b, createdAt: prev.createdAt, deletedAt: null }, now);
     buyers = buyers.map((x) => (x.id === b.id ? row : x));
     emit();
 
@@ -313,7 +307,7 @@ export function upsertBuyer(b: Buyer): void {
       }),
     );
   } else {
-    const row: Buyer = { ...b, createdAt: now, updatedAt: now, deletedAt: null };
+    const row: Buyer = fresh({ ...b, createdAt: now, updatedAt: now, deletedAt: null });
     buyers = [...buyers, row];
     emit();
 
@@ -379,14 +373,14 @@ function baseUnitsFor(product: Product, satuan: string): number {
 // left an order with no movement, silently.
 export function addOrder(item: OrderItem): void {
   const now = nowISO();
-  const filled: OrderItem = {
+  const filled: OrderItem = fresh({
     ...item,
     status: item.status ?? "pending",
     affectsStock: item.affectsStock ?? false,
     createdAt: item.createdAt ?? now,
     updatedAt: item.updatedAt ?? now,
     deletedAt: null,
-  };
+  });
   orders = [...orders, filled];
 
   const entries = [
@@ -453,7 +447,7 @@ export function setOrdersStatus(ids: Set<string>, status: OrderStatus): void {
   const targets = orders.filter((o) => ids.has(o.id) && o.status !== status);
   if (targets.length === 0) return;
 
-  const rows = targets.map((o) => ({ ...o, status, updatedAt: now }));
+  const rows = targets.map((o) => touch({ ...o, status }, now));
   const byId = new Map(rows.map((r) => [r.id, r] as const));
   orders = orders.map((o) => byId.get(o.id) ?? o);
   emit();
@@ -484,7 +478,7 @@ export function linkOrderProduct(id: string, productId: string): void {
   const product = products.find((p) => p.id === productId);
   if (!prev || !product || prev.productId === productId) return;
 
-  const row: OrderItem = { ...prev, productId, updatedAt: now };
+  const row: OrderItem = touch({ ...prev, productId }, now);
   orders = orders.map((o) => (o.id === id ? row : o));
   emit();
 
@@ -522,7 +516,7 @@ export function setOrdersBuyer(ids: Set<string>, buyerId: string): void {
   const targets = orders.filter((o) => ids.has(o.id) && o.buyerId !== buyerId);
   if (targets.length === 0) return;
 
-  const rows = targets.map((o) => ({ ...o, buyerId, updatedAt: now }));
+  const rows = targets.map((o) => touch({ ...o, buyerId }, now));
   const byId = new Map(rows.map((r) => [r.id, r] as const));
   orders = orders.map((o) => byId.get(o.id) ?? o);
   emit();
@@ -572,7 +566,7 @@ export function backfillOrderBuyer(buyerId: string): void {
   const now = nowISO();
   // Fills blanks only; an order that somehow already has a buyer is left alone.
   const targets = orders.filter(needsBuyer);
-  const rows = targets.map((o) => ({ ...o, buyerId, updatedAt: now }));
+  const rows = targets.map((o) => touch({ ...o, buyerId }, now));
 
   const byId = new Map(rows.map((r) => [r.id, r]));
   orders = orders.map((o) => byId.get(o.id) ?? o);
@@ -617,7 +611,7 @@ export function linkPurchaseProduct(id: string, productId: string): void {
   const product = products.find((p) => p.id === productId);
   if (!prev || !product || prev.productId === productId) return;
 
-  const row: PurchaseItem = { ...prev, productId, updatedAt: now };
+  const row: PurchaseItem = touch({ ...prev, productId }, now);
   purchases = purchases.map((p) => (p.id === id ? row : p));
   emit();
 
@@ -690,12 +684,12 @@ export function addPurchase(
   order?: OrderItem,
 ): void {
   const now = nowISO();
-  const filled: PurchaseItem = {
+  const filled: PurchaseItem = fresh({
     ...item,
     createdAt: item.createdAt ?? now,
     updatedAt: item.updatedAt ?? now,
     deletedAt: null,
-  };
+  });
   purchases = [...purchases, filled];
 
   const entries = [
@@ -807,12 +801,12 @@ export function deletePurchases(ids: Set<string>): void {
 
 export function addMovement(m: StockMovement): void {
   const now = nowISO();
-  const row: StockMovement = {
+  const row: StockMovement = fresh({
     ...m,
     createdAt: m.createdAt ?? now,
     updatedAt: m.updatedAt ?? now,
     deletedAt: null,
-  };
+  });
   stock = [...stock, row];
   emit();
 

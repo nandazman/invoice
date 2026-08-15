@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
 import { flushWrites } from "../lib/db";
 import { downloadJSON, pickJSONFile } from "../lib/io";
+import { useSyncStatus } from "../lib/sync/client";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
 const GROUPS_KEY = "invoice.sidebar.groups";
@@ -48,8 +49,31 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// Admin-only nav. Its own group, not Alat: this is about the app itself — who
+// you are and what has reached the cloud — rather than anything you do to the
+// data.
+//
+// Only the NAV ENTRY is admin-gated. The /admin ROUTE stays registered and
+// reachable by direct URL on purpose (see router.tsx): the page gates its own
+// sections, and a `read` user still needs "Mode coba-coba" and "Buang
+// perubahan lokal" when an admin sends them the link. Do not delete the route.
+const SYSTEM_GROUP: NavGroup = {
+  label: "Sistem",
+  items: [{ to: "/admin", label: "Sinkronisasi", icon: "☁️" }],
+};
+
 export function RootLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The role arrives asynchronously: the app boots offline-first and
+  // /api/sync/me answers later, starting at "none". Testing for "admin"
+  // positively — rather than hiding on a known-non-admin — is what keeps the
+  // entry from flashing in during boot and disappearing again. Unreachable API
+  // means the role is unknown, which is also not admin, so it stays hidden.
+  const { role } = useSyncStatus();
+  const groups = useMemo(
+    () => (role === "admin" ? [...NAV_GROUPS, SYSTEM_GROUP] : NAV_GROUPS),
+    [role],
+  );
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1",
   );
@@ -134,7 +158,7 @@ export function RootLayout() {
         </div>
 
         <nav className="flex flex-col gap-1">
-          {NAV_GROUPS.map((group, gi) => {
+          {groups.map((group, gi) => {
             const groupClosed = closedGroups.has(group.label);
             // Highlight the group header when one of its pages is the active route.
             const groupActive = group.items.some(

@@ -22,6 +22,18 @@ import { hydrateTemplates } from "./template-store";
 // Only after (3) may anything render, because every store read is synchronous
 // and would otherwise return an empty array.
 
+// Steps 2 and 3 on their own: re-read every table and refill the in-memory
+// arrays. Boot uses it, and so does a D1 pull — a pull writes into IndexedDB
+// and cannot feed the stores directly, so it has to re-run exactly this. It
+// lives here rather than in the sync client so there is only one copy of the
+// sequence to keep correct as stores are added.
+export async function rehydrate(): Promise<void> {
+  const snap = await readAll();
+  hydrateStores(snap);
+  hydrateAudit(snap);
+  hydrateTemplates(snap);
+}
+
 export interface BootResult {
   migration: MigrationResult;
   persisted: boolean;
@@ -37,10 +49,7 @@ export async function bootstrap(): Promise<BootResult> {
 
   const migration = await migrateFromLocalStorage();
 
-  const snap = await readAll();
-  hydrateStores(snap);
-  hydrateAudit(snap);
-  hydrateTemplates(snap);
+  await rehydrate();
 
   // Best-effort and deliberately last: never let this block or fail the boot.
   const persisted = await requestPersistence();

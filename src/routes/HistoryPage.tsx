@@ -2,6 +2,13 @@ import { useMemo, useState } from "react";
 import type { AuditEntry } from "../lib/types";
 import { useAudit } from "../lib/audit";
 import { formatDateTimeID } from "../lib/format";
+import { usePersistentAttribution } from "../lib/columns";
+import {
+  AttributionToggle,
+  ByCells,
+  ByHeaders,
+  bothBy,
+} from "../components/Attribution";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { Input } from "../components/Input";
@@ -77,6 +84,9 @@ export function HistoryPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [query, setQuery] = useState("");
+  // The audit log is pushed like every other table, so its entries carry the
+  // same server-stamped attribution — "who was logged in when this was logged".
+  const [showBy, setShowBy] = usePersistentAttribution("invoice.riwayat.by.v1");
 
   function clearFilters() {
     setEntity("");
@@ -159,6 +169,8 @@ export function HistoryPage() {
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">
           <span className="text-slate-400">{filtered.length} entri</span>
+          <span className="flex-1" />
+          <AttributionToggle show={showBy} onChange={setShowBy} />
         </div>
 
         {filtered.length === 0 ? (
@@ -176,6 +188,7 @@ export function HistoryPage() {
                   <th className={thClass}>Entitas</th>
                   <th className={thClass}>Aksi</th>
                   <th className={thClass}>Keterangan</th>
+                  <ByHeaders show={bothBy(showBy)} className={thClass} />
                 </tr>
               </thead>
               <tbody>
@@ -220,6 +233,11 @@ export function HistoryPage() {
                         </div>
                       )}
                     </td>
+                    <ByCells
+                      show={bothBy(showBy)}
+                      row={e}
+                      className={tdClass}
+                    />
                   </tr>
                 ))}
               </tbody>

@@ -695,3 +695,66 @@ describe("backfillOrderBuyer", () => {
     expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
   });
 });
+
+describe("local writes clear stale attribution", () => {
+  beforeEach(() => reset());
+
+  // `updatedBy` is stamped by the Worker from a verified Access token, so it is
+  // only ever true of the last state the SERVER saw. A local edit makes it a
+  // lie — the row changed, but the name is the previous editor's. These tests
+  // pin the rule that a local write always leaves it null rather than stale.
+
+  it("clears updatedBy but keeps createdBy when a product is edited", async () => {
+    const synced: Product = {
+      ...product,
+      createdBy: "owner@example.com",
+      updatedBy: "owner@example.com",
+    };
+    await reset({ products: [synced] });
+
+    upsertProduct({ ...synced, hargaJual: 6000 });
+    await flushWrites();
+
+    const row = await db.products.get("p1");
+    expect(row?.updatedBy).toBeNull();
+    // The creator did not change, and the Worker COALESCEs it anyway.
+    expect(row?.createdBy).toBe("owner@example.com");
+    // In memory too — the UI reads the arrays, not the database.
+    expect(getProducts()[0].updatedBy).toBeNull();
+  });
+
+  it("clears updatedBy on a soft delete", async () => {
+    await reset({
+      orders: [order({ createdBy: "owner@example.com", updatedBy: "owner@example.com" })],
+    });
+
+    deleteOrder("o1");
+    await flushWrites();
+
+    const row = await db.orders.get("o1");
+    expect(row?.deletedAt).not.toBeNull();
+    expect(row?.updatedBy).toBeNull();
+  });
+
+  it("clears updatedBy on a bulk status change", async () => {
+    await reset({ orders: [order({ updatedBy: "owner@example.com" })] });
+
+    setOrdersStatus(new Set(["o1"]), "paid");
+    await flushWrites();
+
+    expect((await db.orders.get("o1"))?.updatedBy).toBeNull();
+  });
+
+  it("clears BOTH fields on a row created from an existing one", async () => {
+    // A duplicate carries the source row's attribution through the spread onto
+    // a brand-new id, which would credit the copy to whoever made the original.
+    await reset();
+
+    addOrder(order({ id: "o2", createdBy: "owner@example.com", updatedBy: "owner@example.com" }));
+    await flushWrites();
+
+    const row = await db.orders.get("o2");
+    expect(row?.createdBy).toBeNull();
+    expect(row?.updatedBy).toBeNull();
+  });
+});

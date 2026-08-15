@@ -8,6 +8,13 @@ import {
 } from "../lib/store";
 import { computeFifo } from "../lib/stock";
 import { formatRupiah, formatAngka } from "../lib/format";
+import { usePersistentAttribution } from "../lib/columns";
+import {
+  AttributionToggle,
+  ByCells,
+  ByHeaders,
+  bothBy,
+} from "../components/Attribution";
 import { AddMovementForm } from "../components/AddMovementForm";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
@@ -29,6 +36,9 @@ export function StockPage() {
   const products = useProducts();
   const stock = useStock();
   const [cari, setCari] = useState("");
+  // The row here IS a product — the stock figures are derived — so the
+  // attribution shown is the product's, not the movements'.
+  const [showBy, setShowBy] = usePersistentAttribution("invoice.stok.by.v1");
 
   function addMovements(ms: StockMovement[]) {
     for (const m of ms) addMovement(m);
@@ -93,6 +103,7 @@ export function StockPage() {
             </span>
           )}
           <span className="flex-1" />
+          <AttributionToggle show={showBy} onChange={setShowBy} />
           <Field label="" className="w-48">
             <Input
               value={cari}
@@ -117,6 +128,7 @@ export function StockPage() {
                   <th className={`${thClass} text-right`}>Min</th>
                   <th className={`${thClass} text-right`}>Modal/satuan</th>
                   <th className={`${thClass} text-right`}>Nilai</th>
+                  <ByHeaders show={bothBy(showBy)} className={thClass} />
                 </tr>
               </thead>
               <tbody>
@@ -162,6 +174,11 @@ export function StockPage() {
                       <td className={`${tdClass} text-right tabular-nums`}>
                         {formatRupiah(r.value)}
                       </td>
+                      <ByCells
+                        show={bothBy(showBy)}
+                        row={r.product}
+                        className={tdClass}
+                      />
                     </tr>
                   );
                 })}

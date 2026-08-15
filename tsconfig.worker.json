@@ -1,0 +1,30 @@
+{
+  // The Worker is typechecked separately from the app because the two run in
+  // different globals. `lib: DOM` in tsconfig.json declares a browser
+  // `fetch`/`Response`/`crypto` that collide with the Workers runtime versions,
+  // and DOM-only APIs (window, localStorage, IndexedDB) would typecheck fine in
+  // worker code that cannot run them. Splitting the configs makes each side see
+  // only its own platform.
+  //
+  // src/lib/sync/tables.ts is compiled by BOTH, on purpose — that is the point
+  // of the file, and it imports nothing platform-specific.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types"],
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  // Only the Worker's own entry points. tables.ts is pulled in by its import
+  // and typechecked here too; listing src/lib/sync would drag in client.ts,
+  // which is browser code and belongs to the other config.
+  "include": ["src/worker"]
+}

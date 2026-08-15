@@ -15,7 +15,12 @@ import {
   formatDateTimeID,
   sumRupiah,
 } from "../lib/format";
-import { usePersistentVisibility } from "../lib/columns";
+import {
+  ATTRIBUTION_COLUMNS,
+  ATTRIBUTION_COLUMN_IDS,
+  usePersistentVisibility,
+} from "../lib/columns";
+import { ByCells, ByHeaders } from "../components/Attribution";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
 import { DangerButton } from "../components/Button";
@@ -42,7 +47,11 @@ const COLS_BEFORE_TOTAL = [
   "hargaSatuan",
 ] as const;
 // Columns shown right of the "Total" column, in display order.
-const COLS_AFTER_TOTAL = ["createdAt", "updatedAt"] as const;
+const COLS_AFTER_TOTAL = [
+  "createdAt",
+  "updatedAt",
+  ...ATTRIBUTION_COLUMN_IDS,
+] as const;
 
 const COLUMNS = [
   { id: "namaProduk", label: "Produk" },
@@ -52,10 +61,13 @@ const COLUMNS = [
   { id: "totalHarga", label: "Total" },
   { id: "createdAt", label: "Dibuat" },
   { id: "updatedAt", label: "Diperbarui" },
+  ...ATTRIBUTION_COLUMNS,
 ];
 
-// createdAt/updatedAt are hidden by default; users can re-enable them.
-const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt"];
+// createdAt/updatedAt and the two attribution columns are hidden by default;
+// users can re-enable them. No storage-key bump needed — usePersistentVisibility
+// falls back to `defaults` for any id the saved state predates.
+const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt", ...ATTRIBUTION_COLUMN_IDS];
 const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
@@ -163,6 +175,13 @@ export function BeliStockPage() {
                   {visible.updatedAt !== false && (
                     <th className={thClass}>Diperbarui</th>
                   )}
+                  <ByHeaders
+                    show={{
+                      created: visible.createdBy !== false,
+                      updated: visible.updatedBy !== false,
+                    }}
+                    className={thClass}
+                  />
                   <th className={thClass}></th>
                 </tr>
               </thead>
@@ -282,6 +301,14 @@ function GroupRows({
               {formatDateTimeID(it.updatedAt)}
             </td>
           )}
+          <ByCells
+            show={{
+              created: visible.createdBy !== false,
+              updated: visible.updatedBy !== false,
+            }}
+            row={it}
+            className={tdClass}
+          />
           <td className={`${tdClass} text-right`}>
             <DangerButton
               size="sm"

@@ -1,0 +1,21 @@
+# Copy to `.dev.vars` (gitignored) to run the Worker locally:
+#
+#   cp .dev.vars.example .dev.vars
+#   bun run d1:migrate:local
+#   bunx wrangler dev
+#
+# `wrangler dev` is not behind Cloudflare Access, so no request it receives can
+# carry an assertion and every /api/* call would 401. DEV_IDENTITY stands in for
+# the email Access would have supplied.
+#
+# It is honoured whenever it is set, with no environment check — the safety is
+# that `wrangler deploy` does not upload `.dev.vars`. Never add DEV_IDENTITY to
+# `vars` in wrangler.jsonc and never `wrangler secret put` it: in a deployed
+# Worker it turns authentication off completely.
+#
+# Give yourself the admin role in the local D1 to exercise the admin page:
+#
+#   bunx wrangler d1 execute invoice --local \
+#     --command "INSERT INTO roles (email, role, createdAt) VALUES ('you@example.com','admin',datetime('now'))"
+#
+DEV_IDENTITY=you@example.com

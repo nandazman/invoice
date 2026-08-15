@@ -4,6 +4,19 @@
 // The in-memory stores hold LIVE rows only (`deletedAt === null`), so nothing
 // downstream of `store.ts` ever sees a tombstone and no page needs to filter.
 
+// Who last touched a row, as a Cloudflare Access email. Server-stamped by the
+// Worker on push and merged back onto the row on pull (see the ATTRIBUTION
+// block in lib/sync/tables.ts) — nothing in the app ever WRITES these.
+//
+// Both are optional, and must stay optional: a row created on this device and
+// never synced has never been stamped, and the GitHub Pages copy has no Worker
+// behind it at all, so it never has them. Every reader must handle absence —
+// the tables render an em-dash.
+export interface Attribution {
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
 // A packaging conversion for a product, e.g. "1 box = 12 unit".
 // Each conversion carries its OWN price (may differ from base unit x jumlah).
 export interface Conversion {
@@ -12,7 +25,7 @@ export interface Conversion {
   harga: number; // price for one of this unit
 }
 
-export interface Product {
+export interface Product extends Attribution {
   id: string;
   namaProduk: string;
   tipe: string; // category, e.g. "Bar"
@@ -32,7 +45,7 @@ export interface Product {
 // contact details, and need a stable key so their order history survives a
 // rename. Only `nama` is required; the rest are "" when unknown.
 // See docs/2026-07-29/plan.md §1.
-export interface Buyer {
+export interface Buyer extends Attribution {
   id: string;
   nama: string;
   telepon: string;
@@ -46,7 +59,7 @@ export interface Buyer {
 
 export type OrderStatus = "pending" | "paid";
 
-export interface OrderItem {
+export interface OrderItem extends Attribution {
   id: string;
   tanggal: string; // ISO date, yyyy-mm-dd (used for filtering/sorting)
   productId: string; // links to Product.id ("" for unmatched legacy rows)
@@ -66,7 +79,7 @@ export interface OrderItem {
 // A stock-purchase line (Beli Stock). Pesanan-shaped but without status /
 // affectsStock: every saved purchase always ADDS stock. Priced at Harga Dasar
 // (modal); hargaSatuan is editable so the real invoice cost can be captured.
-export interface PurchaseItem {
+export interface PurchaseItem extends Attribution {
   id: string;
   tanggal: string; // ISO date, yyyy-mm-dd
   productId: string; // links to Product.id
@@ -93,7 +106,7 @@ export interface LineItem {
 
 // One append-only entry in the global audit log. Never rewritten; a Restore
 // replaces the whole log. entityId may dangle after the entity is deleted.
-export interface AuditEntry {
+export interface AuditEntry extends Attribution {
   id: string;
   timestamp: string; // ISO datetime
   entity: "product" | "order" | "stock" | "type" | "purchase" | "buyer";
@@ -110,7 +123,7 @@ export type StockReason = "purchase" | "sale" | "adjustment" | "return";
 // A single stock in/out entry. Current stock for a product is the sum of its
 // movements' `qty`. Everything is stored in BASE units so mixed packaging
 // (konversi) always reconciles.
-export interface StockMovement {
+export interface StockMovement extends Attribution {
   id: string;
   productId: string; // links to Product.id
   tanggal: string; // ISO date, yyyy-mm-dd

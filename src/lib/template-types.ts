@@ -1,4 +1,4 @@
-import type { OrderItem } from "./types";
+import type { Attribution, OrderItem } from "./types";
 
 // ---------- Canvas geometry ----------
 // Design coordinate system = A4 portrait at 96 DPI.
@@ -96,7 +96,7 @@ export interface TemplateElement {
   columns?: ItemColumn[]; // items table
 }
 
-export interface Template {
+export interface Template extends Attribution {
   id: string;
   nama: string;
   business: { nama: string; alamat: string; telepon: string; logo: string | null };

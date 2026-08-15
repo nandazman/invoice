@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.worker.json && vite build",
+    "build:cf": "node scripts/build-cloudflare.mjs",
+    "deploy:cf": "bun run build:cf && wrangler deploy",
+    "d1:migrate:local": "wrangler d1 migrations apply invoice --local",
+    "d1:migrate": "wrangler d1 migrations apply invoice --remote",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -19,6 +23,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260815.1",
     "@tailwindcss/vite": "^4.3.1",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
@@ -27,6 +32,7 @@
     "tailwindcss": "^4.3.1",
     "typescript": "^5.6.2",
     "vite": "^5.4.8",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.123.0"
   }
 }
