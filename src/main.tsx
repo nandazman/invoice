@@ -4,6 +4,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { bootstrap } from "./lib/bootstrap";
 import { initSync } from "./lib/sync/client";
+import { initTabs } from "./lib/sync/tabs";
+import { UpdatePrompt } from "./components/UpdatePrompt";
 import "./styles.css";
 
 // Expose the build's release hash so the running code version can be
@@ -38,9 +40,23 @@ function renderBootError(err: unknown): void {
 // finish before the first render — otherwise every page renders empty.
 bootstrap()
   .then(() => {
+    // Before the render and before `initSync`, but AFTER bootstrap has hydrated
+    // the stores — a `changed` message arriving first would otherwise re-read
+    // into arrays that were never filled. Called here rather than inside
+    // bootstrap() to keep the import graph acyclic: tabs.ts needs
+    // bootstrap.rehydrate, so bootstrap must not need tabs.
+    //
+    // Unconditional, unlike initSync: tabs share an IndexedDB whether or not the
+    // build has a Worker behind it, so the GitHub Pages copy gets cross-tab
+    // freshness too.
+    initTabs();
+
     root.render(
       <React.StrictMode>
         <RouterProvider router={router} />
+        {/* Outside the router on purpose: it must also be reachable from the
+            gate screen, which replaces the whole routed tree. */}
+        <UpdatePrompt />
       </React.StrictMode>,
     );
 

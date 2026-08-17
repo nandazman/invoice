@@ -145,11 +145,20 @@ export function onPersistError(handler: PersistErrorHandler): void {
 // Same registration pattern as `onPersistError`, and for the same reason: the
 // D1 sync client needs to know a write happened, but this module must not
 // import it. `db -> sync -> db` would be a cycle, and `db` is the lower layer.
+//
+// A SET, not a single slot. There are two independent listeners now — the sync
+// client schedules a push, and sync/tabs.ts tells the other tabs to re-read
+// IndexedDB — and with a single slot whichever registered last would silently
+// unregister the other. Returning a disposer rather than exposing a remove
+// function keeps the caller from having to hold onto the handler identity.
 type WriteHandler = () => void;
-let onWritten: WriteHandler = () => {};
+const writeHandlers = new Set<WriteHandler>();
 
-export function onWrite(handler: WriteHandler): void {
-  onWritten = handler;
+export function onWrite(handler: WriteHandler): () => void {
+  writeHandlers.add(handler);
+  return () => {
+    writeHandlers.delete(handler);
+  };
 }
 
 // In-flight writes. Tracked so `flushWrites()` can await them; nothing else
@@ -164,10 +173,15 @@ export function persist(op: string, run: () => Promise<unknown>): void {
   // that triggered it. A throwing handler must not become a persist failure.
   const p = run().then(
     () => {
-      try {
-        onWritten();
-      } catch (err) {
-        console.error("[db] write handler failed", err);
+      // Each handler is isolated: one that throws must not stop the others from
+      // running, and none of them may turn a write that SUCCEEDED into a
+      // persist failure.
+      for (const handler of writeHandlers) {
+        try {
+          handler();
+        } catch (err) {
+          console.error("[db] write handler failed", err);
+        }
       }
     },
     (err) => onError(err, op),
