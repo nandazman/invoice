@@ -9,6 +9,15 @@ import {
   type Row,
   type TableSpec,
 } from "./tables";
+import {
+  __resetTabsForTests,
+  broadcastChanged,
+  claimLeadership,
+  isLeader,
+  onRemoteChange,
+  onWake,
+  requestSync,
+} from "./tabs";
 
 // The browser half of the D1 mirror. See docs/2026-08-15/sync-plan.md.
 //
@@ -40,6 +49,14 @@ export interface SyncStatus {
   // `role` is a guess — either the initial "none" or the localStorage cache —
   // and a guess must never gate anybody out of the app. See `isBlocked`.
   roleKnown: boolean;
+  // May this account's changes leave the device? Set by an admin, answered by
+  // /api/sync/me, enforced by the Worker on every push. False is "local-only":
+  // the app works exactly as it always did, nothing is published, and pulling
+  // carries on so this device still sees everyone else's rows.
+  //
+  // Covered by `roleKnown` — it comes from the same one answer, so a build that
+  // has not heard from the server yet is guessing about this too.
+  canPush: boolean;
   online: boolean;
   busy: boolean;
   lastPushAt: string | null;
@@ -73,6 +90,17 @@ const WATERMARKS_KEY = "sync.watermarks.v1";
 // expiry, signing or a revocation channel here; there is nothing to protect.
 const ROLE_CACHE_KEY = "sync.role.v1";
 
+// The same trick for the local-only flag, and for the same reason: the sync
+// chip renders before the network answers, and "your changes stay on this
+// device" is not a sentence to flash on and off.
+//
+// Absent means TRUE, matching the column default in migration 0003. The two
+// wrong guesses are not symmetric: guessing false would show a local-only
+// warning to everybody on their first ever boot, while guessing true is the
+// state almost every account is actually in, and the push it might allow is
+// refused by the Worker anyway.
+const PUSH_CACHE_KEY = "sync.canpush.v1";
+
 // D1 caps a row at ~2MB. Templates embed base64 dataURLs (template-store.ts) so
 // they are the only table that can reach it. Leave headroom for the JSON quoting
 // the Worker adds when it stringifies the object columns.
@@ -100,9 +128,18 @@ function readCachedRole(): Role {
   }
 }
 
-function cacheRole(role: Role): void {
+function readCachedCanPush(): boolean {
+  try {
+    return localStorage.getItem(PUSH_CACHE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function cacheGrant(role: Role, canPush: boolean): void {
   try {
     localStorage.setItem(ROLE_CACHE_KEY, role);
+    localStorage.setItem(PUSH_CACHE_KEY, canPush ? "1" : "0");
   } catch {
     // Private-mode browsers can throw on write. A lost cache costs nothing —
     // the next successful /api/sync/me refills it.
@@ -122,6 +159,7 @@ function freshStatus(): SyncStatus {
     // denial while it is really just unanswered.
     role: readCachedRole(),
     roleKnown: false,
+    canPush: readCachedCanPush(),
     online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
     busy: false,
     lastPushAt: null,
@@ -162,6 +200,15 @@ export function useSyncStatus(): SyncStatus {
 
 export function canWrite(): boolean {
   return status.role === "write" || status.role === "admin";
+}
+
+// Whether a push may be attempted at all. Both terms matter and they say
+// different things: `canWrite` is "does this account get the app", `canPush` is
+// "does what it writes get published". Nothing local changes when this is
+// false — every write still lands in IndexedDB, which was always the commit
+// point; it just stops there.
+export function canPushToCloud(): boolean {
+  return canWrite() && status.canPush;
 }
 
 // ---------- The gate ----------
@@ -212,8 +259,11 @@ async function saveWatermarks(next: Watermarks): Promise<void> {
   await db.meta.put({ key: WATERMARKS_KEY, value: next });
 }
 
-// Exposed for tests and for `discardLocalChanges`. Dropping the cache matters:
-// a test (or a second tab) can rewrite the meta row underneath us.
+// Exposed for tests, for `discardLocalChanges`, and for the cross-tab listener.
+// Dropping the cache matters: a test — or the leader tab, which is a different
+// document sharing this same Dexie `meta` row — can rewrite it underneath us. A
+// tab holding a stale copy would then compute its backlog against a watermark
+// the leader has already moved.
 function resetWatermarkCache(): void {
   watermarks = null;
 }
@@ -389,7 +439,18 @@ const RELOAD_MESSAGE =
 async function api<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(path, { credentials: "same-origin", ...init });
+    // `redirect: "manual"` is load-bearing. Cloudflare Access answers an expired
+    // session with a 302 to its login page on <team>.cloudflareaccess.com, and
+    // the default "follow" chases it: a cross-origin request to a host that
+    // sends no CORS headers, which makes the fetch REJECT. It would land in the
+    // catch below and tell someone with a perfectly good network that they are
+    // offline, while the console fills with CORS errors naming a URL that has
+    // nothing wrong with it.
+    res = await fetch(path, {
+      credentials: "same-origin",
+      redirect: "manual",
+      ...init,
+    });
   } catch {
     // fetch only rejects on a transport failure, which is the offline case.
     // The API is still assumed to exist, so `available` must not flip.
@@ -398,6 +459,16 @@ async function api<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
       message:
         "Tidak dapat terhubung ke server. Perubahan tetap tersimpan di perangkat ini.",
     };
+  }
+
+  // The redirect stopped here instead of being followed. An opaque response
+  // carries no status, no headers and no body — but it does not need to, because
+  // /api/* never redirects on its own: a redirect off our API IS Access asking
+  // for a login, and only a reload can give it one. Checked before the
+  // content-type below, which would otherwise read the missing header as "not
+  // our API" and flip `available` off, hiding the chip that explains the problem.
+  if (res.type === "opaqueredirect" || res.status === 0) {
+    return { kind: "unauthenticated" };
   }
 
   // Check the content type BEFORE parsing. Access's login page is a 200 with
@@ -547,6 +618,14 @@ async function runPull(force: boolean): Promise<boolean> {
   const result = await api<PullResponse>(`/api/sync/pull?since=${since}`);
   if (result.kind !== "ok") {
     reportFailure(result);
+    // Report the backlog even though the request failed, exactly as `runPush`
+    // does. Offline is the case that makes this matter: the pull fails first, so
+    // `syncNow` returns before ever reaching the push, and without this line the
+    // chip keeps showing the pending count from the last SUCCESSFUL sync — i.e.
+    // work done offline does not appear as unsent, which is the one moment the
+    // number is load-bearing. The sweep above already read Dexie, so this costs
+    // nothing.
+    patch(pendingFrom(swept));
     return false;
   }
 
@@ -561,7 +640,15 @@ async function runPull(force: boolean): Promise<boolean> {
   // Rehydrate only when something actually landed. The sequence lives in
   // bootstrap.ts because it is the same one boot runs; duplicating it here
   // would guarantee the two drift.
-  if (applied > 0) await rehydrate();
+  //
+  // The broadcast is what makes leader-only polling safe to look at: the other
+  // tabs make no request of their own, so this is the only way they hear that
+  // rows arrived. It goes out on the same condition as the local rehydrate —
+  // announcing a pull that changed nothing would wake every tab for no reason.
+  if (applied > 0) {
+    await rehydrate();
+    broadcastChanged();
+  }
 
   const after = await sweepAll(nextMarks);
   patch({
@@ -638,6 +725,13 @@ function oversizedMessage(names: string[]): string | null {
 
 let running: Promise<void> | null = null;
 
+// Deliberately NOT gated on leadership. The leader gate belongs on the
+// automatic paths (`scheduleSync`, the poll, the reconnect flush), which is
+// where the duplicated request rate actually comes from. This is also what the
+// "Sinkronkan sekarang" button calls, and a button that silently did nothing
+// because this tab happens not to hold a lock would be worse than the redundant
+// request it saves. Two tabs pushing at once is safe — every statement is an
+// idempotent upsert — it is only wasteful.
 export async function syncNow(): Promise<void> {
   // Coalesce: a second caller joins the run in flight rather than starting a
   // concurrent sweep of the same tables.
@@ -651,7 +745,11 @@ export async function syncNow(): Promise<void> {
       // A failed pull means the transport is down or the session lapsed;
       // pushing would fail the same way and overwrite the better message.
       if (!pulled) return;
-      if (!canWrite()) return;
+      // A local-only account stops here, having pulled. The rows it has written
+      // stay above the watermark and keep counting as pending, which is exactly
+      // right: `pending` is the divergence set, and for this account that is a
+      // permanent, honest number rather than a backlog waiting to drain.
+      if (!canPushToCloud()) return;
       await runPush();
     } catch (err) {
       // Nothing above should throw, but a Dexie failure here must not take the
@@ -679,8 +777,15 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 
 // Called from `persist()` in db.ts, after the write has landed — the sweep reads
 // Dexie, so firing before the commit would miss the row that caused it.
+//
+// A non-leader tab stops here rather than pushing for itself. Its write is NOT
+// dropped: sync/tabs.ts broadcasts on the same write event, the leader receives
+// it as a remote change, and schedules this very function in its own document.
+// The row is in the shared IndexedDB either way, so the leader's sweep finds it
+// without anything having to be handed over.
 function scheduleSync(): void {
   if (!status.available) return;
+  if (!isLeader()) return;
   if (timer !== null) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
@@ -725,19 +830,38 @@ let lastSyncStartedAt = 0;
 // which would make the interval a promise the platform does not keep. The
 // visibility listener is what makes skipping safe: what you are looking at is
 // never a minute stale, only what you are not.
+//
+// Every tab still runs this timer; what changes with more than one open is who
+// SPENDS anything. A non-leader broadcasts instead of fetching, which costs
+// nothing and reaches the one tab allowed to make the request. So the interval
+// stays "per visible tab" while the request rate becomes "per origin", which is
+// the number the free tier actually counts.
+//
+// Note that the leader itself may be hidden — it is whichever tab has held the
+// lock longest, not whichever one you are looking at. That is exactly why the
+// wake broadcast exists: a hidden leader skips its own interval, and the visible
+// tab's wake is then the only thing keeping the data fresh.
 function startPolling(): void {
   if (typeof window === "undefined" || poll !== null) return;
 
   poll = setInterval(() => {
     if (document.visibilityState === "hidden") return;
     if (!status.online) return;
-    void syncNow();
+    if (isLeader()) void syncNow();
+    else requestSync();
   }, POLL_MS);
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    if (Date.now() - lastSyncStartedAt < VISIBILITY_MIN_MS) return;
-    void syncNow();
+    // The floor is applied here for a leader and at the receiving end for a
+    // wake, because `lastSyncStartedAt` is per-document and a non-leader's copy
+    // never advances — it makes no requests to time.
+    if (isLeader()) {
+      if (Date.now() - lastSyncStartedAt < VISIBILITY_MIN_MS) return;
+      void syncNow();
+    } else {
+      requestSync();
+    }
   });
 }
 
@@ -745,11 +869,19 @@ function startPolling(): void {
 
 let initialized = false;
 
+// Unsubscribe functions for every listener registered below. Held so the test
+// seam can actually unregister them — `onWrite` and the tabs.ts registries are
+// Sets now, so overwriting a slot no longer clears anything and a leaked handler
+// would fire against a later test's state.
+const disposers: (() => void)[] = [];
+
 export async function initSync(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  const result = await api<{ email: string; role: string }>("/api/sync/me");
+  const result = await api<{ email: string; role: string; canPush?: boolean }>(
+    "/api/sync/me",
+  );
   if (result.kind !== "ok") {
     // Quietly, always. Sync being unreachable is not a reason for the app to
     // fail to boot — every read is local and every write already landed.
@@ -760,35 +892,87 @@ export async function initSync(): Promise<void> {
   }
 
   const role = asRole(result.data.role);
-  // Written only here: this is the one place a role is confirmed by the server.
-  cacheRole(role);
+  // Absent means allowed. This is the one field where the OPPOSITE of the
+  // failing-closed rule is right: a missing `canPush` means the Worker predates
+  // the flag, and a Worker that does not know about local-only is one that will
+  // accept the push regardless — so reading silence as "no" would stop syncing
+  // for everyone against an older deploy, to enforce a rule that build has not
+  // got. The server is still the enforcement either way.
+  const canPush = result.data.canPush !== false;
+  // Written only here: this is the one place a grant is confirmed by the server.
+  cacheGrant(role, canPush);
 
   patch({
     available: true,
     email: result.data.email,
     role,
     roleKnown: true,
+    canPush,
     error: null,
   });
 
-  onWrite(scheduleSync);
+  disposers.push(onWrite(scheduleSync));
 
-  if (typeof window !== "undefined") {
-    // Reconnecting is the one moment a backlog is guaranteed to be drainable,
-    // so skip the debounce entirely.
-    window.addEventListener("online", () => {
-      patch({ online: true });
-      flushNow();
-    });
-    window.addEventListener("offline", () => patch({ online: false }));
-    // Only once the API is known to be there. On the GitHub Pages copy
-    // `initSync` has already returned above, so no timer is ever created.
-    startPolling();
+  // Another tab wrote, or the leader pulled rows in. tabs.ts has already
+  // re-read IndexedDB into the stores by the time this runs; what is left is the
+  // bookkeeping only this module knows about.
+  disposers.push(
+    onRemoteChange(() => {
+      // The watermark map is cached per tab over one shared `meta` row, so the
+      // leader's last push may have moved it. Dropping the cache is what keeps
+      // this tab's pending count honest and, if it later wins the election, what
+      // keeps it from re-sweeping against a watermark that is hours old.
+      resetWatermarkCache();
+      // No-op unless this tab is the leader, in which case this is how a
+      // non-leader's write actually reaches D1.
+      scheduleSync();
+    }),
+  );
+
+  // Only the leader is ever handed these (tabs.ts checks before fanning out), so
+  // this is the request rate for the whole origin, not for this tab. The floor
+  // is what stops four tabs' independent intervals from becoming four syncs.
+  disposers.push(
+    onWake(() => {
+      if (Date.now() - lastSyncStartedAt < VISIBILITY_MIN_MS) return;
+      void syncNow();
+    }),
+  );
+
+  if (typeof window === "undefined") {
+    // Deliberately not awaited: `initSync` is on the boot path and a slow
+    // network must not hold up the first render.
+    void syncNow();
+    return;
   }
 
-  // Deliberately not awaited: `initSync` is on the boot path and a slow network
-  // must not hold up the first render.
-  void syncNow();
+  // Reconnecting is the one moment a backlog is guaranteed to be drainable,
+  // so skip the debounce entirely.
+  window.addEventListener("online", () => {
+    patch({ online: true });
+    // Every tab hears `online`, but only one may act on it. A non-leader hands
+    // the moment over instead of racing the leader to drain the same backlog out
+    // of the same shared IndexedDB.
+    if (isLeader()) flushNow();
+    else requestSync();
+  });
+  window.addEventListener("offline", () => patch({ online: false }));
+  // Only once the API is known to be there. On the GitHub Pages copy `initSync`
+  // has already returned above, so no timer is ever created.
+  startPolling();
+
+  // Winning may happen now (no other tab open) or in an hour (when the tab
+  // holding the lock closes). Syncing on election is not just an optimisation:
+  // the tab that just went away may have been holding an undrained backlog, and
+  // this tab is now the only one that can send it.
+  claimLeadership(() => void syncNow());
+
+  // A tab that did not win still wants current data on screen. Asking the
+  // leader costs nothing and is answered with a `changed` broadcast if anything
+  // actually arrived; the alternative is sitting on data up to POLL_MS stale
+  // for no reason. Harmless in the tab that is about to win — nobody is leader
+  // to act on it, and the election callback above covers that case.
+  if (!isLeader()) requestSync();
 }
 
 // Test seam. Not part of the public API — the module holds process-wide state
@@ -805,5 +989,7 @@ export function __resetSyncForTests(): void {
   lastSyncStartedAt = 0;
   status = freshStatus();
   listeners.clear();
-  onWrite(() => {});
+  for (const dispose of disposers) dispose();
+  disposers.length = 0;
+  __resetTabsForTests();
 }

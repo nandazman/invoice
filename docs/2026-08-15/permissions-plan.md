@@ -65,8 +65,12 @@ The ladder survives, minus one rung. `read` is deleted as a role value.
 | | means |
 |---|---|
 | **not on the list** | cannot use the app — see decision 4 |
-| **`write`** | full use of the app; changes auto-sync to cloud |
+| **`write`** | full use of the app |
 | **`admin`** | that, plus the admin page: the roles list and the D1 dashboard |
+
+> Superseded in part on 2026-08-16: whether a person's changes reach the cloud
+> is no longer implied by being on the list. It is a separate `canPush` column —
+> see [../2026-08-16/local-only-accounts.md](../2026-08-16/local-only-accounts.md).
 
 Being on the list *is* the grant. There is no longer a role that can look but not
 save, which is what makes decision 4 possible.

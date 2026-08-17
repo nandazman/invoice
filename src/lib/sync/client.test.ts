@@ -56,6 +56,22 @@ function res(body: unknown, status = 200, type = "application/json"): Response {
   } as unknown as Response;
 }
 
+// A redirect that was stopped rather than followed. The real thing carries no
+// status, no headers and no readable body — the stub is this bare on purpose,
+// because any code that reaches for more than `type` is code that would break
+// against a browser.
+function opaqueRedirect(): Response {
+  return {
+    type: "opaqueredirect",
+    ok: false,
+    status: 0,
+    headers: { get: () => null },
+    json: async () => {
+      throw new TypeError("opaque");
+    },
+  } as unknown as Response;
+}
+
 function html(): Response {
   return res("<!doctype html><title>Sign in</title>", 200, "text/html; charset=utf-8");
 }
@@ -168,13 +184,21 @@ async function reset(): Promise<void> {
     db.meta.clear(),
   ]);
   await db.templates.put(inertTemplate as never);
+  // The grant cache is localStorage, which no Dexie clear touches. Dropping the
+  // local-only flag per test keeps one test's local-only account from becoming
+  // the starting assumption of the next one.
+  localStorage.removeItem("sync.canpush.v1");
 }
 
 // Bring the client up as `role` and let its boot sync finish. `initSync` fires
 // the first sync without awaiting it (boot must not wait on the network), so a
 // second `syncNow()` joins the run already in flight rather than starting one.
-async function boot(role: Role = "write"): Promise<void> {
-  routes.me = () => res({ email: "a@b.c", role });
+// `canPush` is left OUT of the answer unless a test asks for it, which is also
+// the shape a Worker deployed before the flag existed sends — so every test
+// that does not care about it is exercising that compatibility path for free.
+async function boot(role: Role = "write", canPush?: boolean): Promise<void> {
+  routes.me = () =>
+    res({ email: "a@b.c", role, ...(canPush === undefined ? {} : { canPush }) });
   await initSync();
   await syncNow();
   await flushWrites();
@@ -235,6 +259,20 @@ describe("identity", () => {
 
     const s = getSyncStatus();
     // The API is there — this is not the GitHub Pages case.
+    expect(s.available).toBe(true);
+    expect(s.error).toMatch(/Muat ulang/);
+  });
+
+  it("reads Access's redirect to its login page as a lapsed session", async () => {
+    // What an expired session actually looks like on the wire: a 302 to
+    // <team>.cloudflareaccess.com. `redirect: "manual"` in the client turns that
+    // into this opaque response instead of chasing it cross-origin into a CORS
+    // rejection, which used to surface as "you are offline".
+    routes.me = () => opaqueRedirect();
+    await setWatermarks();
+    await initSync();
+
+    const s = getSyncStatus();
     expect(s.available).toBe(true);
     expect(s.error).toMatch(/Muat ulang/);
   });
@@ -347,6 +385,26 @@ describe("watermark advancement", () => {
     // A transport failure must not flip `available` — the API still exists.
     expect(getSyncStatus().available).toBe(true);
     expect(getSyncStatus().error).toMatch(/tidak dapat terhubung/i);
+  });
+
+  it("still reports the backlog when the pull fails offline", async () => {
+    // The regression this pins: offline, the PULL fails first, so `syncNow`
+    // returns before the push ever runs. If only the push reported pending, work
+    // done offline would show as nothing to send — at the one moment the number
+    // is the user's only evidence their rows are still on the device.
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    await db.products.put(product("p2", "2026-08-02T00:00:00.000Z") as never);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+    const stub = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith("/api/sync/me")) return stub(input, init);
+      throw new TypeError("Failed to fetch");
+    }) as unknown as typeof globalThis.fetch;
+
+    await boot("write");
+
+    expect(getSyncStatus().pending.products).toBe(2);
+    expect(getSyncStatus().pendingTotal).toBe(2);
   });
 });
 
@@ -820,6 +878,89 @@ describe("the gate condition", () => {
     await boot("write");
 
     expect(isBlocked(getSyncStatus())).toBe(false);
+  });
+});
+
+// The flag an admin sets to keep one person's data on their own device. What
+// makes it a feature rather than a bug is the asymmetry: the push stops, the
+// pull does not, and the app is untouched.
+describe("the local-only flag", () => {
+  it("does not push, but still pulls", async () => {
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+    routes.pull = () =>
+      res({
+        serverTime: "T9",
+        tables: {
+          products: [product("fromServer", "2026-08-09T00:00:00.000Z")],
+        },
+      });
+
+    await boot("write", false);
+
+    expect(calls.some((c) => c.url === "/api/sync/push")).toBe(false);
+    // Withholding the pull too would make the flag a demotion. This account is
+    // one that does not publish, not one that is cut off.
+    expect((await db.products.get("fromServer"))?.namaProduk).toBe(
+      "Produk fromServer",
+    );
+  });
+
+  it("keeps the role, and everything the role grants", async () => {
+    await setWatermarks();
+    await boot("admin", false);
+
+    const s = getSyncStatus();
+    // Not a rung on the ladder: an admin who does not publish is still an
+    // admin, and the gate screen has no business firing on this.
+    expect(s.role).toBe("admin");
+    expect(canWrite()).toBe(true);
+    expect(s.canPush).toBe(false);
+    expect(isBlocked(s)).toBe(false);
+  });
+
+  it("reports local rows as pending, permanently", async () => {
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+
+    await boot("write", false);
+    expect(getSyncStatus().pending.products).toBe(1);
+
+    // A second sync does not drain it — there is nothing draining. The count is
+    // the divergence from the cloud, and for this account it only ever grows.
+    // The sync chip is careful to word it that way rather than as a backlog.
+    await syncNow();
+    await flushWrites();
+    expect(calls.some((c) => c.url === "/api/sync/push")).toBe(false);
+    expect(getSyncStatus().pending.products).toBe(1);
+    expect((await readWatermarks()).products).toBe("2026-07-15T00:00:00.000Z");
+  });
+
+  it("treats a missing canPush as allowed", async () => {
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+
+    // A Worker deployed before the flag existed. Reading silence as "no" would
+    // stop sync for everyone on an older deploy in order to enforce a rule that
+    // build does not have — and the server is the enforcement either way.
+    await boot("write");
+
+    expect(getSyncStatus().canPush).toBe(true);
+    expect(calls.some((c) => c.url === "/api/sync/push")).toBe(true);
+  });
+
+  it("is cached, so a reload does not promise a sync that will not happen", async () => {
+    await setWatermarks();
+    await boot("write", false);
+
+    __resetSyncForTests();
+    expect(getSyncStatus().canPush).toBe(false);
+
+    // And the server's answer is what overwrites it, in both directions.
+    await setWatermarks();
+    await boot("write", true);
+    __resetSyncForTests();
+    expect(getSyncStatus().canPush).toBe(true);
   });
 });
 

@@ -76,6 +76,20 @@ function chipOf(status: SyncStatus): Chip {
       tone: "border-slate-200 bg-white text-slate-500 hover:bg-slate-100",
     };
   }
+  // Before the backlog, because for this account there IS no backlog: the
+  // pending rows are not waiting their turn, they are staying put. "3 menunggu"
+  // would promise a drain that is never coming.
+  if (!status.canPush) {
+    return {
+      icon: "💾",
+      label:
+        status.pendingTotal > 0
+          ? `${formatAngka(status.pendingTotal)} lokal`
+          : "lokal saja",
+      // Slate, not amber: this is a setting someone chose, not a fault.
+      tone: "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100",
+    };
+  }
   if (status.pendingTotal > 0) {
     return {
       icon: "☁️",
@@ -176,6 +190,10 @@ function SyncPanel({
   }
 
   const diverging = status.pendingTotal;
+  // The whole panel changes voice on this: half the copy below promises that
+  // changes are on their way to the cloud, and for a local-only account every
+  // one of those sentences is false.
+  const localOnly = !status.canPush;
 
   return (
     <Modal
@@ -184,10 +202,20 @@ function SyncPanel({
     >
       <h2 className="text-lg font-bold mb-1">Sinkronisasi</h2>
       <p className="text-sm text-slate-500 mb-4">
-        Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan
-        data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya
-        — dan memaksanya kalau sedang buru-buru.
+        {localOnly
+          ? "Akun ini disetel menyimpan di perangkat sendiri saja. Data terbaru dari cloud tetap masuk seperti biasa, tapi apa pun yang Anda catat di sini tidak dikirim ke sana dan tidak terlihat oleh orang lain."
+          : "Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya — dan memaksanya kalau sedang buru-buru."}
       </p>
+
+      {localOnly && (
+        <p className="mb-4 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <strong>Catatan penting.</strong> Karena tidak ada salinan di cloud,
+          data yang hanya ada di perangkat ini akan hilang kalau riwayat
+          browser dibersihkan atau perangkatnya diganti. Pakai “Backup semua” di
+          menu kiri secara berkala. Kalau seharusnya ikut terkirim, minta admin
+          mengaktifkan “Kirim ke cloud” untuk akun ini.
+        </p>
+      )}
 
       <div className="flex gap-6 flex-wrap mb-4">
         <Stat
@@ -196,10 +224,15 @@ function SyncPanel({
           className={status.online ? "text-emerald-700" : "text-amber-600"}
         />
         <Stat
-          label="Menunggu dikirim"
+          label={localOnly ? "Hanya di perangkat ini" : "Menunggu dikirim"}
           value={`${formatAngka(status.pendingTotal)} baris`}
-          className={status.pendingTotal > 0 ? "text-amber-600" : ""}
+          className={
+            localOnly ? "" : status.pendingTotal > 0 ? "text-amber-600" : ""
+          }
         />
+        {/* Kept as-is for a local-only account rather than blanked: if the flag
+            was turned off after some pushes, this timestamp is the cutoff —
+            everything up to here is in the cloud, everything since is not. */}
         <Stat
           label="Terakhir dikirim"
           value={status.lastPushAt ? formatDateTimeID(status.lastPushAt) : "—"}
@@ -213,8 +246,9 @@ function SyncPanel({
       {status.pendingTotal > 0 && (
         <>
           <p className="mb-2 text-sm text-slate-500">
-            Baris berikut sudah tersimpan di perangkat ini dan menunggu giliran
-            dikirim ke cloud.
+            {localOnly
+              ? "Baris berikut tersimpan di perangkat ini saja. Selama “Kirim ke cloud” mati, jumlahnya akan terus bertambah — ini bukan antrean yang sedang menunggu, melainkan selisih dengan isi cloud."
+              : "Baris berikut sudah tersimpan di perangkat ini dan menunggu giliran dikirim ke cloud."}
           </p>
           <div className="overflow-x-auto mb-4">
             <table className="w-full border-collapse">
@@ -241,7 +275,9 @@ function SyncPanel({
 
       {status.pendingTotal === 0 && (
         <p className="mb-4 text-sm text-slate-400">
-          Semua data di perangkat ini sudah sama dengan cloud.
+          {localOnly
+            ? "Belum ada perubahan yang dicatat di perangkat ini sejak terakhir disamakan dengan cloud."
+            : "Semua data di perangkat ini sudah sama dengan cloud."}
         </p>
       )}
 
@@ -252,11 +288,14 @@ function SyncPanel({
       )}
 
       <div className="flex gap-2 flex-wrap items-center">
+        {/* Still offered when local-only, because the pull half is unaffected
+            and getting fresh data is exactly what this account still wants.
+            Only the label changes, so the button never claims to send. */}
         <PrimaryButton
           onClick={() => setConfirming("sync")}
           disabled={status.busy}
         >
-          Sinkronkan sekarang
+          {localOnly ? "Ambil data terbaru" : "Sinkronkan sekarang"}
         </PrimaryButton>
         {status.busy && (
           <span className="text-sm text-slate-400">Sedang berjalan…</span>
@@ -280,9 +319,9 @@ function SyncPanel({
         {advanced && (
           <div className="mt-3">
             <p className="text-sm text-slate-500 mb-2">
-              Untuk keadaan yang tidak biasa saja: kalau baris di perangkat ini
-              menolak terkirim dan Anda rela membuangnya demi menyamakan isi
-              dengan cloud.
+              {localOnly
+                ? "Untuk keadaan yang tidak biasa saja: kalau Anda rela membuang semua catatan yang hanya ada di perangkat ini demi menyamakan isinya dengan cloud. Karena akun ini tidak mengirim apa pun ke cloud, yang dibuang tidak bisa diambil kembali dari sana."
+                : "Untuk keadaan yang tidak biasa saja: kalau baris di perangkat ini menolak terkirim dan Anda rela membuangnya demi menyamakan isi dengan cloud."}
             </p>
             <DangerButton
               onClick={() => setConfirming("discard")}
@@ -307,16 +346,15 @@ function SyncPanel({
 
       {confirming === "sync" && (
         <ConfirmDialog
-          title="Sinkronkan sekarang?"
-          confirmLabel="Ya, sinkronkan"
+          title={localOnly ? "Ambil data terbaru?" : "Sinkronkan sekarang?"}
+          confirmLabel={localOnly ? "Ya, ambil data" : "Ya, sinkronkan"}
           onConfirm={confirmed}
           onClose={() => setConfirming(null)}
         >
           <p>
-            Perubahan yang tersimpan di perangkat ini dikirim ke cloud, lalu
-            data terbaru dari cloud diambil ke perangkat ini. Ini persis
-            sinkronisasi yang biasanya jalan sendiri — tombolnya hanya
-            mempercepat.
+            {localOnly
+              ? "Data terbaru dari cloud diambil ke perangkat ini. Tidak ada yang dikirim ke arah sebaliknya — akun ini disetel menyimpan di perangkat sendiri saja."
+              : "Perubahan yang tersimpan di perangkat ini dikirim ke cloud, lalu data terbaru dari cloud diambil ke perangkat ini. Ini persis sinkronisasi yang biasanya jalan sendiri — tombolnya hanya mempercepat."}
           </p>
           <p>
             Tidak ada yang dihapus, dan baris yang Anda ubah di sini tidak

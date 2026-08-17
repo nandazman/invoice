@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 // Sync actions and pending counts are not imported here on purpose: they live
 // in the sync chip now (see components/SyncChip.tsx). This page is roles and
 // the D1 dashboard, nothing else.
@@ -57,8 +57,11 @@ const ROLE_BADGE: Record<Role, string> = {
 // dialog that only names the new role has told the reader nothing they did not
 // already see on the checkbox.
 const ROLE_EFFECT: Record<Role, string> = {
+  // Says nothing about the cloud any more: whether what this person writes
+  // leaves their device is the `canPush` flag's business, and PUSH_EFFECT is
+  // shown right below this in every dialog that hands out a role.
   write:
-    "Pengguna memakai aplikasi ini sepenuhnya: melihat semua data, mencatat, dan mengubah. Apa pun yang dia catat otomatis terkirim ke cloud dan terlihat oleh semua orang.",
+    "Pengguna memakai aplikasi ini sepenuhnya: melihat semua data, mencatat, dan mengubah.",
   admin:
     "Admin memakai aplikasi ini sepenuhnya, ditambah halaman pengaturan ini — daftar peran dan kondisi database, termasuk memberi dan mencabut akses orang lain, Anda sendiri termasuk.",
   none: "Tanpa peran, orang ini tidak bisa memakai aplikasi sama sekali: permintaannya ditolak server dan layarnya kosong.",
@@ -100,6 +103,9 @@ interface RoleRow {
   createdAt: string;
   createdBy: string;
   lastSeenAt: string | null;
+  // Whether this person's changes leave their device. Independent of `role` —
+  // an admin can be local-only and a plain user can publish.
+  canPush: boolean;
 }
 
 interface TableStat {
@@ -153,17 +159,45 @@ class ApiFailure extends Error {
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(path, { ...init, credentials: "same-origin" });
+    // `redirect: "manual"` for the same reason as in sync/client.ts: an expired
+    // Access session redirects to another origin, following it fails CORS, and a
+    // rejected fetch here would be reported as "server unreachable" when the
+    // server is fine and the session is not.
+    res = await fetch(path, {
+      ...init,
+      credentials: "same-origin",
+      redirect: "manual",
+    });
   } catch {
     throw new ApiFailure(0, "offline", "Tidak bisa menghubungi server.");
   }
+  // Opaque: the redirect was stopped rather than followed. No headers to read,
+  // so this has to come before the content-type check.
+  if (res.type === "opaqueredirect" || res.status === 0) {
+    throw new ApiFailure(
+      401,
+      "unauthenticated",
+      // Plain text, because an ApiFailure is thrown from a non-React module.
+      // messageOf() replaces it with the version carrying the login link
+      // wherever it is rendered; this is the fallback if anything ever prints
+      // the raw error.
+      "Sesi Cloudflare Access sudah berakhir. Buka /api/admin/login untuk masuk lagi.",
+    );
+  }
   const type = res.headers.get("content-type") ?? "";
   if (!type.includes("application/json")) {
-    if (res.status === 401 || res.status === 403 || res.redirected) {
+    // `res.redirected` is gone from this check: with redirect "manual" it can
+    // never be true, and a redirect is caught above. What is left is Access
+    // serving its login page as a 200 (or the API answering 401/403 in HTML).
+    if (res.status === 401 || res.status === 403) {
       throw new ApiFailure(
         401,
         "unauthenticated",
-        "Sesi Cloudflare Access sudah berakhir. Muat ulang halaman ini untuk masuk lagi.",
+        // Plain text, because an ApiFailure is thrown from a non-React module.
+      // messageOf() replaces it with the version carrying the login link
+      // wherever it is rendered; this is the fallback if anything ever prints
+      // the raw error.
+      "Sesi Cloudflare Access sudah berakhir. Buka /api/admin/login untuk masuk lagi.",
       );
     }
     throw new ApiFailure(
@@ -184,12 +218,30 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-// A lapsed Access session is the one error whose fix is not "coba lagi": only a
-// full page load lets Access re-issue the session, so that instruction replaces
-// whatever the server said, everywhere an error is rendered.
-function messageOf(e: unknown): string {
+// A lapsed Access session is the one error whose fix is not "coba lagi", and it
+// is not "reload" either — that instruction was wrong, and wrong in a way that
+// loops. The owner-only Access application over /api/admin/* keeps a session of
+// its own, separate from the one guarding the hostname; a reload is a
+// navigation to /, which the hostname application passes through on its own
+// still-valid session without the owner-only one being consulted at all. You
+// land back here and get this message again.
+//
+// A link, not a button: it has to be a real top-level navigation to a path
+// Access guards, so Access can take the browser through its login and send it
+// back. See /api/admin/login in worker/index.ts. The page tries that navigation
+// automatically on load (bounceToAccessLogin); this is what is left when the
+// automatic attempt is not available or has already been spent.
+function messageOf(e: unknown): ReactNode {
   if (e instanceof ApiFailure && e.code === "unauthenticated") {
-    return "Sesi Cloudflare Access sudah berakhir. Muat ulang halaman ini untuk masuk lagi.";
+    return (
+      <>
+        Sesi Cloudflare Access sudah berakhir.{" "}
+        <a href="/api/admin/login" className="underline">
+          Masuk lagi
+        </a>{" "}
+        untuk melanjutkan.
+      </>
+    );
   }
   return e instanceof Error ? e.message : String(e);
 }
@@ -224,13 +276,49 @@ export function AdminPage() {
   );
 }
 
+// Marks that this tab has already spent its automatic bounce through Access.
+// sessionStorage rather than a module variable: the bounce is a full page load,
+// so anything held in memory is gone by the time it would be read back.
+const BOUNCE_KEY = "invoice.admin-access-bounce";
+
+// Send the browser through Access to renew the owner-only session, without
+// making the user click anything. Returns whether the navigation was started —
+// callers must not render an error when it was, because the page is leaving.
+//
+// ONE ATTEMPT PER TAB, and the guard is the entire reason this is safe to do
+// automatically. The bounce returns to #/admin, which refetches on mount; if
+// that fetch is still unauthenticated — Access misconfigured off this path,
+// third-party cookies blocked, a policy that will never pass this identity —
+// an ungated version navigates away again, forever, with no frame in between
+// long enough to read a message or reach the Back button. Spending the attempt
+// converts that infinite loop into exactly one wasted round trip followed by a
+// message with a link in it.
+function bounceToAccessLogin(): boolean {
+  try {
+    if (sessionStorage.getItem(BOUNCE_KEY)) return false;
+    sessionStorage.setItem(BOUNCE_KEY, "1");
+  } catch {
+    // Storage disabled or full. Refuse rather than bounce: a loop that cannot
+    // record that it happened is the one case the guard above exists to stop.
+    return false;
+  }
+  // Absolute from the root, matching the Access application's path. Not built
+  // from a base path — the only build with a Worker behind it is the Cloudflare
+  // one, which is mounted at /. On GitHub Pages there is no API at all, the
+  // admin page never reaches this, and sync reports itself unavailable instead.
+  window.location.href = "/api/admin/login";
+  return true;
+}
+
 function AdminSections({ status }: { status: SyncStatus }) {
   // Whether this Access identity is the owner. Unknown until /api/admin/me
   // answers; 403 means "signed in, just not you" and must still leave sections
   // 1–4 on screen, because a non-owner is entitled to all of those.
   const [owner, setOwner] = useState<boolean | null>(null);
   const [me, setMe] = useState<Me | null>(null);
-  const [adminError, setAdminError] = useState<string | null>(null);
+  // ReactNode, not string: a lapsed session renders as text plus a login link
+  // (messageOf), and that is the whole point of the message.
+  const [adminError, setAdminError] = useState<ReactNode>(null);
 
   useEffect(() => {
     let alive = true;
@@ -240,9 +328,27 @@ function AdminSections({ status }: { status: SyncStatus }) {
         setMe(data);
         setOwner(true);
         setAdminError(null);
+        // Session is good, so give this tab its automatic bounce back. Without
+        // this the guard is one-per-tab for the lifetime of the tab, and the
+        // second expiry of a long-lived tab would be handled by hand.
+        try {
+          sessionStorage.removeItem(BOUNCE_KEY);
+        } catch {
+          // Nothing was stored if storage is unavailable.
+        }
       })
       .catch((e: unknown) => {
         if (!alive) return;
+        // Renew the session without making anyone read an error first. When
+        // this takes, the page is already navigating — setting state now would
+        // flash the failure on the way out.
+        if (
+          e instanceof ApiFailure &&
+          e.code === "unauthenticated" &&
+          bounceToAccessLogin()
+        ) {
+          return;
+        }
         setOwner(false);
         // 403 is not an error to shout about — it is the normal answer for
         // someone who is not an admin. Anything else is worth printing.
@@ -338,15 +444,32 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
 // email with no row, and it is reached by deleting the row (kind: "remove"),
 // never by writing it — so it cannot be the target of an add or a change.
 type RoleAction =
-  | { kind: "add"; email: string; role: Grant }
+  | { kind: "add"; email: string; role: Grant; canPush: boolean }
   | { kind: "change"; row: RoleRow; next: Grant }
+  | { kind: "push"; row: RoleRow; next: boolean }
   | { kind: "remove"; row: RoleRow };
+
+// What turning "Kirim ke cloud" on or off actually does, in consequences. Same
+// job as ROLE_EFFECT: a dialog that only repeats the switch's own label has
+// told the reader nothing.
+const PUSH_EFFECT: Record<"on" | "off", string> = {
+  on: "Mulai sekarang setiap catatannya dikirim ke cloud dan terlihat oleh semua orang — termasuk yang sudah dia catat selama tombol ini mati, karena semuanya masih tersimpan di perangkatnya dan ikut terkirim pada sinkronisasi berikutnya.",
+  off: "Mulai sekarang catatannya berhenti di perangkatnya sendiri: aplikasinya tetap jalan penuh dan dia tetap menerima data terbaru dari cloud, tapi tidak ada lagi yang dia kirim ke sana. Server menolak pengirimannya, jadi ini berlaku walaupun aplikasinya sedang terbuka.",
+};
 
 // The only thing left to choose per person. Being on the list already grants
 // full use of the app (decision 3), so `admin` is a checkbox rather than a
 // second entry in a dropdown of one.
 function grantOf(admin: boolean): Grant {
   return admin ? "admin" : "write";
+}
+
+// Narrow a stored role back to something the API will accept, for the PUTs that
+// are not about the role at all. Being on the table means 'write' or 'admin';
+// anything else is a value this build does not recognise, and 'write' is the
+// honest reading of it — it is exactly what being on the list grants.
+function asGrant(raw: string): Grant {
+  return asRole(raw) === "admin" ? "admin" : "write";
 }
 
 // Shown next to the Admin checkbox and again inside any dialog that hands out
@@ -366,13 +489,17 @@ function AdminAccessWarning() {
 
 function RolesPanel() {
   const [rows, setRows] = useState<RoleRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState("");
   // The add form defaults to plain use. An admin grant is the rarer and the
   // more expensive mistake, so it is never the value someone gets by not
   // looking at the form.
   const [admin, setAdmin] = useState(false);
+  // Defaults ON, matching the column default in migration 0003 and the
+  // behaviour every existing account has. Local-only is the deliberate,
+  // unusual choice, so it is never what someone gets by not looking.
+  const [canPush, setCanPush] = useState(true);
   const [pending, setPending] = useState<RoleAction | null>(null);
 
   const load = useCallback(async () => {
@@ -408,11 +535,18 @@ function RolesPanel() {
     }
   }
 
-  function put(address: string, next: Grant) {
+  // `push` is left OUT of the body when it is undefined, and the server reads
+  // that as "leave it alone" — which is what keeps a role change from quietly
+  // re-publishing somebody who had been set to local-only.
+  function put(address: string, next: Grant, push?: boolean) {
     return apiFetch("/api/admin/roles", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: address, role: next }),
+      body: JSON.stringify({
+        email: address,
+        role: next,
+        ...(push === undefined ? {} : { canPush: push }),
+      }),
     });
   }
 
@@ -424,11 +558,18 @@ function RolesPanel() {
     if (!action) return;
     if (action.kind === "add") {
       void mutate(async () => {
-        await put(action.email, action.role);
+        await put(action.email, action.role, action.canPush);
         setEmail("");
       });
     } else if (action.kind === "change") {
       void mutate(() => put(action.row.email, action.next));
+    } else if (action.kind === "push") {
+      // The role rides along unchanged: PUT is an upsert on the whole row, so
+      // it has to be sent, and sending the current one makes this a no-op for
+      // the ladder.
+      void mutate(() =>
+        put(action.row.email, asGrant(action.row.role), action.next),
+      );
     } else {
       void mutate(() =>
         apiFetch(
@@ -442,7 +583,12 @@ function RolesPanel() {
   function askAdd() {
     const address = email.trim().toLowerCase();
     if (!address) return;
-    setPending({ kind: "add", email: address, role: grantOf(admin) });
+    setPending({
+      kind: "add",
+      email: address,
+      role: grantOf(admin),
+      canPush,
+    });
   }
 
   // Toggling the box back to the value it already had is not a change worth a
@@ -454,14 +600,19 @@ function RolesPanel() {
     setPending({ kind: "change", row, next });
   }
 
+  function askPush(row: RoleRow, next: boolean) {
+    if (next === row.canPush) return;
+    setPending({ kind: "push", row, next });
+  }
+
   return (
     <Panel>
       <h2 className="text-lg font-bold mb-1">Peran</h2>
       <p className="text-sm text-slate-500 mb-3">
         Siapa saja yang boleh memakai aplikasi ini. Ada di daftar berarti bisa
-        memakainya sepenuhnya — melihat, mencatat, dan mengubah, dengan semua
-        perubahannya otomatis terkirim ke cloud. Centang Admin kalau orangnya
-        juga boleh membuka halaman ini.
+        memakainya sepenuhnya — melihat, mencatat, dan mengubah. Centang Admin
+        kalau orangnya juga boleh membuka halaman ini, dan matikan “Kirim ke
+        cloud” kalau catatannya cukup tersimpan di perangkatnya sendiri.
       </p>
 
       <div className="flex gap-3 flex-wrap items-end mb-2">
@@ -481,6 +632,15 @@ function RolesPanel() {
             onChange={(e) => setAdmin(e.target.checked)}
           />
           Admin
+        </label>
+        <label className="flex items-center gap-2 text-sm h-9 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="accent-blue-600"
+            checked={canPush}
+            onChange={(e) => setCanPush(e.target.checked)}
+          />
+          Kirim ke cloud
         </label>
         <PrimaryButton onClick={askAdd} disabled={busy || email.trim() === ""}>
           + Tambah / Ubah
@@ -503,6 +663,7 @@ function RolesPanel() {
                 <th className={thClass}>Email</th>
                 <th className={thClass}>Peran</th>
                 <th className={thClass}>Admin</th>
+                <th className={thClass}>Kirim ke cloud</th>
                 <th className={thClass}>Ditambahkan</th>
                 <th className={thClass}>Oleh</th>
                 <th className={thClass}></th>
@@ -531,6 +692,27 @@ function RolesPanel() {
                       disabled={busy}
                       onChange={(e) => askChange(r, e.target.checked)}
                     />
+                  </td>
+                  <td className={tdClass}>
+                    {/* Off is a real state worth seeing at a glance, not just
+                        an empty box: an unchecked box reads as "nothing set
+                        here", and this one means "this person's data never
+                        leaves their laptop". */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="accent-blue-600"
+                        aria-label={`Kirim perubahan ${r.email} ke cloud`}
+                        checked={r.canPush}
+                        disabled={busy}
+                        onChange={(e) => askPush(r, e.target.checked)}
+                      />
+                      {!r.canPush && (
+                        <span className="inline-block px-2 py-0.5 text-xs font-semibold rounded-md border bg-slate-50 text-slate-600 border-slate-200">
+                          Lokal saja
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className={`${tdClass} text-slate-500`}>
                     {formatDateTimeID(r.createdAt)}
@@ -575,6 +757,7 @@ function RolesPanel() {
             <strong>{ROLE_LABEL[pending.role]}</strong>.
           </p>
           <p>{ROLE_EFFECT[pending.role]}</p>
+          <p>{PUSH_EFFECT[pending.canPush ? "on" : "off"]}</p>
           <p>
             Kalau email itu sudah ada di daftar, peran lamanya diganti dengan
             yang ini. Berlaku langsung, dan bisa diubah atau dicabut kapan saja.
@@ -605,7 +788,54 @@ function RolesPanel() {
             pengiriman data, jadi orangnya tidak perlu masuk ulang. Data yang
             sudah pernah dia kirim tetap ada dan tidak berubah.
           </p>
+          {/* Otherwise a promotion looks like it failed: the new admin's data
+              still never appears in the cloud, and nothing on this page said
+              the two settings were separate. */}
+          {!pending.row.canPush && (
+            <p>
+              Perlu diingat: “Kirim ke cloud” untuk orang ini tetap mati, jadi
+              catatannya masih berhenti di perangkatnya sendiri. Peran dan
+              pengiriman diatur terpisah.
+            </p>
+          )}
           {pending.next === "admin" && <AdminAccessWarning />}
+        </ConfirmDialog>
+      )}
+
+      {pending?.kind === "push" && (
+        <ConfirmDialog
+          // Turning it off takes an ability away, and does it to data that only
+          // exists on somebody else's laptop — the red treatment is earned.
+          danger={!pending.next}
+          title={
+            pending.next
+              ? "Mulai kirim perubahan orang ini ke cloud?"
+              : "Setop pengiriman ke cloud untuk orang ini?"
+          }
+          confirmLabel={pending.next ? "Ya, kirim ke cloud" : "Ya, simpan lokal saja"}
+          busy={busy}
+          onConfirm={confirmed}
+          onClose={() => setPending(null)}
+        >
+          <p>
+            <strong>{pending.row.email}</strong>{" "}
+            {pending.next
+              ? "akan mengirim perubahannya ke cloud."
+              : "berhenti mengirim perubahannya ke cloud."}
+          </p>
+          <p>{PUSH_EFFECT[pending.next ? "on" : "off"]}</p>
+          {!pending.next && (
+            <p className="font-semibold text-red-700">
+              Risikonya ada di orangnya: tanpa salinan di cloud, catatan yang
+              hanya ada di perangkatnya akan hilang kalau riwayat browser
+              dibersihkan atau perangkatnya diganti. Ingatkan dia untuk memakai
+              “Backup semua” secara berkala.
+            </p>
+          )}
+          <p>
+            Perannya tidak berubah, dan data yang sudah pernah dia kirim tetap
+            ada di cloud.
+          </p>
         </ConfirmDialog>
       )}
 
@@ -649,7 +879,7 @@ function RolesPanel() {
 
 function ActivityPanel() {
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
 
   useEffect(() => {
     let alive = true;

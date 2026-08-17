@@ -5,12 +5,15 @@ import { databaseSize, recentRows, tableStats, writeVolume } from "./sync";
 // Role management. Every route here sits behind the admin Access application,
 // so reaching this code already means Access matched the owner-only policy.
 
-interface RoleRow {
+interface StoredRoleRow {
   email: string;
   role: Role;
   createdAt: string;
   createdBy: string | null;
   lastSeenAt: string | null;
+  // SQLite has no boolean. Converted at the edge (see `listRoles`) rather than
+  // in the page, so the wire shape is JSON's own true/false.
+  canPush: number;
 }
 
 const VALID: Role[] = ["write", "admin"];
@@ -18,10 +21,12 @@ const VALID: Role[] = ["write", "admin"];
 export async function listRoles(db: D1Database): Promise<Response> {
   const { results } = await db
     .prepare(
-      "SELECT email, role, createdAt, createdBy, lastSeenAt FROM roles ORDER BY email",
+      "SELECT email, role, createdAt, createdBy, lastSeenAt, canPush FROM roles ORDER BY email",
     )
-    .all<RoleRow>();
-  return json({ roles: results });
+    .all<StoredRoleRow>();
+  return json({
+    roles: results.map((r) => ({ ...r, canPush: r.canPush === 1 })),
+  });
 }
 
 export async function putRole(
@@ -29,20 +34,29 @@ export async function putRole(
   body: unknown,
   actor: string,
 ): Promise<Response> {
-  const { email, role } = readRoleBody(body);
+  const { email, role, canPush } = readRoleBody(body);
   await guardLastAdmin(db, email, role);
+
+  // `canPush` is null when the body left it out, and COALESCE turns that into
+  // "leave it alone" on an update and into the column default on an insert.
+  // The alternative — defaulting to 1 in the handler — would mean every role
+  // change silently re-published somebody who had been set to local-only.
+  const flag = canPush === null ? null : canPush ? 1 : 0;
 
   await db
     .prepare(
-      "INSERT INTO roles (email, role, createdAt, createdBy) VALUES (?, ?, ?, ?) " +
-        // Only `role` changes on a re-grant: createdAt/createdBy record when the
-        // person was first let in, which a promotion should not rewrite.
-        "ON CONFLICT(email) DO UPDATE SET role = excluded.role",
+      "INSERT INTO roles (email, role, createdAt, createdBy, canPush) " +
+        "VALUES (?, ?, ?, ?, COALESCE(?, 1)) " +
+        // Only `role` and `canPush` change on a re-grant: createdAt/createdBy
+        // record when the person was first let in, which a promotion should not
+        // rewrite.
+        "ON CONFLICT(email) DO UPDATE SET role = excluded.role, " +
+        "canPush = COALESCE(?, roles.canPush)",
     )
-    .bind(email, role, new Date().toISOString(), actor)
+    .bind(email, role, new Date().toISOString(), actor, flag, flag)
     .run();
 
-  return json({ email, role });
+  return json({ email, role, canPush });
 }
 
 export async function deleteRole(db: D1Database, email: string | null): Promise<Response> {
@@ -86,15 +100,35 @@ function normalizeEmail(raw: unknown): string {
   return raw.trim().toLowerCase();
 }
 
-function readRoleBody(body: unknown): { email: string; role: Role } {
+// `canPush` comes back as null for "not mentioned", which is a third state and
+// not the same as false — see the COALESCE in putRole.
+function readRoleBody(body: unknown): {
+  email: string;
+  role: Role;
+  canPush: boolean | null;
+} {
   if (body === null || typeof body !== "object") {
     throw new HttpError(400, "bad_body", "Body harus objek JSON.");
   }
-  const { email, role } = body as { email?: unknown; role?: unknown };
+  const { email, role, canPush } = body as {
+    email?: unknown;
+    role?: unknown;
+    canPush?: unknown;
+  };
   if (typeof role !== "string" || !VALID.includes(role as Role)) {
     throw new HttpError(400, "bad_role", `Peran harus salah satu dari: ${VALID.join(", ")}.`);
   }
-  return { email: normalizeEmail(email), role: role as Role };
+  // Strict: a stray "false" string or a 0 is rejected rather than coerced.
+  // Guessing wrong here either publishes somebody who should not be, or
+  // silently stops somebody's data reaching the cloud.
+  if (canPush !== undefined && typeof canPush !== "boolean") {
+    throw new HttpError(400, "bad_can_push", "Field `canPush` harus true atau false.");
+  }
+  return {
+    email: normalizeEmail(email),
+    role: role as Role,
+    canPush: canPush === undefined ? null : canPush,
+  };
 }
 
 // Removing or demoting the last admin would leave nobody able to grant the role
