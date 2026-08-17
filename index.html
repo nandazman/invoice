@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Invoice & Pesanan</title>
+    <!-- Absolute paths, which Vite rewrites with the build's base — so these
+         come out under /invoice/ on GitHub Pages and / on Workers. Without
+         them the browser asks for /favicon.ico, the SPA fallback answers with
+         index.html, and the tab shows the default blank page icon. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>
