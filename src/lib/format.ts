@@ -134,9 +134,38 @@ export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
+// The last stamp handed out, so the next one can be forced past it.
+let lastStamp = "";
+
 // Full ISO datetime stamp for createdAt/updatedAt.
+//
+// STRICTLY INCREASING, which is a sync requirement rather than a display one.
+// `updatedAt` is the sync cursor (tables.ts), and the sweep in sync/client.ts
+// keeps a single scalar watermark per table: rows are pending when
+// `updatedAt > watermark`. That only works if no two rows in a table can share
+// a cursor value — if they do, a push advances the watermark to that value on
+// the strength of one row and its twin is filtered out on the cursor before
+// anything else runs. Not "sent late": never sent, and never reported again.
+//
+// Date resolution is milliseconds and a single form save fires several
+// `persist()` calls (db.ts), so the collision is ordinary rather than exotic.
+// Stepping one millisecond past the previous stamp is invisible in every
+// display format we use and makes the value unique per tab.
+//
+// This also absorbs a clock that jumps BACKWARDS — an NTP correction, a user
+// fixing their timezone. Stamps carry on increasing and drift back to real time
+// as the wall clock catches up, which is what a cursor needs; a cursor that
+// went backwards would strand every row written before the jump.
+//
+// Two tabs in the same millisecond are still theoretically possible, since this
+// counter is per-document. That window is much smaller than the one this
+// closes, and sync/tabs.ts narrows it further by routing all pushes through a
+// single leader tab.
 export function nowISO(): string {
-  return new Date().toISOString();
+  const s = new Date().toISOString();
+  const next = s > lastStamp ? s : new Date(Date.parse(lastStamp) + 1).toISOString();
+  lastStamp = next;
+  return next;
 }
 
 // Byte counts for humans: "812 B", "41,2 KB", "3,7 MB". Decimal units (1000,

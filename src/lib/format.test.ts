@@ -1,5 +1,41 @@
-import { describe, it, expect } from "vitest";
-import { roundRupiah, sumRupiah, formatRupiah, presetRange } from "./format";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { roundRupiah, sumRupiah, formatRupiah, presetRange, nowISO } from "./format";
+
+describe("nowISO — the sync cursor invariant", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never repeats a stamp, even inside one millisecond", () => {
+    // Why this matters is not display: `updatedAt` is the sync cursor, and the
+    // sweep keeps ONE scalar watermark per table. Two rows sharing a cursor
+    // means a push advances past both on the strength of one, and the other is
+    // filtered out on the cursor forever after. A single form save fires several
+    // writes, so the same-millisecond case is ordinary.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-17T00:00:00.000Z"));
+
+    const stamps = Array.from({ length: 5 }, () => nowISO());
+
+    expect(new Set(stamps).size).toBe(5);
+    // And strictly increasing, since the watermark comparison is ordering, not
+    // just equality. ISO-8601 sorts lexically, which is what the sweep relies on.
+    expect([...stamps].sort()).toEqual(stamps);
+  });
+
+  it("keeps increasing when the wall clock jumps backwards", () => {
+    // An NTP correction or a timezone fix. A cursor that went backwards would
+    // strand every row written before the jump below the watermark.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-17T12:00:00.000Z"));
+    const before = nowISO();
+
+    vi.setSystemTime(new Date("2026-08-17T11:00:00.000Z"));
+    const after = nowISO();
+
+    expect(after > before).toBe(true);
+  });
+});
 
 describe("roundRupiah", () => {
   it("rounds to whole rupiah (matches formatRupiah's maximumFractionDigits: 0)", () => {
