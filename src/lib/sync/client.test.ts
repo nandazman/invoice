@@ -5,6 +5,7 @@ import {
   syncNow,
   pullNow,
   discardLocalChanges,
+  replaceCloudWithLocal,
   getSyncStatus,
   canWrite,
   isBlocked,
@@ -118,11 +119,11 @@ const product = (id: string, updatedAt: string, over: Record<string, unknown> = 
   ...over,
 });
 
-// hydrateTemplates() SEEDS an example template when the table is empty, and a
-// seed is a write — which would show up as a phantom pending row in the middle
-// of a pull assertion. One inert template keeps that path quiet. It must also
-// survive template-store's migrate() untouched: logo present, no legacy fields,
-// no negative z.
+// One template that survives template-store's migrate() untouched: logo
+// present, no legacy fields, no negative z. It no longer exists to suppress a
+// seed — hydrateTemplates() stopped seeding, and resolveSeed() only fires while
+// the fresh-install flag is set — but a non-empty templates table still keeps
+// the deferred seed out of the middle of a pull assertion.
 const inertTemplate = {
   id: "t1",
   nama: "Inert",
@@ -655,6 +656,203 @@ describe("discardLocalChanges", () => {
 
     expect((await db.products.get("p1"))?.namaProduk).toBe("Server");
     expect((await readWatermarks()).products).toBe("2026-08-09T00:00:00.000Z");
+  });
+
+  it("deletes rows the server has never heard of", async () => {
+    // The case the dialog copy promises and the merge-only pull did not keep:
+    // a row that exists ONLY here. The seeded catalogue is the one that bites —
+    // a fresh browser seeds products with ids no other device has, and before
+    // this they survived every discard because a pull can only PUT rows the
+    // server sent.
+    await db.products.put(
+      product("only-local", "2026-08-01T00:00:00.000Z", {
+        namaProduk: "Hanya di sini",
+      }) as never,
+    );
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    routes.pull = () =>
+      res({
+        serverTime: "T9",
+        tables: { products: [product("p1", "2026-08-09T00:00:00.000Z")] },
+      });
+
+    await bootWithoutPush();
+    expect(await db.products.count()).toBe(2);
+
+    await discardLocalChanges();
+
+    expect(await db.products.get("only-local")).toBeUndefined();
+    expect(await db.products.count()).toBe(1);
+  });
+});
+
+describe("replaceCloudWithLocal", () => {
+  it("tombstones cloud-only rows and re-pushes the whole local dataset", async () => {
+    // The restore-from-backup shape: this device holds the good copy, the cloud
+    // holds it PLUS a duplicate, and every row's cursor is older than the
+    // watermark — so an ordinary sweep sees nothing at all to do.
+    await db.products.put(product("p1", "2026-07-02T00:00:00.000Z") as never);
+    await setWatermarks();
+    await boot("write");
+
+    // Set only NOW, so these rows are genuinely cloud-only: an ordinary pull
+    // asks with the watermark and would never have seen them, which is the
+    // whole reason this function asks for everything instead.
+    //
+    // `accepted` makes the stub behave like a server rather than like a fixed
+    // recording: once the push lands, the cloud no longer has a live `dupe` to
+    // hand back. A static stub would keep serving the old row and the settling
+    // pull at the end would faithfully undo the tombstone — a real server never
+    // does that, and pinning the fixture's version of events would be pinning a
+    // bug that does not exist.
+    let accepted = false;
+    routes.push = (body) => {
+      accepted = true;
+      return res({ serverTime: "T1", applied: { products: (body.tables.products ?? []).length } });
+    };
+    routes.pull = () =>
+      res({
+        serverTime: "T9",
+        tables: {
+          products: accepted
+            ? []
+            : [
+                product("p1", "2026-07-02T00:00:00.000Z"),
+                product("dupe", "2026-07-02T00:00:00.000Z"),
+              ],
+        },
+      });
+    calls = [];
+
+    expect(await replaceCloudWithLocal()).toBe(1);
+
+    const push = calls.find((c) => c.url.startsWith("/api/sync/push"));
+    const rows = (push?.body as { tables: Payload }).tables.products ?? [];
+    const sent = new Map(rows.map((r) => [String(r.id), r]));
+    // Both go up: the good row because the watermark was reset (its cursor is
+    // far older than the mark, so nothing else would have carried it), and the
+    // cloud-only row as a tombstone.
+    expect(sent.get("p1")?.deletedAt).toBeNull();
+    expect(sent.get("dupe")?.deletedAt).toEqual(expect.any(String));
+    // And the tombstone is real locally too, or the next pull would resurrect it.
+    expect((await db.products.get("dupe"))?.deletedAt).toEqual(expect.any(String));
+  });
+
+  it("leaves the audit log alone", async () => {
+    // `audit` has no deletedAt — it is append-only and a retraction has no
+    // shape. Cloud-only entries stay; they are history, not duplicates.
+    await setWatermarks();
+    await boot("write");
+
+    routes.pull = () =>
+      res({
+        serverTime: "T9",
+        tables: {
+          audit: [
+            {
+              id: "a1",
+              timestamp: "2026-07-02T00:00:00.000Z",
+              entity: "product",
+              entityId: "p1",
+              action: "create",
+              label: "Produk",
+              changes: null,
+            },
+          ],
+        },
+      });
+
+    expect(await replaceCloudWithLocal()).toBe(0);
+    // The settling pull at the end DOES adopt it — a cloud-only audit entry is
+    // somebody else's history, and this device is now holding a copy. What it
+    // must not be is a tombstone, which is what `toBe(0)` above pins.
+    expect((await db.audit.toArray())[0]).toMatchObject({ id: "a1" });
+  });
+
+  it("refuses for a local-only account", async () => {
+    await boot("write", false);
+    await expect(replaceCloudWithLocal()).rejects.toThrow(/perangkat sendiri/);
+  });
+
+  it("writes nothing when the cloud cannot be read", async () => {
+    await db.products.put(product("p1", "2026-07-02T00:00:00.000Z") as never);
+    await setWatermarks();
+    await boot("write");
+
+    routes.pull = () => opaqueRedirect();
+    calls = [];
+
+    await expect(replaceCloudWithLocal()).rejects.toThrow();
+    // The watermarks are the thing to check: reset them before the pull has
+    // answered and a failure would leave this device queued to re-push its
+    // entire dataset on the next ordinary sync, unasked.
+    expect((await readWatermarks()).products).toBe(FUTURE);
+    expect(calls.some((c) => c.url.startsWith("/api/sync/push"))).toBe(false);
+  });
+});
+
+describe("deferred seeding", () => {
+  // The fresh-install flag, set by migrateFromLocalStorage and answered here.
+  // Written directly rather than by running the migration, so these stay tests
+  // of the SYNC half — db.test.ts owns the migration half.
+  const SEED_PENDING_KEY = "seed.pending.v1";
+
+  it("adopts the cloud catalogue and drops the starter one", async () => {
+    await db.meta.put({ key: SEED_PENDING_KEY, value: true });
+    await setWatermarks({ products: null });
+    routes.pull = () =>
+      res({
+        serverTime: "T0",
+        tables: {
+          products: [
+            product("cloud-1", "2026-08-01T00:00:00.000Z", {
+              namaProduk: "Apel Hijau",
+            }),
+          ],
+        },
+      });
+
+    await bootWithoutPush();
+
+    // The bug this replaced, in one assertion: 39 seeded rows must NOT be
+    // sitting beside the one row the cloud actually holds.
+    expect(await db.products.count()).toBe(1);
+    expect(await db.meta.get(SEED_PENDING_KEY)).toBeUndefined();
+  });
+
+  it("writes the starter catalogue when the cloud is genuinely empty", async () => {
+    await db.meta.put({ key: SEED_PENDING_KEY, value: true });
+    await setWatermarks({ products: null });
+
+    await bootWithoutPush();
+
+    expect(await db.products.count()).toBeGreaterThan(0);
+    expect(await db.meta.get(SEED_PENDING_KEY)).toBeUndefined();
+  });
+
+  it("seeds when there is no Worker behind the build at all", async () => {
+    await db.meta.put({ key: SEED_PENDING_KEY, value: true });
+    // The GitHub Pages copy: /api/* is answered by the SPA fallback, i.e. HTML.
+    routes.me = () => html();
+
+    await initSync();
+    await flushWrites();
+
+    expect(getSyncStatus().available).toBe(false);
+    expect(await db.products.count()).toBeGreaterThan(0);
+  });
+
+  it("leaves the decision pending when the answer never arrived", async () => {
+    await db.meta.put({ key: SEED_PENDING_KEY, value: true });
+    // A lapsed Access session. The cloud may well hold a catalogue — we simply
+    // have not been told, and guessing is the whole mistake.
+    routes.me = () => opaqueRedirect();
+
+    await initSync();
+    await flushWrites();
+
+    expect(await db.products.count()).toBe(0);
+    expect((await db.meta.get(SEED_PENDING_KEY))?.value).toBe(true);
   });
 });
 

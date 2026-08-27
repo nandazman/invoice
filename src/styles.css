@@ -64,3 +64,16 @@
     display: none !important;
   }
 }
+
+/* A scroll container with no visible scrollbar. Used by the sidebar, which has
+   to scroll on a short screen but is 56px wide — a gutter there costs more than
+   the affordance is worth, and the content it hides (a nav list) is discoverable
+   by dragging or the wheel. Deliberately NOT applied to anything holding data:
+   a table whose overflow is invisible is a table whose rows go unread. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

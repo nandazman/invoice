@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { type Table } from "dexie";
-import { db, onWrite } from "../db";
+import { db, onWrite, resolveSeed } from "../db";
 import { rehydrate } from "../bootstrap";
+import { nowISO } from "../format";
 import {
   TABLES,
   attributionOf,
@@ -160,7 +161,8 @@ function freshStatus(): SyncStatus {
     role: readCachedRole(),
     roleKnown: false,
     canPush: readCachedCanPush(),
-    online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
+    online:
+      typeof navigator === "undefined" ? true : navigator.onLine !== false,
     busy: false,
     lastPushAt: null,
     lastPullAt: null,
@@ -379,7 +381,8 @@ async function sweepTable(spec: TableSpec, marks: Watermarks): Promise<Swept> {
     // whole: one 4MB template must not block every other table.
     if (JSON.stringify(wire).length > ROW_SIZE_LIMIT) {
       oversized.push(String(raw["nama"] ?? raw[spec.key]));
-      if (oversizedFloor === null || value < oversizedFloor) oversizedFloor = value;
+      if (oversizedFloor === null || value < oversizedFloor)
+        oversizedFloor = value;
       continue;
     }
 
@@ -408,7 +411,9 @@ async function sweepAll(marks: Watermarks): Promise<Swept[]> {
   return Promise.all(TABLES.map((spec) => sweepTable(spec, marks)));
 }
 
-function pendingFrom(swept: Swept[]): Pick<SyncStatus, "pending" | "pendingTotal"> {
+function pendingFrom(
+  swept: Swept[],
+): Pick<SyncStatus, "pending" | "pendingTotal"> {
   const pending: Record<string, number> = {};
   let total = 0;
   for (const s of swept) {
@@ -490,12 +495,17 @@ async function api<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   if (res.status === 401 || err.code === "unauthenticated") {
     return { kind: "unauthenticated" };
   }
-  return { kind: "error", message: err.message ?? `Sinkronisasi gagal (${res.status}).` };
+  return {
+    kind: "error",
+    message: err.message ?? `Sinkronisasi gagal (${res.status}).`,
+  };
 }
 
 // Translate a non-ok result into status. Returns true when the caller should
 // stop — every non-ok result is a stop, this just keeps the branch in one place.
-function reportFailure(result: Exclude<ApiResult<unknown>, { kind: "ok" }>): void {
+function reportFailure(
+  result: Exclude<ApiResult<unknown>, { kind: "ok" }>,
+): void {
   if (result.kind === "unavailable") {
     patch({ available: false, error: null });
   } else if (result.kind === "unauthenticated") {
@@ -548,7 +558,9 @@ async function applyPull(
     if (!incoming) continue;
 
     const local = bySpec.get(spec.name);
-    const diverged = force ? new Set<string>() : (local?.keys ?? new Set<string>());
+    const diverged = force
+      ? new Set<string>()
+      : (local?.keys ?? new Set<string>());
 
     if (spec.cursor === null) {
       // Cursorless: the server copy replaces ours wholesale. Skipping is
@@ -583,7 +595,25 @@ async function applyPull(
       if (diverged.has(String(raw[spec.key]))) continue;
       rows.push(pickIncoming(spec, raw));
     }
-    if (rows.length > 0) {
+    // `force` REPLACES the table rather than merging into it. Without the
+    // clear, a row that exists only here — a seeded product, anything written
+    // while local-only — survives a discard untouched, because a pull can only
+    // put rows the server sent and the server has never heard of it. That made
+    // "Buang perubahan lokal" a promise the code did not keep: the count went
+    // down (the watermark moved) while the rows themselves stayed, which is the
+    // one outcome the dialog rules out in so many words.
+    //
+    // Safe only because `force` is reached solely from `discardLocalChanges`,
+    // which resets the watermarks to {} first — so `incoming` is the WHOLE
+    // table, not a delta, and clearing before writing it loses nothing that the
+    // same transaction does not immediately put back.
+    if (force) {
+      await db.transaction("rw", tableOf(spec), async () => {
+        await tableOf(spec).clear();
+        if (rows.length > 0) await tableOf(spec).bulkPut(rows);
+      });
+      applied += rows.length;
+    } else if (rows.length > 0) {
       await tableOf(spec).bulkPut(rows);
       applied += rows.length;
     }
@@ -637,6 +667,13 @@ async function runPull(force: boolean): Promise<boolean> {
   );
   await saveWatermarks(nextMarks);
 
+  // The pull is the moment a fresh install finally knows what the cloud holds,
+  // and therefore the only honest moment to decide whether the starter
+  // catalogue is wanted. `resolveSeed` is a no-op on every device that has
+  // already answered — which is all of them after the first boot. See
+  // SEED_PENDING_KEY in db.ts for what this replaced and why.
+  const seeded = await resolveSeed();
+
   // Rehydrate only when something actually landed. The sequence lives in
   // bootstrap.ts because it is the same one boot runs; duplicating it here
   // would guarantee the two drift.
@@ -645,7 +682,7 @@ async function runPull(force: boolean): Promise<boolean> {
   // tabs make no request of their own, so this is the only way they hear that
   // rows arrived. It goes out on the same condition as the local rehydrate —
   // announcing a pull that changed nothing would wake every tab for no reason.
-  if (applied > 0) {
+  if (applied > 0 || seeded) {
     await rehydrate();
     broadcastChanged();
   }
@@ -771,6 +808,123 @@ export async function discardLocalChanges(): Promise<void> {
   await runPull(true);
 }
 
+// The other direction: make the cloud match THIS device, exactly.
+//
+// `discardLocalChanges` above is the cure when the cloud is right and a device
+// is wrong. This is the cure when a device is right and the CLOUD is wrong —
+// which is the state a JSON restore leaves you in, and the reason it needs to
+// exist at all:
+//
+//   `importAll` replaces every store with the backup's rows, keeping their
+//   original `updatedAt` values. Those are OLDER than the watermark, so the
+//   next sweep does not see them and the restore is never pushed; and the rows
+//   the restore deleted were cleared, not tombstoned, so the cloud keeps them
+//   and hands them back on any later full pull. A restore is, today, entirely
+//   invisible to sync. This is the button that publishes it.
+//
+// Deletion travels as TOMBSTONES, never as a server-side wipe. That is not a
+// detail — a `DELETE FROM` in the Worker would remove the rows from D1 while
+// every other device still held its own copy above its own watermark, and the
+// first one to sync would push them all straight back. A tombstone is the only
+// form of "this is gone" that other devices can actually receive.
+//
+// Two tables are deliberately left alone:
+//
+//   - `audit` has no `deletedAt` (tables.ts) — it is an append-only log, and
+//     there is no shape a retraction could take. Local entries are still
+//     pushed; the cloud's extra history simply stays.
+//   - `types` is cursorless, and the Worker already replaces it wholesale on
+//     every push, so it is made to match for free.
+//
+// Returns the number of cloud-only rows that were tombstoned, so the caller can
+// say what actually happened rather than just "done".
+export async function replaceCloudWithLocal(): Promise<number> {
+  if (!status.available) {
+    throw new Error("Cloud tidak tersedia dari perangkat ini.");
+  }
+  if (!canPushToCloud()) {
+    throw new Error(
+      "Akun ini disetel menyimpan di perangkat sendiri saja, jadi tidak bisa mengubah isi cloud.",
+    );
+  }
+
+  // Ask for EVERYTHING, ignoring the watermarks. The whole job is to find rows
+  // the cloud has and this device does not, and an incremental pull cannot see
+  // them by construction: they are older than the watermark, which is exactly
+  // why they have survived every sync so far.
+  const everything: Record<string, null> = {};
+  for (const spec of TABLES) everything[spec.name] = null;
+  const result = await api<PullResponse>(
+    `/api/sync/pull?since=${encodeURIComponent(JSON.stringify(everything))}`,
+  );
+  if (result.kind !== "ok") {
+    reportFailure(result);
+    // Nothing has been written yet, on either side. Failing here is the safe
+    // place to fail, and the caller may say so.
+    throw new Error(
+      result.kind === "error"
+        ? result.message
+        : "Tidak dapat membaca isi cloud.",
+    );
+  }
+
+  const payload = result.data.tables ?? {};
+  const stamp = nowISO();
+  let tombstoned = 0;
+
+  for (const spec of TABLES) {
+    const cursor = spec.cursor;
+    if (cursor === null) continue;
+    if (!spec.columns.includes("deletedAt")) continue;
+    const incoming = payload[spec.name];
+    if (!incoming || incoming.length === 0) continue;
+
+    const local = new Set(
+      (await tableOf(spec).toArray()).map((r) => String(r[spec.key])),
+    );
+    // The row's own content is kept and only the two timestamps are rewritten:
+    // a tombstone that carries what it buried is what lets the audit trail and
+    // any later forensics still say WHAT was removed.
+    const graves = incoming
+      .filter((r) => r["deletedAt"] == null && !local.has(String(r[spec.key])))
+      .map((r) => ({
+        ...pickIncoming(spec, r),
+        deletedAt: stamp,
+        [cursor]: stamp,
+      }));
+    if (graves.length === 0) continue;
+
+    // Written straight to Dexie rather than through `persist()`: this must not
+    // raise a write event, because the push below is not a debounced sweep that
+    // happens to be scheduled — it is the point of the whole function.
+    await tableOf(spec).bulkPut(graves);
+    tombstoned += graves.length;
+  }
+
+  if (tombstoned > 0) {
+    await rehydrate();
+    broadcastChanged();
+  }
+
+  // Reset the watermarks so the sweep sees the ENTIRE local dataset, not the
+  // handful of rows written since the last sync. A restored backup's rows are
+  // old by definition; without this they would be filtered out on the cursor
+  // and the push would carry nothing but the tombstones.
+  resetWatermarkCache();
+  await saveWatermarks({});
+  if (!(await runPush())) {
+    throw new Error(status.error ?? "Gagal mengirim data ke cloud.");
+  }
+
+  // Settle: re-pull so the watermarks land on the server's own values rather
+  // than on what we happened to send. Nothing should come back — the two sides
+  // now agree — and a normal, non-forcing pull is used precisely so that if
+  // something does, it is treated as somebody else's edit and not discarded.
+  await runPull(false);
+
+  return tombstoned;
+}
+
 // ---------- Trigger ----------
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -837,10 +991,13 @@ let lastSyncStartedAt = 0;
 // stays "per visible tab" while the request rate becomes "per origin", which is
 // the number the free tier actually counts.
 //
-// Note that the leader itself may be hidden — it is whichever tab has held the
-// lock longest, not whichever one you are looking at. That is exactly why the
-// wake broadcast exists: a hidden leader skips its own interval, and the visible
-// tab's wake is then the only thing keeping the data fresh.
+// The leader can still be hidden for a while — leadership only follows the user
+// after tabs.ts's steal delay — which is exactly why the wake broadcast exists:
+// a hidden leader skips its own interval, and the visible tab's wake is then
+// what keeps the data fresh. It is no longer the ONLY thing, and that matters:
+// a hidden tab is eventually frozen outright, at which point it stops receiving
+// broadcasts too and a wake reaches nobody. Stealing is what ends that state;
+// the wake is what covers the minutes before it.
 function startPolling(): void {
   if (typeof window === "undefined" || poll !== null) return;
 
@@ -888,6 +1045,14 @@ export async function initSync(): Promise<void> {
     // `roleKnown` stays false, so nothing downstream reads the unanswered role
     // as a denial.
     reportFailure(result);
+    // "unavailable" is the ONE failure that is also an answer: there is no
+    // Worker behind this build (the GitHub Pages copy), so there is no cloud
+    // catalogue to wait for and a deferred seed would be deferred forever.
+    // Every other failure — offline, a lapsed Access session — leaves the flag
+    // set for the next boot to resolve, because guessing "the cloud is empty"
+    // is exactly the mistake this whole mechanism exists to stop.
+    if (result.kind === "unavailable" && (await resolveSeed()))
+      await rehydrate();
     return;
   }
 
