@@ -5,7 +5,9 @@ import {
   migrateFromLocalStorage,
   readAll,
   purgeTombstones,
+  resolveSeed,
   BUYER_BACKFILL_KEY,
+  SEED_PENDING_KEY,
 } from "./db";
 import { LEGACY_KEYS } from "./storage";
 
@@ -82,11 +84,18 @@ const V1_STORES = {
 describe("migrateFromLocalStorage", () => {
   beforeEach(resetAll);
 
-  it("seeds a fresh install rather than migrating nothing", async () => {
+  it("defers the seed on a fresh install rather than writing it at boot", async () => {
     const result = await migrateFromLocalStorage();
 
     expect(result.status).toBe("seeded");
-    expect(await db.products.count()).toBeGreaterThan(0);
+    // NOT written yet. Boot happens before sync has said a word, and a seeded
+    // catalogue landing beside the one the cloud is about to send is how the
+    // duplicates got made — see SEED_PENDING_KEY.
+    expect(await db.products.count()).toBe(0);
+    expect((await db.meta.get(SEED_PENDING_KEY))?.value).toBe(true);
+    // The default type still goes in: it is keyed by its own name, so an
+    // incoming "Bar" overwrites rather than duplicates it.
+    expect(await db.types.count()).toBe(1);
     // Seeding must not write back to localStorage — the old loader did that as
     // a side effect of a read, which is why the seed moved into db.ts.
     expect(localStorage.getItem(PRODUCTS_KEY)).toBeNull();
@@ -219,6 +228,101 @@ describe("migrateFromLocalStorage", () => {
     expect(LEGACY_KEYS).toContain(STOCK_KEY);
 
     expect((await migrateFromLocalStorage()).status).toBe("migrated");
+  });
+});
+
+describe("resolveSeed", () => {
+  beforeEach(resetAll);
+
+  it("writes the starter catalogue when the cloud turned out to be empty", async () => {
+    await migrateFromLocalStorage();
+
+    expect(await resolveSeed()).toBe(true);
+
+    expect(await db.products.count()).toBeGreaterThan(0);
+    expect(await db.templates.count()).toBe(1);
+    // Answered: the flag is gone, so a later pull cannot seed a second time.
+    expect(await db.meta.get(SEED_PENDING_KEY)).toBeUndefined();
+  });
+
+  it("drops the starter template when the cloud sent one", async () => {
+    await migrateFromLocalStorage();
+    // Stand in for a pull having landed the deployment's real template.
+    await db.templates.put({
+      id: "from-cloud",
+      nama: "Template Toko",
+      business: { nama: "Toko", alamat: "", telepon: "", logo: "" },
+      customer: { nama: "", alamat: "" },
+      elements: [],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      deletedAt: null,
+    });
+
+    // Still true — the products half of the seed did write — but the template
+    // half must not have, or every device would add its own "Template Contoh"
+    // beside the one the cloud already has.
+    expect(await resolveSeed()).toBe(true);
+
+    expect(await db.templates.count()).toBe(1);
+    expect((await db.templates.toArray())[0].id).toBe("from-cloud");
+  });
+
+  it("drops the starter catalogue when the cloud sent products", async () => {
+    await migrateFromLocalStorage();
+    // Stand in for a pull having landed rows before this runs.
+    await db.products.put({
+      id: "from-cloud",
+      namaProduk: "Apel Hijau",
+      tipe: "Bar",
+      ukuran: null,
+      satuan: null,
+      hargaDasar: 0,
+      hargaJual: 45000,
+      konversi: [],
+      stokMin: 0,
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      deletedAt: null,
+    });
+
+    // True because the empty templates table still gets its seed; the
+    // assertion that matters is the product count below.
+    expect(await resolveSeed()).toBe(true);
+
+    // The whole bug in one assertion: 39 seed rows must NOT appear next to the
+    // one the cloud actually holds.
+    expect(await db.products.count()).toBe(1);
+    expect(await db.meta.get(SEED_PENDING_KEY)).toBeUndefined();
+  });
+
+  it("is a no-op on an install that has already answered", async () => {
+    await migrateFromLocalStorage();
+    await resolveSeed();
+    const after = await db.products.count();
+
+    expect(await resolveSeed()).toBe(false);
+    expect(await db.products.count()).toBe(after);
+  });
+
+  it("is a no-op for a migrated install, which never had a flag", async () => {
+    localStorage.setItem(PRODUCTS_KEY, JSON.stringify([legacyProduct]));
+    await migrateFromLocalStorage();
+
+    expect(await resolveSeed()).toBe(false);
+    expect(await db.products.count()).toBe(1);
+  });
+
+  // The template half of the same rule products already get. Deleting your last
+  // template used to resurrect it on the very next rehydrate, and publish the
+  // resurrection; nothing may re-seed once the install has answered.
+  it("does not resurrect a template the user deleted", async () => {
+    await migrateFromLocalStorage();
+    await resolveSeed();
+    await db.templates.clear();
+
+    expect(await resolveSeed()).toBe(false);
+    expect(await db.templates.count()).toBe(0);
   });
 });
 

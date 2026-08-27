@@ -19,6 +19,7 @@ import {
   loadAudit,
 } from "./storage";
 import { seedProducts } from "./seed";
+import { seedTemplate } from "./template-seed";
 
 // The IndexedDB layer. Replaces localStorage for all core business data.
 //
@@ -54,6 +55,19 @@ const MIGRATED_KEY = "migrated.v1";
 // answer was none", so checking the orders themselves would prompt forever.
 // See docs/2026-07-29/plan.md §3.
 export const BUYER_BACKFILL_KEY = "buyerBackfill.v1";
+
+// Set on a fresh install to mean "the starter catalogue has NOT been written
+// yet, and the cloud has not been consulted about whether it should be".
+// Cleared by `resolveSeed()` once there is an answer either way.
+//
+// This flag exists because seeding at boot was actively destructive. The seed
+// mints 39 products with fresh `uid()`s, and boot runs before sync has said a
+// word — so on every new browser the seeded catalogue landed BESIDE the real
+// one pulled from D1 (same names, different ids, nothing to merge on), and for
+// an account that may push, those 39 rows then went up and polluted the cloud
+// for everyone. A device that has never seen the cloud has no business deciding
+// the catalogue is empty.
+export const SEED_PENDING_KEY = "seed.pending.v1";
 
 class InvoiceDB extends Dexie {
   products!: Table<Product, string>;
@@ -339,6 +353,66 @@ function withBuyerField<T extends { buyerId?: string }>(
   return rows.map((r) => ({ ...r, buyerId: r.buyerId ?? "" }));
 }
 
+// ---------- Deferred seeding ----------
+
+// Decide the fresh install's catalogue, now that there IS something to decide
+// it against. Call this ONLY when the cloud's answer is known:
+//
+//   - the pull succeeded  -> `db.products` holds whatever the cloud has
+//   - there is no Worker  -> there is no cloud, and never will be
+//
+// Do NOT call it on a failed or unauthenticated sync. Leaving the flag set
+// costs a first boot with an empty price list and fixes itself on the next one;
+// seeding on a guess is how the duplicate catalogues got into D1 in the first
+// place.
+//
+// Empty means empty: if the cloud sent products, this device adopts them and
+// the starter list is dropped for good. That is the whole point — the seed is a
+// starting position for the FIRST user of a deployment, not a default every
+// device is entitled to.
+//
+// TEMPLATES ride along here for exactly the same reason, and this is the only
+// place either seed is written. `hydrateTemplates()` used to seed its own
+// example whenever it found an empty table, which was the products bug with a
+// sharper edge: that function runs on every `rehydrate()` — after a pull, after
+// a cross-tab broadcast — so it re-answered "is this table empty?" over and
+// over, minting a fresh `uid()` each time. One "Template Contoh" per device
+// beside the cloud's own copy, and a last template that could not be deleted
+// because the next pull put it straight back. Both fall out once the decision
+// happens once, here, after the cloud has answered.
+//
+// Returns true when rows were actually written, so the caller knows whether the
+// in-memory stores need rehydrating.
+export async function resolveSeed(): Promise<boolean> {
+  // Deliberately no in-memory "already resolved" cache. It would need a reset
+  // seam for the tests and would save one indexed `get` on an open connection
+  // per pull, which is not a cost worth owning state for.
+  const flag = await db.meta.get(SEED_PENDING_KEY);
+  if (flag?.value !== true) return false;
+
+  let wrote = false;
+  await db.transaction("rw", db.products, db.templates, db.meta, async () => {
+    // Re-checked inside the transaction, not before it: two tabs can reach this
+    // on the same pull, and the loser must not write a second catalogue.
+    const current = await db.meta.get(SEED_PENDING_KEY);
+    if (current?.value !== true) return;
+    if ((await db.products.count()) === 0) {
+      await db.products.bulkPut(withTombstoneField(seedProducts()));
+      wrote = true;
+    }
+    // Counted separately from products: a deployment whose cloud has a
+    // catalogue but no template yet is a real state, and the two seeds are
+    // independent answers to independent questions.
+    if ((await db.templates.count()) === 0) {
+      await db.templates.put(seedTemplate());
+      wrote = true;
+    }
+    await db.meta.delete(SEED_PENDING_KEY);
+  });
+
+  return wrote;
+}
+
 // One-time copy of localStorage -> IndexedDB.
 //
 // Ordering is the whole point: copy, VERIFY, and only then record that we are
@@ -348,18 +422,22 @@ function withBuyerField<T extends { buyerId?: string }>(
 export async function migrateFromLocalStorage(): Promise<MigrationResult> {
   if (await isMigrated()) return { status: "skipped" };
 
-  // Fresh install: nothing to copy. Seed products straight into IDB rather than
-  // routing through the legacy loaders, which would write the seed back out to
-  // localStorage as a side effect.
+  // Fresh install: nothing to copy, and — deliberately — nothing seeded yet.
+  // The catalogue and the example template are both DEFERRED to
+  // `resolveSeed()`, which runs once sync has answered; see SEED_PENDING_KEY
+  // for why this must not happen at boot. The
+  // "Bar" type still goes in, because it is a fixed default rather than data:
+  // it collides with nothing pulled from the cloud (the key is the name itself,
+  // so an incoming "Bar" overwrites it) and the type picker must not be empty
+  // on the first render.
   if (!hasLegacyData()) {
-    const seeded = withTombstoneField(seedProducts());
-    await db.transaction("rw", db.products, db.types, db.meta, async () => {
-      await db.products.bulkPut(seeded);
+    await db.transaction("rw", db.types, db.meta, async () => {
       await db.types.bulkPut([{ nama: "Bar" }]);
       await db.meta.put({ key: MIGRATED_KEY, value: true });
       // A fresh install has no orders to backfill, so the prompt would be a
       // question about nothing. Answer it here, before it can ever be asked.
       await db.meta.put({ key: BUYER_BACKFILL_KEY, value: true });
+      await db.meta.put({ key: SEED_PENDING_KEY, value: true });
     });
     return { status: "seeded" };
   }

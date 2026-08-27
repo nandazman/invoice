@@ -1,14 +1,13 @@
 import { useSyncExternalStore } from "react";
-import type { Template, TemplateElement } from "./template-types";
+import type { Template } from "./template-types";
 import {
-  PAGE_W,
   LOGO_MAX_W,
   LOGO_MAX_H,
   PLACEHOLDER_LOGO,
   defaultStyle,
-  defaultColumns,
   defaultFields,
 } from "./template-types";
+import { el } from "./template-seed";
 import { uid, nowISO } from "./format";
 import { db, persist, touch, fresh, type Snapshot } from "./db";
 
@@ -18,140 +17,6 @@ import { db, persist, touch, fresh, type Snapshot } from "./db";
 // other store. The QuotaExceededError alert that used to live here is gone —
 // the bug it reported is what moving to IndexedDB fixes.
 
-// ---------- Seed: one ready-to-use example template ----------
-function el(e: Partial<TemplateElement> & Pick<TemplateElement, "type">): TemplateElement {
-  const { style, ...rest } = e;
-  return {
-    id: uid(),
-    x: 40,
-    y: 40,
-    w: 200,
-    h: 40,
-    z: 1,
-    ...rest,
-    style: { ...defaultStyle(), ...style },
-  };
-}
-
-function seedTemplate(): Template {
-  const now = nowISO();
-  return {
-    id: uid(),
-    nama: "Template Contoh",
-    business: {
-      nama: "Toko Saya",
-      alamat: "Jl. Contoh No. 1, Jakarta",
-      telepon: "0812-3456-7890",
-      logo: PLACEHOLDER_LOGO,
-    },
-    customer: { nama: "Pelanggan", alamat: "Alamat pelanggan" },
-    elements: [
-      el({
-        type: "logo",
-        x: 40,
-        y: 40,
-        w: LOGO_MAX_W,
-        h: LOGO_MAX_H,
-        z: 6,
-      }),
-      el({
-        type: "text",
-        content: "INVOICE",
-        x: 40 + LOGO_MAX_W + 20, // beside the logo
-        y: 48,
-        w: 300,
-        h: 44,
-        z: 5,
-        style: { ...defaultStyle(), fontSize: 36, fontWeight: 700 },
-      }),
-      el({
-        type: "text",
-        content: "{{business.nama}}\n{{business.alamat}}\n{{business.telepon}}",
-        x: PAGE_W - 300 - 40,
-        y: 40,
-        w: 300,
-        h: 70,
-        z: 5,
-        style: { ...defaultStyle(), align: "right", fontSize: 12, color: "#475569" },
-      }),
-      el({
-        type: "text",
-        content: "Ditagihkan kepada:\n{{customer.nama}}\n{{customer.alamat}}",
-        x: 40,
-        y: 130,
-        w: 300,
-        h: 70,
-        z: 5,
-        style: { ...defaultStyle(), fontSize: 12 },
-      }),
-      el({
-        type: "field",
-        fieldLabel: "No. Invoice",
-        fieldType: "text",
-        x: PAGE_W - 240 - 40,
-        y: 130,
-        w: 240,
-        h: 24,
-        z: 5,
-        style: { ...defaultStyle(), align: "right", fontSize: 12 },
-      }),
-      el({
-        type: "field",
-        fieldLabel: "Tanggal Terbit",
-        fieldType: "date",
-        x: PAGE_W - 240 - 40,
-        y: 158,
-        w: 240,
-        h: 24,
-        z: 5,
-        style: { ...defaultStyle(), align: "right", fontSize: 12 },
-      }),
-      el({
-        type: "field",
-        fieldLabel: "Jatuh Tempo",
-        fieldType: "date",
-        x: PAGE_W - 240 - 40,
-        y: 186,
-        w: 240,
-        h: 24,
-        z: 5,
-        style: { ...defaultStyle(), align: "right", fontSize: 12 },
-      }),
-      el({
-        type: "items",
-        x: 40,
-        y: 240,
-        w: PAGE_W - 80,
-        h: 300,
-        z: 3,
-        columns: defaultColumns(),
-        style: { ...defaultStyle(), fontSize: 12 },
-      }),
-      el({
-        type: "total",
-        x: PAGE_W - 280 - 40,
-        y: 560,
-        w: 280,
-        h: 40,
-        z: 5,
-        style: { ...defaultStyle(), fontSize: 16, fontWeight: 700, align: "right" },
-      }),
-      el({
-        type: "text",
-        content: "Terima kasih atas pesanan Anda.",
-        x: 40,
-        y: 640,
-        w: 400,
-        h: 24,
-        z: 5,
-        style: { ...defaultStyle(), fontSize: 12, italic: true, color: "#475569" },
-      }),
-    ],
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-  };
-}
 
 // Ensure older templates (saved before the logo feature) have a logo image and
 // a logo box on the canvas, so there is always somewhere to manage the logo.
@@ -208,20 +73,29 @@ function migrate(list: Template[]): { list: Template[]; changed: boolean } {
 
 let templates: Template[] = [];
 
-// Fill from the boot snapshot. Two legacy paths still run here:
-//   - an empty store seeds the example template;
-//   - `migrate()` fixes up older template shapes (missing logo, legacy `bind`
-//     fields). Both persist only when they actually changed something.
+// Fill from the boot snapshot, running `migrate()` to fix up older template
+// shapes (missing logo, legacy `bind` fields). It persists only when it
+// actually changed something.
+//
+// It deliberately does NOT seed an example template into an empty store any
+// more. That used to live here and was the same bug as the product catalogue,
+// only worse: this function runs on every `rehydrate()` — after a pull, after a
+// cross-tab broadcast — not just at boot, so "the table is empty" was answered
+// over and over, each time with a fresh `uid()`. Two consequences, both of
+// which people hit:
+//
+//   - a new device seeded its own "Template Contoh" before the first pull
+//     arrived, so it ended up beside the cloud's copy instead of merging with
+//     it — and then pushed, adding one per device, forever;
+//   - deleting your last template resurrected it on the very next pull, and
+//     published the resurrection.
+//
+// The seed is now deferred to `resolveSeed()` in db.ts, which runs once the
+// cloud's answer is actually known. See SEED_PENDING_KEY there.
 export function hydrateTemplates(snap: Snapshot): void {
-  if (snap.templates.length === 0) {
-    const seeded = seedTemplate();
-    templates = [seeded];
-    persist("seedTemplate", () => db.templates.put(seeded));
-  } else {
-    const { list, changed } = migrate(snap.templates);
-    templates = list;
-    if (changed) persist("migrateTemplates", () => db.templates.bulkPut(list));
-  }
+  const { list, changed } = migrate(snap.templates);
+  templates = list;
+  if (changed) persist("migrateTemplates", () => db.templates.bulkPut(list));
   emit();
 }
 
