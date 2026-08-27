@@ -39,6 +39,24 @@ const LOCK_NAME = "invoice.sync.leader.v1";
 // rehydrate in the receiving tabs. Short enough to feel instant.
 const REHYDRATE_MS = 150;
 
+// How long a VISIBLE tab waits for the leader lock before taking it by force.
+//
+// Web Locks have no expiry: whoever holds this one holds it until its document
+// goes away. That is exactly right when the holder is alive and exactly wrong
+// when it is a window the user forgot about — an installed PWA left open, a
+// pinned tab, a second window behind this one. Browsers freeze timers in hidden
+// documents, so a leader in that state hears the write, schedules the push, and
+// then does not run the timer for minutes or hours. Every other tab is
+// meanwhile refusing to push on the grounds that somebody else is the leader,
+// and the whole origin stops syncing with no error anywhere: rows land in
+// IndexedDB, the chip counts them as pending, and no request is ever made.
+//
+// So leadership follows the user. A tab that is visible and still not the
+// leader after this long steals the lock. Stealing is what Web Locks offer for
+// exactly this case, and it keeps the "one syncer" invariant the gate exists to
+// protect — the previous holder is told it was stolen from and stands down.
+const STEAL_AFTER_MS = 3_000;
+
 type TabMessage =
   // IndexedDB changed — either a local write here or a pull that landed rows.
   // Every other tab must re-read; the leader must also sync it onward.
@@ -69,6 +87,17 @@ function supported(): boolean {
 let channel: BroadcastChannel | null = null;
 let rehydrateTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribeWrite: (() => void) | null = null;
+let stealTimer: ReturnType<typeof setTimeout> | null = null;
+// The still-queued plain request, if there is one. A steal has to cancel it
+// first: a queued request is not cancelled by winning the lock some other way,
+// so without this the tab would sit in its own queue holding a place it no
+// longer needs — and inherit the lock again, ahead of the tab that was actually
+// waiting, the moment the current holder goes away.
+let pendingRequest: AbortController | null = null;
+let removeVisibility: (() => void) | null = null;
+// Held so a re-election can announce itself. `claimLeadership` is called once,
+// but this tab may win, be stolen from, and win again.
+let elected: (() => void) | null = null;
 
 // True when this tab is the only one allowed to talk to the API. Starts true so
 // a browser without the two APIs above, or a build that never calls
@@ -178,14 +207,80 @@ export function initTabs(): void {
   unsubscribeWrite = onWrite(broadcastChanged);
 }
 
+// True only when we can SEE that this document is in front of the user. A
+// missing `document` — the tests, any non-browser host — answers false rather
+// than true: stealing is a privilege of the tab the user is looking at, and a
+// context that cannot say whether it is visible must not claim it.
+function visible(): boolean {
+  return (
+    typeof document !== "undefined" && document.visibilityState === "visible"
+  );
+}
+
+function acquire(steal: boolean): void {
+  // `steal` and `signal` are mutually exclusive in the API, and each request
+  // only ever needs one of them: a steal is granted immediately, so there is
+  // nothing to cancel; a plain request may wait forever, so there has to be.
+  const controller = steal ? null : new AbortController();
+  pendingRequest = controller;
+  const options = controller ? { signal: controller.signal } : { steal: true };
+
+  void navigator.locks
+    .request(LOCK_NAME, options, () => {
+      pendingRequest = null;
+      leader = true;
+      elected?.();
+      // Never resolves. Holding the lock IS the leadership, so it is released
+      // only when this document goes away, at which point the browser hands it
+      // to the next tab waiting, with no heartbeat or timeout to tune and no way
+      // for a crashed tab to keep it.
+      return new Promise<never>(() => {});
+    })
+    .catch((err) => {
+      // Our own cancellation, on the way to stealing. Not an outcome, just the
+      // first half of one — and it must not be mistaken for the case below,
+      // which would re-queue the request we just cancelled.
+      if (controller?.signal.aborted) return;
+      // Being stolen from is the one rejection that is not a failure: another
+      // tab, in front of the user, has taken over. Stand down and queue again,
+      // so this tab still inherits the lock when that one closes.
+      if ((err as { name?: string } | null)?.name === "AbortError") {
+        leader = false;
+        acquire(false);
+        return;
+      }
+      // Any other rejection would leave this tab permanently convinced it is
+      // not the leader AND unable to become one, i.e. a tab whose writes never
+      // leave the device. Failing back to "leader" costs a duplicated poll at
+      // worst.
+      console.error("[tabs] leader election failed, syncing locally", err);
+      leader = true;
+      elected?.();
+    });
+}
+
+// Arm the steal. A timer rather than an immediate steal because the ordinary
+// case is a lock that is free or whose holder is closing, and the plain request
+// wins those within milliseconds. The steal is for the case where nobody is
+// coming.
+function scheduleSteal(): void {
+  if (stealTimer !== null) clearTimeout(stealTimer);
+  stealTimer = setTimeout(() => {
+    stealTimer = null;
+    if (leader || !visible()) return;
+    pendingRequest?.abort();
+    pendingRequest = null;
+    acquire(true);
+  }, STEAL_AFTER_MS);
+}
+
 // Take part in the election. Separate from `initTabs` because it is only
 // meaningful once the sync API is known to exist: on a build with no Worker
 // there is nothing to be leader OF, and every tab staying its own leader is the
 // honest state.
 //
-// `onElected` fires when this tab wins, which may be long after boot — the lock
-// is held for the lifetime of the winning document, so a second tab becomes
-// leader at the moment the first one closes.
+// `onElected` fires when this tab wins, which may be long after boot, and may
+// fire more than once: a tab that is stolen from can win the lock back.
 export function claimLeadership(onElected: () => void): void {
   if (!supported()) {
     // `leader` is already true. Every tab syncs for itself, as before.
@@ -193,26 +288,25 @@ export function claimLeadership(onElected: () => void): void {
     return;
   }
 
+  elected = onElected;
   leader = false;
-  void navigator.locks
-    .request(LOCK_NAME, () => {
-      leader = true;
-      onElected();
-      // Never resolves. Holding the lock IS the leadership, so it is released
-      // only when this document goes away — at which point the browser hands it
-      // to the next tab waiting, with no heartbeat or timeout to tune and no way
-      // for a crashed tab to keep it.
-      return new Promise<never>(() => {});
-    })
-    .catch((err) => {
-      // A rejected lock request would otherwise leave this tab permanently
-      // convinced it is not the leader AND unable to become one, i.e. a tab
-      // whose writes never leave the device. Failing back to "leader" costs a
-      // duplicated poll at worst.
-      console.error("[tabs] leader election failed, syncing locally", err);
-      leader = true;
-      onElected();
-    });
+  acquire(false);
+
+  // Two arming points, because there are two ways to be a visible tab that is
+  // not the leader. This one is for the tab that was already in front of the
+  // user at boot: no visibility change is ever going to fire for it.
+  scheduleSteal();
+
+  if (typeof document !== "undefined") {
+    // And this one is for coming BACK to a tab, which is also the moment the
+    // user says which window they actually want syncing.
+    const onVisibility = () => {
+      if (!leader && visible()) scheduleSteal();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    removeVisibility = () =>
+      document.removeEventListener("visibilitychange", onVisibility);
+  }
 }
 
 // Test seam, mirroring `__resetSyncForTests`. The module holds process-wide
@@ -220,6 +314,12 @@ export function claimLeadership(onElected: () => void): void {
 export function __resetTabsForTests(): void {
   if (rehydrateTimer !== null) clearTimeout(rehydrateTimer);
   rehydrateTimer = null;
+  if (stealTimer !== null) clearTimeout(stealTimer);
+  stealTimer = null;
+  pendingRequest = null;
+  removeVisibility?.();
+  removeVisibility = null;
+  elected = null;
   unsubscribeWrite?.();
   unsubscribeWrite = null;
   channel?.close();

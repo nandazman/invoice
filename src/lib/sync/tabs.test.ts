@@ -66,20 +66,63 @@ class FakeChannel {
 // promise that never settles, so the lock is held until the document goes away.
 // `closeLeader` stands in for that.
 const queues = new Map<string, (() => void)[]>();
-const holders = new Map<string, boolean>();
+// The holder's own reject function, so a steal can reject exactly the request
+// that is currently holding the lock — which is how the real API tells the
+// previous holder it has been stood down.
+const holders = new Map<string, ((err: unknown) => void) | null>();
+
+type LockCallback = () => Promise<never>;
 
 function fakeLocks() {
   return {
-    request(name: string, cb: () => Promise<never>): Promise<void> {
-      if (!holders.get(name)) {
-        holders.set(name, true);
-        void cb();
-        return new Promise<void>(() => {});
+    request(
+      name: string,
+      options: { steal?: boolean; signal?: AbortSignal } | LockCallback,
+      callback?: LockCallback,
+    ): Promise<void> {
+      // Both signatures, because the real API has both and only one of them is
+      // the one under test.
+      const opts = typeof options === "function" ? {} : options;
+      const cb = typeof options === "function" ? options : callback!;
+
+      const grant = () =>
+        new Promise<void>((_resolve, reject) => {
+          holders.set(name, reject);
+          void cb();
+        });
+
+      if (opts.steal) {
+        const held = holders.get(name);
+        holders.set(name, null);
+        if (held) {
+          const err = new Error("lock stolen");
+          err.name = "AbortError";
+          held(err);
+        }
+        return grant();
       }
-      return new Promise<void>((_resolve) => {
+
+      if (!holders.get(name)) return grant();
+
+      return new Promise<void>((_resolve, reject) => {
         const waiters = queues.get(name) ?? [];
-        waiters.push(() => void cb());
+        const waiter = () => {
+          holders.set(name, reject);
+          void cb();
+        };
+        waiters.push(waiter);
         queues.set(name, waiters);
+        // A cancelled request leaves the queue, which is the whole point of
+        // passing a signal: a tab that has taken the lock some other way must
+        // not still be standing in line for it.
+        opts.signal?.addEventListener("abort", () => {
+          const rest = queues.get(name) ?? [];
+          const at = rest.indexOf(waiter);
+          if (at >= 0) rest.splice(at, 1);
+          const err = new Error("request aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
       });
     },
   };
@@ -88,18 +131,18 @@ function fakeLocks() {
 // The leader tab closing: the browser releases its lock and grants it to the
 // next waiter.
 function closeLeader(name = "invoice.sync.leader.v1"): void {
+  holders.set(name, null);
   const next = queues.get(name)?.shift();
-  holders.set(name, false);
-  if (next) {
-    holders.set(name, true);
-    next();
-  }
+  if (next) next();
 }
 
 // ---------- environment ----------
 
 function installEnv(withLocks = true): void {
-  Object.defineProperty(globalThis, "window", { value: {}, configurable: true });
+  Object.defineProperty(globalThis, "window", {
+    value: {},
+    configurable: true,
+  });
   Object.defineProperty(globalThis, "BroadcastChannel", {
     value: FakeChannel,
     configurable: true,
@@ -111,9 +154,34 @@ function installEnv(withLocks = true): void {
 }
 
 function clearEnv(): void {
-  for (const key of ["window", "BroadcastChannel", "navigator"]) {
+  for (const key of ["window", "BroadcastChannel", "navigator", "document"]) {
     Reflect.deleteProperty(globalThis, key);
   }
+}
+
+// Installed only by the tests that are ABOUT visibility. tabs.ts reads a
+// missing `document` as "cannot tell", and never steals in that case, so the
+// tests above keep the pre-steal behaviour they were written for.
+const visibilityListeners = new Set<() => void>();
+
+function installDocument(state: "visible" | "hidden"): void {
+  Object.defineProperty(globalThis, "document", {
+    value: {
+      visibilityState: state,
+      addEventListener: (_type: string, fn: () => void) =>
+        visibilityListeners.add(fn),
+      removeEventListener: (_type: string, fn: () => void) =>
+        visibilityListeners.delete(fn),
+    },
+    configurable: true,
+  });
+}
+
+function becomeVisible(): void {
+  (
+    globalThis as unknown as { document: { visibilityState: string } }
+  ).document.visibilityState = "visible";
+  for (const fn of visibilityListeners) fn();
 }
 
 // A fresh module instance stands in for a fresh TAB: tabs.ts holds its state at
@@ -144,6 +212,7 @@ beforeEach(() => {
   holders.clear();
   h.writeHandlers.clear();
   h.rehydrate.mockClear();
+  visibilityListeners.clear();
 });
 
 afterEach(() => {
@@ -287,6 +356,88 @@ describe("leader election", () => {
     // Order matters: the sync client's handler schedules a push off the state
     // this re-read produces.
     expect(seen).toEqual(["rehydrate", "handler"]);
+  });
+});
+
+describe("leadership follows the visible tab", () => {
+  // The bug these pin: a Web Lock has no expiry, so an installed PWA window or
+  // a forgotten background tab holds leadership for as long as it exists — and
+  // a hidden document has its timers frozen, so the push it schedules on
+  // hearing another tab's write may not run for hours. Every other tab is
+  // meanwhile declining to push because somebody else is the leader. Nothing
+  // errors; the origin just stops syncing.
+
+  it("takes the lock from a background window it cannot outwait", async () => {
+    const background = await openTab();
+    background.claimLeadership(vi.fn());
+
+    installDocument("visible");
+    const front = await openTab();
+    const electedFront = vi.fn();
+    front.claimLeadership(electedFront);
+
+    // The plain request is still queued at this point: the holder is alive and
+    // is never going to let go on its own.
+    expect(front.isLeader()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(front.isLeader()).toBe(true);
+    expect(electedFront).toHaveBeenCalledTimes(1);
+    // And exactly one syncer, still: the previous holder is told.
+    expect(background.isLeader()).toBe(false);
+  });
+
+  it("does not steal while this tab is hidden", async () => {
+    const other = await openTab();
+    other.claimLeadership(vi.fn());
+
+    installDocument("hidden");
+    const hidden = await openTab();
+    hidden.claimLeadership(vi.fn());
+
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    // Stealing is a privilege of the tab in front of the user. Two hidden tabs
+    // taking turns would be a fight nobody is watching.
+    expect(hidden.isLeader()).toBe(false);
+    expect(other.isLeader()).toBe(true);
+  });
+
+  it("steals when the user comes back to a tab that was hidden at boot", async () => {
+    const other = await openTab();
+    other.claimLeadership(vi.fn());
+
+    installDocument("hidden");
+    const tab = await openTab();
+    tab.claimLeadership(vi.fn());
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(tab.isLeader()).toBe(false);
+
+    becomeVisible();
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(tab.isLeader()).toBe(true);
+  });
+
+  it("gives the lock back to the tab it was taken from when the thief closes", async () => {
+    const first = await openTab();
+    const electedFirst = vi.fn();
+    first.claimLeadership(electedFirst);
+
+    installDocument("visible");
+    const thief = await openTab();
+    thief.claimLeadership(vi.fn());
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(first.isLeader()).toBe(false);
+
+    // Standing down is not the same as giving up: the tab re-queues, so closing
+    // the window that took over must not leave the origin with no syncer.
+    closeLeader();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(first.isLeader()).toBe(true);
+    expect(electedFirst).toHaveBeenCalledTimes(2);
   });
 });
 
