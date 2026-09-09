@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { PurchaseItem } from "../lib/types";
 import {
@@ -23,11 +23,14 @@ import {
 import { ByCells, ByHeaders } from "../components/Attribution";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
-import { DangerButton } from "../components/Button";
+import { DangerGhostButton } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { FilterBar } from "../components/FilterBar";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { LinkProductDialog } from "../components/LinkProductDialog";
+import { MobileList, MobileRow } from "../components/MobileList";
+import { thClass, tdClass } from "../components/DataTable";
+import { TrashIcon } from "../components/icons";
 
 interface DateGroup {
   tanggal: string;
@@ -35,9 +38,6 @@ interface DateGroup {
   total: number;
 }
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 // Columns shown left of the "Total" column, in display order.
 const COLS_BEFORE_TOTAL = [
@@ -117,12 +117,12 @@ export function BeliStockPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Beli Stock</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Catat pembelian stok; setiap baris menambah stok otomatis.
       </p>
 
       {products.length === 0 ? (
-        <Panel className="text-center text-slate-400 py-8">
+        <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
       ) : (
@@ -138,19 +138,91 @@ export function BeliStockPage() {
           <span className="text-lg font-bold">
             Total: {formatRupiah(grandTotal)}
           </span>
-          <span className="text-slate-400">· {filtered.length} item</span>
+          <span className="text-faint">· {filtered.length} item</span>
           <span className="flex-1" />
           <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
         </div>
 
         {groups.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             {hasFilter
               ? "Tidak ada item cocok dengan filter."
               : "Belum ada pembelian."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* The phone layout. Nine columns do not fit on 390px, so below
+                `md` the row collapses to what it IS on the left and what it is
+                WORTH on the right: satuan, the Dibuat stamp and the delete
+                action restack under the product; the arithmetic behind the
+                money restacks under the total. Column toggles are a desktop
+                affordance and are deliberately not applied here — the phone
+                shape is fixed, the same way Harga's is. */}
+            <div className="md:hidden">
+              <MobileList left="Produk" right="Total">
+                {groups.map((g) => (
+                  <Fragment key={g.tanggal}>
+                    <tr className="bg-surface-hover font-bold">
+                      <td className={`${tdClass} font-bold`}>
+                        {formatTanggalID(g.tanggal)}
+                      </td>
+                      <td
+                        className={`${tdClass} text-right font-bold tabular-nums`}
+                      >
+                        {formatRupiah(g.total)}
+                      </td>
+                    </tr>
+                    {g.items.map((it) => (
+                      <MobileRow
+                        key={it.id}
+                        title={
+                          it.productId ? (
+                            <Link
+                              to="/produk/$id"
+                              params={{ id: it.productId }}
+                              className="text-brand hover:underline font-medium"
+                            >
+                              {it.namaProduk}
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
+                              title="Belum tertaut ke produk — klik untuk menautkan"
+                              onClick={() => setLinking(it)}
+                            >
+                              ⚠ {it.namaProduk}
+                            </button>
+                          )
+                        }
+                        meta={
+                          <>
+                            <span>{it.satuan}</span>
+                            <span>{formatDateTimeID(it.createdAt)}</span>
+                            {/* The trailing action column has nowhere else to
+                                go on a phone, so it rides along here. */}
+                            <DangerGhostButton
+                              size="sm"
+                              onClick={() => removeItem(it.id)}
+                              title={`Hapus "${it.namaProduk}"`}
+                              aria-label={`Hapus "${it.namaProduk}"`}
+                            >
+                              <TrashIcon />
+                            </DangerGhostButton>
+                          </>
+                        }
+                        value={formatRupiah(it.totalHarga)}
+                        note={`${formatAngka(it.kuantitas)} × ${formatRupiah(
+                          it.hargaSatuan,
+                        )}`}
+                      />
+                    ))}
+                  </Fragment>
+                ))}
+              </MobileList>
+            </div>
+
+            <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -197,7 +269,8 @@ export function BeliStockPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Panel>
 
@@ -238,7 +311,7 @@ function GroupRows({
 
   return (
     <>
-      <tr className="bg-slate-100 font-bold">
+      <tr className="bg-surface-hover font-bold">
         <td className={`${tdClass} font-bold`} colSpan={Math.max(1, beforeCount)}>
           {formatTanggalID(group.tanggal)}
         </td>
@@ -250,21 +323,21 @@ function GroupRows({
         <td className={tdClass} colSpan={afterCount}></td>
       </tr>
       {group.items.map((it) => (
-        <tr key={it.id} className="hover:bg-slate-50">
+        <tr key={it.id} className="hover:bg-surface-sunken">
           {visible.namaProduk !== false && (
             <td className={tdClass}>
               {it.productId ? (
                 <Link
                   to="/produk/$id"
                   params={{ id: it.productId }}
-                  className="text-blue-600 hover:underline font-medium"
+                  className="text-brand hover:underline font-medium"
                 >
                   {it.namaProduk}
                 </Link>
               ) : (
                 <button
                   type="button"
-                  className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100"
+                  className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
                   title="Belum tertaut ke produk — klik untuk menautkan"
                   onClick={() => onLink(it)}
                 >
@@ -292,12 +365,12 @@ function GroupRows({
             </td>
           )}
           {visible.createdAt !== false && (
-            <td className={`${tdClass} text-xs text-slate-400 whitespace-nowrap`}>
+            <td className={`${tdClass} text-xs text-faint whitespace-nowrap`}>
               {formatDateTimeID(it.createdAt)}
             </td>
           )}
           {visible.updatedAt !== false && (
-            <td className={`${tdClass} text-xs text-slate-400 whitespace-nowrap`}>
+            <td className={`${tdClass} text-xs text-faint whitespace-nowrap`}>
               {formatDateTimeID(it.updatedAt)}
             </td>
           )}
@@ -310,13 +383,14 @@ function GroupRows({
             className={tdClass}
           />
           <td className={`${tdClass} text-right`}>
-            <DangerButton
+            <DangerGhostButton
               size="sm"
               onClick={() => onRemove(it.id)}
-              title="Hapus item"
+              title={`Hapus "${it.namaProduk}"`}
+              aria-label={`Hapus "${it.namaProduk}"`}
             >
-              ✕
-            </DangerButton>
+              <TrashIcon />
+            </DangerGhostButton>
           </td>
         </tr>
       ))}

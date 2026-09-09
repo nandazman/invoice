@@ -15,10 +15,9 @@ import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Field } from "../components/Field";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
+import { thClass, tdClass } from "../components/DataTable";
+import { MobileList, MobileRow } from "../components/MobileList";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 export function InvoicePage() {
   const orders = useOrders();
@@ -101,7 +100,7 @@ export function InvoicePage() {
       <div>
         <h1 className="text-2xl font-bold mb-4">Buat Invoice</h1>
         <Panel>
-          <p className="text-slate-500">
+          <p className="text-faint">
             Belum ada template. Buat dulu di halaman <b>Desain Template</b>.
           </p>
         </Panel>
@@ -139,12 +138,15 @@ export function InvoicePage() {
         </PrimaryButton>
       </div>
 
-      <div className="flex gap-4 items-start no-print">
-        <div className="w-80 shrink-0 space-y-4">
+      {/* Side by side from `md` up. On a phone the fixed 320px sidebar left the
+          preview a sliver at the right edge — present in the DOM, unreadable in
+          practice — so the two panes stack and each gets the full width. */}
+      <div className="flex flex-col md:flex-row gap-4 md:items-start no-print">
+        <div className="w-full md:w-80 shrink-0 space-y-4">
           <Panel>
-            <h3 className="font-bold text-sm text-slate-700 mb-2">Data Invoice</h3>
+            <h3 className="font-bold text-sm text-body mb-2">Data Invoice</h3>
             {fieldDefs.length === 0 ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-faint">
                 Template ini belum punya field. Tambahkan elemen <b>Field</b> di
                 halaman Desain Template.
               </p>
@@ -206,10 +208,10 @@ export function InvoicePage() {
           </FilterBar>
 
           <Panel>
-            <h3 className="font-bold text-sm text-slate-700 mb-2">Pilih Item Pesanan</h3>
+            <h3 className="font-bold text-sm text-body mb-2">Pilih Item Pesanan</h3>
             <div className="flex gap-2">
               <Button size="sm" onClick={appendFiltered} className="flex-1">
-                Tambah
+                Tambah (sesuai filter)
               </Button>
               <Button size="sm" onClick={replaceFiltered} className="flex-1">
                 Ganti semua
@@ -219,8 +221,8 @@ export function InvoicePage() {
 
           <Panel>
             <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-slate-700">{formatRupiah(total)}</span>
-              <span className="text-xs text-slate-400">{staged.length} item</span>
+              <span className="font-bold text-body">{formatRupiah(total)}</span>
+              <span className="text-xs text-faint">{staged.length} item</span>
             </div>
             {staged.length > 0 && (
               <div className="mb-2">
@@ -234,9 +236,47 @@ export function InvoicePage() {
               </div>
             )}
             {staged.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-3">Belum ada item.</p>
+              <p className="text-xs text-faint text-center py-3">Belum ada item.</p>
             ) : (
-              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+              <>
+              <div className="md:hidden max-h-72 overflow-y-auto">
+                <MobileList
+                  left={
+                    <span className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="accent-brand"
+                        checked={selectedRows.size === staged.length}
+                        onChange={toggleAll}
+                        aria-label="Pilih semua item"
+                      />
+                      Produk
+                    </span>
+                  }
+                  right="Total"
+                >
+                  {stagedSorted.map((it) => (
+                    <MobileRow
+                      key={it.id}
+                      title={
+                        <span className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="accent-brand shrink-0"
+                            checked={selectedRows.has(it.id)}
+                            onChange={() => toggleRow(it.id)}
+                            aria-label={`Pilih ${it.namaProduk}`}
+                          />
+                          {it.namaProduk}
+                        </span>
+                      }
+                      value={formatRupiah(it.totalHarga)}
+                      note={`Qty ${formatAngka(it.kuantitas)}`}
+                    />
+                  ))}
+                </MobileList>
+              </div>
+              <div className="overflow-x-auto max-h-72 overflow-y-auto hidden md:block">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
@@ -245,6 +285,7 @@ export function InvoicePage() {
                           type="checkbox"
                           checked={selectedRows.size === staged.length}
                           onChange={toggleAll}
+                          aria-label="Pilih semua item"
                         />
                       </th>
                       <th className={thClass}>Produk</th>
@@ -254,12 +295,13 @@ export function InvoicePage() {
                   </thead>
                   <tbody>
                     {stagedSorted.map((it) => (
-                      <tr key={it.id} className="hover:bg-slate-50">
+                      <tr key={it.id} className="hover:bg-surface-sunken">
                         <td className={tdClass}>
                           <input
                             type="checkbox"
                             checked={selectedRows.has(it.id)}
                             onChange={() => toggleRow(it.id)}
+                            aria-label={`Pilih ${it.namaProduk}`}
                           />
                         </td>
                         <td className={tdClass}>{it.namaProduk}</td>
@@ -274,11 +316,12 @@ export function InvoicePage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </Panel>
         </div>
 
-        <div className="flex-1 min-w-0 bg-slate-100 rounded-xl p-4">
+        <div className="flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
           <Preview template={template} data={data} />
         </div>
       </div>

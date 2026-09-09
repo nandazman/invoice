@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import type { Product, PurchaseItem } from "../lib/types";
 import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
-import { Button, PrimaryButton, GhostButton } from "./Button";
+import { Button, PrimaryButton, DangerGhostButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Panel } from "./Panel";
 import { Field } from "./Field";
+import { TrashIcon } from "./icons";
 
 interface UnitOption {
   label: string; // displayed unit name
@@ -137,7 +138,7 @@ export function AddPurchaseForm({ products, onAdd }: Props) {
 
   return (
     <Panel>
-      <strong className="text-slate-700">Tambah Pembelian</strong>
+      <strong className="text-body">Tambah Pembelian</strong>
 
       <div className="flex flex-col gap-2 mt-3">
         {rows.map((r) => {
@@ -151,8 +152,8 @@ export function AddPurchaseForm({ products, onAdd }: Props) {
           return (
             <div
               key={r.uid}
-              className={`rounded-lg border border-slate-100 bg-slate-50/40 ${
-                invalid ? "ring-1 ring-red-400" : ""
+              className={`rounded-lg border border-line-soft bg-surface-sunken/40 ${
+                invalid ? "ring-1 ring-danger-focus" : ""
               }`}
             >
               <div className="flex flex-wrap gap-3 items-end p-2">
@@ -232,13 +233,14 @@ export function AddPurchaseForm({ products, onAdd }: Props) {
                     tabIndex={-1}
                   />
                 </Field>
-                <GhostButton
+                <DangerGhostButton
                   onClick={() => removeRow(r.uid)}
                   title="Hapus baris"
+                  aria-label="Hapus baris"
                   className="shrink-0 mb-0.5"
                 >
-                  ✕
-                </GhostButton>
+                  <TrashIcon />
+                </DangerGhostButton>
               </div>
             </div>
           );

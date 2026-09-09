@@ -9,16 +9,15 @@ import {
   formatDateTimeID,
   formatRelatifID,
 } from "../lib/format";
-import { PrimaryButton, DangerButton } from "../components/Button";
+import { PrimaryButton, DangerGhostButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { Input } from "../components/Input";
 import { Stat } from "../components/Stat";
+import { thClass, tdClass } from "../components/DataTable";
+import { TrashIcon } from "../components/icons";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 // Two roles, and being on the list is itself the grant — see
 // docs/2026-08-15/permissions-plan.md decision 3. `none` is not a role the
@@ -47,9 +46,9 @@ const ROLE_LABEL: Record<Role, string> = {
 // a problem, so it is the only warm one. Palette is the same slate/blue/amber
 // already used across the app.
 const ROLE_BADGE: Record<Role, string> = {
-  admin: "bg-blue-50 text-blue-700 border-blue-200",
-  write: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  none: "bg-amber-50 text-amber-700 border-amber-200",
+  admin: "bg-brand-soft text-brand-text border-brand-line",
+  write: "bg-ok-soft text-ok-text border-ok-line",
+  none: "bg-warn-soft text-warn-text border-warn-line",
 };
 
 // What a role actually lets someone do, in consequences rather than in nouns.
@@ -254,7 +253,7 @@ export function AdminPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Sinkronisasi</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Siapa Anda, apa yang sudah tersimpan di cloud, dan apa yang masih
         tertinggal di perangkat ini.
       </p>
@@ -264,7 +263,7 @@ export function AdminPage() {
       ) : (
         <Panel>
           <h2 className="text-lg font-bold mb-1">Salinan tanpa cloud</h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-faint">
             Salinan aplikasi ini tidak terhubung ke server, jadi tidak ada
             sinkronisasi. Semua data tersimpan di browser perangkat ini saja —
             aplikasinya tetap berjalan penuh. Gunakan tombol “Backup semua” di
@@ -367,7 +366,7 @@ function AdminSections({ status }: { status: SyncStatus }) {
       {owner === false && (
         <Panel>
           <h2 className="text-lg font-bold mb-1">Pengaturan pemilik</h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-faint">
             {adminError ??
               "Anda tidak berwenang membuka pengaturan peran dan aktivitas. Bagian itu hanya untuk pemilik aplikasi."}
           </p>
@@ -395,15 +394,15 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
       <h2 className="text-lg font-bold mb-3">Identitas</h2>
       <div className="flex gap-6 flex-wrap items-start">
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">
+          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
             Email
           </div>
           <div className="text-lg font-bold">
-            {email || <span className="text-slate-400">—</span>}
+            {email || <span className="text-faint">—</span>}
           </div>
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">
+          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
             Peran
           </div>
           <span
@@ -421,12 +420,12 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
           screen catches it. This is the last-resort branch, not the usual
           path. */}
       {status.roleKnown && role === "none" && (
-        <p className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <p className="mt-3 text-sm text-warn-text bg-warn-soft border border-warn-line rounded-lg px-3 py-2">
           Email Anda belum diberi peran, jadi data di perangkat ini tidak
           tersambung ke cloud. Hubungi pemilik aplikasi untuk minta akses.
         </p>
       )}
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-faint">
         Identitas diambil dari Cloudflare Access. Tidak ada kata sandi terpisah
         di aplikasi ini — kalau emailnya salah, keluar dari Access lalu masuk
         lagi.
@@ -477,7 +476,7 @@ function asGrant(raw: string): Grant {
 // click and still be there at the moment of confirming.
 function AdminAccessWarning() {
   return (
-    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+    <p className="text-sm text-warn-text bg-warn-soft border border-warn-line rounded-lg px-3 py-2">
       <strong>Centang Admin saja belum cukup.</strong> Halaman ini dijaga
       Cloudflare Access dengan daftar terpisah yang hanya berisi pemilik, jadi
       orang yang baru dicentang di sini tetap ditolak Access sebelum sampai ke
@@ -608,7 +607,7 @@ function RolesPanel() {
   return (
     <Panel>
       <h2 className="text-lg font-bold mb-1">Peran</h2>
-      <p className="text-sm text-slate-500 mb-3">
+      <p className="text-sm text-faint mb-3">
         Siapa saja yang boleh memakai aplikasi ini. Ada di daftar berarti bisa
         memakainya sepenuhnya — melihat, mencatat, dan mengubah. Centang Admin
         kalau orangnya juga boleh membuka halaman ini, dan matikan “Kirim ke
@@ -627,7 +626,7 @@ function RolesPanel() {
         <label className="flex items-center gap-2 text-sm h-9 cursor-pointer select-none">
           <input
             type="checkbox"
-            className="accent-blue-600"
+            className="accent-brand"
             checked={admin}
             onChange={(e) => setAdmin(e.target.checked)}
           />
@@ -636,7 +635,7 @@ function RolesPanel() {
         <label className="flex items-center gap-2 text-sm h-9 cursor-pointer select-none">
           <input
             type="checkbox"
-            className="accent-blue-600"
+            className="accent-brand"
             checked={canPush}
             onChange={(e) => setCanPush(e.target.checked)}
           />
@@ -654,7 +653,7 @@ function RolesPanel() {
       <AdminAccessWarning />
 
       {rows === null && !error ? (
-        <p className="text-sm text-slate-400 py-4 text-center">Memuat…</p>
+        <p className="text-sm text-faint py-4 text-center">Memuat…</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
@@ -671,7 +670,7 @@ function RolesPanel() {
             </thead>
             <tbody>
               {(rows ?? []).map((r) => (
-                <tr key={r.email} className="hover:bg-slate-50">
+                <tr key={r.email} className="hover:bg-surface-sunken">
                   <td className={`${tdClass} font-medium`}>{r.email}</td>
                   <td className={tdClass}>
                     <span
@@ -686,7 +685,7 @@ function RolesPanel() {
                         list. */}
                     <input
                       type="checkbox"
-                      className="accent-blue-600"
+                      className="accent-brand"
                       aria-label={`Jadikan ${r.email} admin`}
                       checked={asRole(r.role) === "admin"}
                       disabled={busy}
@@ -701,34 +700,36 @@ function RolesPanel() {
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        className="accent-blue-600"
+                        className="accent-brand"
                         aria-label={`Kirim perubahan ${r.email} ke cloud`}
                         checked={r.canPush}
                         disabled={busy}
                         onChange={(e) => askPush(r, e.target.checked)}
                       />
                       {!r.canPush && (
-                        <span className="inline-block px-2 py-0.5 text-xs font-semibold rounded-md border bg-slate-50 text-slate-600 border-slate-200">
+                        <span className="inline-block px-2 py-0.5 text-xs font-semibold rounded-md border bg-surface-sunken text-muted border-line">
                           Lokal saja
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className={`${tdClass} text-slate-500`}>
+                  <td className={`${tdClass} text-faint`}>
                     {formatDateTimeID(r.createdAt)}
                   </td>
-                  <td className={`${tdClass} text-slate-500`}>
-                    {r.createdBy || <span className="text-slate-400">—</span>}
+                  <td className={`${tdClass} text-faint`}>
+                    {r.createdBy || <span className="text-faint">—</span>}
                   </td>
                   <td className={tdClass}>
                     <div className="flex gap-1 justify-end">
-                      <DangerButton
+                      <DangerGhostButton
                         size="sm"
+                        title={`Cabut akses ${r.email}`}
+                        aria-label={`Cabut akses ${r.email}`}
                         disabled={busy}
                         onClick={() => setPending({ kind: "remove", row: r })}
                       >
-                        Cabut
-                      </DangerButton>
+                        <TrashIcon />
+                      </DangerGhostButton>
                     </div>
                   </td>
                 </tr>
@@ -739,7 +740,7 @@ function RolesPanel() {
       )}
 
       {rows !== null && rows.length === 0 && (
-        <div className="text-center text-slate-400 py-8">
+        <div className="text-center text-faint py-8">
           Belum ada peran yang terdaftar.
         </div>
       )}
@@ -825,7 +826,7 @@ function RolesPanel() {
           </p>
           <p>{PUSH_EFFECT[pending.next ? "on" : "off"]}</p>
           {!pending.next && (
-            <p className="font-semibold text-red-700">
+            <p className="font-semibold text-danger-text">
               Risikonya ada di orangnya: tanpa salinan di cloud, catatan yang
               hanya ada di perangkatnya akan hilang kalau riwayat browser
               dibersihkan atau perangkatnya diganti. Ingatkan dia untuk memakai
@@ -848,7 +849,7 @@ function RolesPanel() {
           onConfirm={confirmed}
           onClose={() => setPending(null)}
         >
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-danger-text">
             <strong>{pending.row.email}</strong> tidak akan bisa lagi mengambil
             data dari cloud maupun mengirim perubahan ke sana. Permintaan
             berikutnya dari dia langsung ditolak server.
@@ -867,7 +868,7 @@ function RolesPanel() {
       )}
 
       {error && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+        <p className="mt-3 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -899,7 +900,7 @@ function ActivityPanel() {
     return (
       <Panel>
         <h2 className="text-lg font-bold mb-1">Aktivitas</h2>
-        <p className="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+        <p className="text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
           {error}
         </p>
       </Panel>
@@ -913,14 +914,14 @@ function ActivityPanel() {
   return (
     <Panel>
       <h2 className="text-lg font-bold mb-1">Aktivitas</h2>
-      <p className="text-sm text-slate-500 mb-3">
+      <p className="text-sm text-faint mb-3">
         Isi cloud dan perubahan terakhir yang masuk. Kolom “oleh” diisi server
         dari email Cloudflare Access pengirimnya, bukan dari perangkat, jadi
         tidak bisa dipalsukan.
       </p>
 
       {stats === null ? (
-        <p className="text-sm text-slate-400 py-4 text-center">Memuat…</p>
+        <p className="text-sm text-faint py-4 text-center">Memuat…</p>
       ) : (
         <>
           {/* Ukuran database lebih dulu: templat menyimpan logo base64, jadi
@@ -949,13 +950,13 @@ function ActivityPanel() {
               </thead>
               <tbody>
                 {tables.map((t) => (
-                  <tr key={t.table} className="hover:bg-slate-50">
+                  <tr key={t.table} className="hover:bg-surface-sunken">
                     <td className={tdClass}>{tableLabel(t.table)}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatAngka(t.live)}
                     </td>
                     <td
-                      className={`${tdClass} text-right tabular-nums text-slate-500`}
+                      className={`${tdClass} text-right tabular-nums text-faint`}
                     >
                       {formatAngka(t.deleted)}
                     </td>
@@ -963,12 +964,12 @@ function ActivityPanel() {
                         punya kolom waktu sama sekali — server mengirim null,
                         dan itu bukan tanda tabelnya diam. */}
                     <td
-                      className={`${tdClass} text-right text-slate-500 whitespace-nowrap`}
+                      className={`${tdClass} text-right text-faint whitespace-nowrap`}
                     >
                       {t.lastWriteAt ? (
                         formatRelatifID(t.lastWriteAt)
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-faint">—</span>
                       )}
                     </td>
                   </tr>
@@ -978,7 +979,7 @@ function ActivityPanel() {
           </div>
 
           <h3 className="font-semibold mb-1">Pemakaian akses</h3>
-          <p className="text-sm text-slate-500 mb-2">
+          <p className="text-sm text-faint mb-2">
             Kapan terakhir setiap orang di daftar peran membuka aplikasi ini.
             Dicatat sekali tiap sesi, waktu aplikasinya dibuka — bukan tiap kali
             data terkirim.
@@ -994,19 +995,19 @@ function ActivityPanel() {
               </thead>
               <tbody>
                 {people.map((p) => (
-                  <tr key={p.email} className="hover:bg-slate-50">
+                  <tr key={p.email} className="hover:bg-surface-sunken">
                     <td className={`${tdClass} font-medium`}>{p.email}</td>
                     <td className={tdClass}>{ROLE_LABEL[asRole(p.role)]}</td>
                     {/* NULL berarti aksesnya belum pernah dipakai sama sekali —
                         kolom kosong akan terbaca sebagai data yang hilang,
                         bukan sebagai jawaban. */}
                     <td
-                      className={`${tdClass} text-right text-slate-500 whitespace-nowrap`}
+                      className={`${tdClass} text-right text-faint whitespace-nowrap`}
                     >
                       {p.lastSeenAt ? (
                         formatRelatifID(p.lastSeenAt)
                       ) : (
-                        <span className="text-amber-700">Belum pernah dipakai</span>
+                        <span className="text-warn-text">Belum pernah dipakai</span>
                       )}
                     </td>
                   </tr>
@@ -1019,13 +1020,13 @@ function ActivityPanel() {
               number out loud so nobody reads a short list as "sync is quiet"
               when it is really just the cap. */}
           <h3 className="font-semibold mb-1">10 perubahan terakhir</h3>
-          <p className="text-sm text-slate-500 mb-2">
+          <p className="text-sm text-faint mb-2">
             Sekilas untuk memastikan sinkronisasi memang jalan — bukan riwayat
             lengkap. Hanya 10 baris terbaru yang ditampilkan; catatan
             selengkapnya ada di halaman Riwayat.
           </p>
           {recent.length === 0 ? (
-            <p className="text-sm text-slate-400 py-4 text-center">
+            <p className="text-sm text-faint py-4 text-center">
               Belum ada perubahan yang tercatat di cloud.
             </p>
           ) : (
@@ -1041,23 +1042,23 @@ function ActivityPanel() {
                 </thead>
                 <tbody>
                   {recent.map((r) => (
-                    <tr key={`${r.table}:${r.id}`} className="hover:bg-slate-50">
+                    <tr key={`${r.table}:${r.id}`} className="hover:bg-surface-sunken">
                       <td className={`${tdClass} whitespace-nowrap`}>
                         {formatDateTimeID(r.updatedAt)}
                       </td>
                       <td className={tdClass}>
                         {tableLabel(r.table)}
                         {r.deleted && (
-                          <span className="ml-2 text-xs font-semibold text-rose-600">
+                          <span className="ml-2 text-xs font-semibold text-negative">
                             dihapus
                           </span>
                         )}
                       </td>
-                      <td className={`${tdClass} text-slate-500 font-mono text-xs`}>
+                      <td className={`${tdClass} text-faint font-mono text-xs`}>
                         {r.id}
                       </td>
                       <td className={tdClass}>
-                        {r.updatedBy || <span className="text-slate-400">—</span>}
+                        {r.updatedBy || <span className="text-faint">—</span>}
                       </td>
                     </tr>
                   ))}

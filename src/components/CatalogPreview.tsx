@@ -78,7 +78,7 @@ export function CatalogPreview({
       {pages.map((page, i) => (
         <Sheet key={i} fit={fit} s={s} isLast={i === pages.length - 1}>
           <div
-            className="relative bg-white overflow-hidden"
+            className="relative bg-surface overflow-hidden"
             style={{ width: PAGE_W, height: PAGE_H, color: INK }}
           >
             <div
@@ -145,7 +145,7 @@ function Sheet({
     return <div className={isLast ? "" : "invoice-page-break"}>{children}</div>;
   return (
     <div
-      className="bg-white mx-auto shadow-sm ring-1 ring-slate-200 overflow-hidden"
+      className="bg-surface mx-auto shadow-sm ring-1 ring-line overflow-hidden"
       style={{
         width: PAGE_W * s,
         height: PAGE_H * s,

@@ -166,7 +166,7 @@ export function TemplatePage() {
       <div>
         <h1 className="text-2xl font-bold mb-4">Desain Template</h1>
         <Panel>
-          <p className="text-slate-500 mb-3">Belum ada template.</p>
+          <p className="text-faint mb-3">Belum ada template.</p>
           <PrimaryButton onClick={() => setActiveId(createTemplate().id)}>
             Buat Template
           </PrimaryButton>
@@ -315,7 +315,7 @@ export function TemplatePage() {
         <DangerButton onClick={() => setConfirmingDelete(true)}>
           Hapus
         </DangerButton>
-        <span className="text-xs text-slate-400 ml-auto">Tersimpan otomatis</span>
+        <span className="text-xs text-faint ml-auto">Tersimpan otomatis</span>
       </div>
 
       <div className="flex gap-2 flex-wrap mb-3 items-center">
@@ -335,7 +335,7 @@ export function TemplatePage() {
         >
           ↷ Ulangi
         </Button>
-        <span className="w-px h-5 bg-slate-200 mx-1" />
+        <span className="w-px h-5 bg-surface-active mx-1" />
         <Button size="sm" onClick={() => addElement("text")}>+ Teks</Button>
         <Button size="sm" onClick={() => addElement("image")}>+ Gambar</Button>
         <Button
@@ -353,7 +353,7 @@ export function TemplatePage() {
       </div>
 
       <div className="flex gap-4 items-start">
-        <div className="flex-1 min-w-0 bg-slate-100 rounded-xl p-4">
+        <div className="flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
           <Canvas
             template={draft}
             selectedId={selectedId}
@@ -361,7 +361,7 @@ export function TemplatePage() {
             onChange={(id, box) => patchElement(id, box)}
           />
         </div>
-        <div className="w-72 shrink-0 bg-white border border-slate-200 rounded-xl p-4 sticky top-4">
+        <div className="w-72 shrink-0 bg-surface border border-line rounded-xl p-4 sticky top-4">
           <Inspector
             template={draft}
             selected={selected}

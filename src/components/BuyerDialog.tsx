@@ -47,7 +47,7 @@ export function BuyerDialog({ buyer, onSave, onClose }: Props) {
   return (
     <Modal
       onClose={onClose}
-      className="bg-white rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-auto"
+      className="bg-surface rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-auto"
     >
       <h2 className="text-xl font-bold mb-4">
         {buyer ? "Ubah Pembeli" : "Tambah Pembeli"}

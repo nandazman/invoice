@@ -94,7 +94,7 @@ export function ElementContent({
     const src = template.business.logo;
     if (!src) {
       return (
-        <div className="w-full h-full grid place-items-center text-xs text-slate-400 border border-dashed border-slate-300">
+        <div className="w-full h-full grid place-items-center text-xs text-faint border border-dashed border-line-strong">
           Logo
         </div>
       );
@@ -105,7 +105,7 @@ export function ElementContent({
   if (el.type === "image") {
     if (!el.src) {
       return (
-        <div className="w-full h-full grid place-items-center text-xs text-slate-400 border border-dashed border-slate-300">
+        <div className="w-full h-full grid place-items-center text-xs text-faint border border-dashed border-line-strong">
           Gambar
         </div>
       );

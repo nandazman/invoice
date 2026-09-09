@@ -20,10 +20,9 @@ import { BuyerDialog } from "../components/BuyerDialog";
 import { PrimaryButton } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { Stat } from "../components/Stat";
+import { thClass, tdClass } from "../components/DataTable";
+import { MobileList, MobileRow } from "../components/MobileList";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Belum bayar",
@@ -75,15 +74,15 @@ export function BuyerDetailPage() {
     return (
       <div>
         <Panel className="text-center py-12">
-          <p className="text-lg font-semibold text-slate-600 mb-1">
+          <p className="text-lg font-semibold text-muted mb-1">
             Pembeli tidak ditemukan
           </p>
-          <p className="text-slate-400 mb-4">
+          <p className="text-faint mb-4">
             Pembeli dengan id ini tidak ada atau sudah dihapus.
           </p>
           <Link
             to="/pembeli"
-            className="text-blue-600 hover:underline font-medium"
+            className="text-brand hover:underline font-medium"
           >
             ← Kembali ke Pembeli
           </Link>
@@ -99,7 +98,7 @@ export function BuyerDetailPage() {
         <div className="mb-2">
           <Link
             to="/pembeli"
-            className="text-blue-600 hover:underline font-medium text-sm"
+            className="text-brand hover:underline font-medium text-sm"
           >
             ← Kembali ke Pembeli
           </Link>
@@ -107,12 +106,12 @@ export function BuyerDetailPage() {
         <div className="flex items-start gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <h1 className="text-2xl font-bold">{buyer.nama}</h1>
-            <p className="text-slate-500 mt-1">
+            <p className="text-faint mt-1">
               {buyer.telepon || "—"} · {buyer.email || "—"}
             </p>
-            <p className="text-slate-500 mt-1">{buyer.alamat || "—"}</p>
+            <p className="text-faint mt-1">{buyer.alamat || "—"}</p>
             {buyer.catatan && (
-              <p className="text-sm text-slate-400 mt-1">{buyer.catatan}</p>
+              <p className="text-sm text-faint mt-1">{buyer.catatan}</p>
             )}
           </div>
           <PrimaryButton onClick={() => setEditing(true)}>Ubah</PrimaryButton>
@@ -131,7 +130,7 @@ export function BuyerDetailPage() {
           <Stat
             label="Belum lunas"
             value={formatRupiah(totals.belumLunas)}
-            className={totals.belumLunas > 0 ? "text-amber-600" : ""}
+            className={totals.belumLunas > 0 ? "text-warn" : ""}
           />
         </div>
       </Panel>
@@ -146,9 +145,58 @@ export function BuyerDetailPage() {
           )}
         </div>
         {buyerOrders.length === 0 ? (
-          <p className="text-sm text-slate-400">Belum ada pesanan.</p>
+          <p className="text-sm text-faint">Belum ada pesanan.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="md:hidden">
+            <MobileList left="Produk" right="Total">
+              {buyerOrders.map((o) => (
+                <MobileRow
+                  key={o.id}
+                  title={
+                    o.productId ? (
+                      <Link
+                        to="/produk/$id"
+                        params={{ id: o.productId }}
+                        className="text-brand hover:underline font-medium"
+                      >
+                        {o.namaProduk}
+                      </Link>
+                    ) : (
+                      o.namaProduk
+                    )
+                  }
+                  meta={
+                    <>
+                      <span>{formatTanggalID(o.tanggal)}</span>
+                      <span>{o.satuan}</span>
+                      <span
+                        className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
+                          o.status === "paid"
+                            ? "bg-ok-soft text-ok-text"
+                            : "bg-warn-soft text-warn-text"
+                        }`}
+                      >
+                        {STATUS_LABEL[o.status] ?? o.status}
+                      </span>
+                      {/* The desktop's date cell carries these under Tanggal;
+                          the phone layout keeps them rather than dropping a
+                          column, which is the whole point of restacking. */}
+                      <span>Dibuat {formatDateTimeID(o.createdAt)}</span>
+                      {o.updatedAt !== o.createdAt && (
+                        <span>Diubah {formatDateTimeID(o.updatedAt)}</span>
+                      )}
+                    </>
+                  }
+                  value={formatRupiah(o.totalHarga)}
+                  note={`${formatAngka(o.kuantitas)} × ${formatRupiah(
+                    o.hargaSatuan,
+                  )}`}
+                />
+              ))}
+            </MobileList>
+          </div>
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -164,14 +212,14 @@ export function BuyerDetailPage() {
               </thead>
               <tbody>
                 {buyerOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-slate-50">
+                  <tr key={o.id} className="hover:bg-surface-sunken">
                     <td className={tdClass}>
                       {formatTanggalID(o.tanggal)}
-                      <span className="block text-xs text-slate-400">
+                      <span className="block text-xs text-faint">
                         Dibuat {formatDateTimeID(o.createdAt)}
                       </span>
                       {o.updatedAt !== o.createdAt && (
-                        <span className="block text-xs text-slate-400">
+                        <span className="block text-xs text-faint">
                           Diubah {formatDateTimeID(o.updatedAt)}
                         </span>
                       )}
@@ -181,7 +229,7 @@ export function BuyerDetailPage() {
                         <Link
                           to="/produk/$id"
                           params={{ id: o.productId }}
-                          className="text-blue-600 hover:underline font-medium"
+                          className="text-brand hover:underline font-medium"
                         >
                           {o.namaProduk}
                         </Link>
@@ -203,8 +251,8 @@ export function BuyerDetailPage() {
                       <span
                         className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
                           o.status === "paid"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-amber-50 text-amber-700"
+                            ? "bg-ok-soft text-ok-text"
+                            : "bg-warn-soft text-warn-text"
                         }`}
                       >
                         {STATUS_LABEL[o.status] ?? o.status}
@@ -220,6 +268,7 @@ export function BuyerDetailPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Panel>
 
@@ -227,15 +276,15 @@ export function BuyerDetailPage() {
       <Panel>
         <h2 className="text-lg font-bold mb-3">Riwayat perubahan</h2>
         {buyerAudit.length === 0 ? (
-          <p className="text-sm text-slate-400">Belum ada riwayat.</p>
+          <p className="text-sm text-faint">Belum ada riwayat.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {buyerAudit.map((e) => (
               <li key={e.id} className="text-sm">
-                <span className="text-slate-400 text-xs mr-2 tabular-nums">
+                <span className="text-faint text-xs mr-2 tabular-nums">
                   {formatDateTimeID(e.timestamp)}
                 </span>
-                <span className="text-slate-700">{e.label}</span>
+                <span className="text-body">{e.label}</span>
               </li>
             ))}
           </ul>

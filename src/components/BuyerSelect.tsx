@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Buyer } from "../lib/types";
 
 const fieldCls =
-  "w-full px-2.5 py-2 text-sm border border-slate-200 rounded-lg bg-white text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500";
+  "w-full px-2.5 py-2 min-h-11 md:min-h-0 text-sm border border-line rounded-lg bg-surface text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge";
 
 // A deliberate copy of TypeSelect, not a shared `EntitySelect`. Generalising the
 // two would cost a `labelSingular` prop, an `itemKey` for `string` vs `Buyer`,
@@ -68,14 +68,14 @@ export function BuyerSelect({
         className={fieldCls}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className={selected ? "" : "text-slate-400"}>
+        <span className={selected ? "" : "text-faint"}>
           {selected ? selected.nama : "— pilih pembeli —"}
         </span>
-        <span className="text-slate-400">▾</span>
+        <span className="text-ghost">▾</span>
       </button>
 
       {open && (
-        <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg p-1">
+        <div className="absolute z-10 mt-1 w-full bg-surface border border-line rounded-lg shadow-lg p-1">
           <input
             autoFocus
             value={query}
@@ -90,7 +90,7 @@ export function BuyerSelect({
               }
             }}
             placeholder="Cari atau buat pembeli…"
-            className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-md mb-1 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-line rounded-md mb-1 focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge"
           />
           <div className="max-h-48 overflow-auto">
             {/* No "— tanpa pembeli —" row: pembeli is mandatory, so there is no
@@ -101,15 +101,15 @@ export function BuyerSelect({
                 type="button"
                 key={b.id}
                 onClick={() => pick(b.id)}
-                className={`w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-slate-100 ${
+                className={`w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-surface-hover ${
                   b.id === value
-                    ? "font-semibold text-blue-600"
-                    : "text-slate-700"
+                    ? "font-semibold text-brand"
+                    : "text-body"
                 }`}
               >
                 <span className="block">{b.nama}</span>
                 {b.telepon && (
-                  <span className="block text-xs text-slate-400">
+                  <span className="block text-xs text-faint">
                     {b.telepon}
                   </span>
                 )}
@@ -119,13 +119,13 @@ export function BuyerSelect({
               <button
                 type="button"
                 onClick={() => create(q)}
-                className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-blue-50 text-blue-600 font-semibold"
+                className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-brand-soft text-brand font-semibold"
               >
                 + Buat pembeli “{q}”
               </button>
             )}
             {filtered.length === 0 && !canCreate && (
-              <div className="px-2 py-1.5 text-sm text-slate-400">
+              <div className="px-2 py-1.5 text-sm text-faint">
                 Ketik untuk membuat pembeli baru.
               </div>
             )}

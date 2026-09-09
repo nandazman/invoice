@@ -11,15 +11,19 @@ import {
   bothBy,
 } from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
-import { Button, PrimaryButton, DangerButton } from "../components/Button";
+import {
+  PrimaryButton,
+  DangerGhostButton,
+  GhostButton,
+} from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
+import { thClass, tdClass } from "../components/DataTable";
+import { MobileList, MobileRow } from "../components/MobileList";
+import { TrashIcon, PencilIcon } from "../components/icons";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 export function BuyersPage() {
   const buyers = useBuyers();
@@ -82,7 +86,7 @@ export function BuyersPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Pembeli</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Daftar pembeli beserta jumlah dan nilai pesanan mereka.
       </p>
 
@@ -103,7 +107,63 @@ export function BuyersPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* The phone layout: the row collapses to who the buyer IS on the left
+            and what they are WORTH on the right. Telepon and email restack
+            under the name, the order count under the total. Ubah and Hapus
+            join the meta line — the desktop action cell has nowhere else to go
+            once the table is two columns wide, and the name stays the link to
+            the buyer's page exactly as it is on the wide table. */}
+        {shown.length > 0 && (
+          <div className="md:hidden">
+            <MobileList left="Nama" right="Total Nilai">
+              {shown.map((b) => {
+                const stats = statsByBuyer.get(b.id);
+                return (
+                  <MobileRow
+                    key={b.id}
+                    title={
+                      <Link
+                        to="/pembeli/$id"
+                        params={{ id: b.id }}
+                        className="flex items-center w-full min-h-11 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                      >
+                        {b.nama}
+                      </Link>
+                    }
+                    meta={
+                      <>
+                        <span>{b.telepon || "—"}</span>
+                        <span>{b.email || "—"}</span>
+                        <span className="flex gap-1 w-full">
+                          <GhostButton
+                            size="sm"
+                            title={`Ubah pembeli "${b.nama}"`}
+                            aria-label={`Ubah pembeli "${b.nama}"`}
+                            onClick={() => setEditing(b)}
+                          >
+                            <PencilIcon />
+                          </GhostButton>
+                          <DangerGhostButton
+                            size="sm"
+                            title={`Hapus pembeli "${b.nama}"`}
+                            aria-label={`Hapus pembeli "${b.nama}"`}
+                            onClick={() => setDeleting(b)}
+                          >
+                            <TrashIcon />
+                          </DangerGhostButton>
+                        </span>
+                      </>
+                    }
+                    value={formatRupiah(stats?.total ?? 0)}
+                    note={`${formatAngka(stats?.count ?? 0)} pesanan`}
+                  />
+                );
+              })}
+            </MobileList>
+          </div>
+        )}
+
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -120,21 +180,21 @@ export function BuyersPage() {
               {shown.map((b) => {
                 const stats = statsByBuyer.get(b.id);
                 return (
-                  <tr key={b.id} className="hover:bg-slate-50">
+                  <tr key={b.id} className="hover:bg-surface-sunken">
                     <td className={tdClass}>
                       <Link
                         to="/pembeli/$id"
                         params={{ id: b.id }}
-                        className="text-blue-600 hover:underline font-medium"
+                        className="text-brand hover:underline font-medium"
                       >
                         {b.nama}
                       </Link>
                     </td>
                     <td className={tdClass}>
-                      {b.telepon || <span className="text-slate-400">—</span>}
+                      {b.telepon || <span className="text-faint">—</span>}
                     </td>
                     <td className={tdClass}>
-                      {b.email || <span className="text-slate-400">—</span>}
+                      {b.email || <span className="text-faint">—</span>}
                     </td>
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatAngka(stats?.count ?? 0)}
@@ -149,12 +209,22 @@ export function BuyersPage() {
                     />
                     <td className={tdClass}>
                       <div className="flex gap-1 justify-end">
-                        <Button size="sm" onClick={() => setEditing(b)}>
-                          Ubah
-                        </Button>
-                        <DangerButton size="sm" onClick={() => setDeleting(b)}>
-                          Hapus
-                        </DangerButton>
+                        <GhostButton
+                          size="sm"
+                          title={`Ubah pembeli "${b.nama}"`}
+                          aria-label={`Ubah pembeli "${b.nama}"`}
+                          onClick={() => setEditing(b)}
+                        >
+                          <PencilIcon />
+                        </GhostButton>
+                        <DangerGhostButton
+                          size="sm"
+                          title={`Hapus pembeli "${b.nama}"`}
+                          aria-label={`Hapus pembeli "${b.nama}"`}
+                          onClick={() => setDeleting(b)}
+                        >
+                          <TrashIcon />
+                        </DangerGhostButton>
                       </div>
                     </td>
                   </tr>
@@ -164,11 +234,11 @@ export function BuyersPage() {
           </table>
         </div>
         {shown.length === 0 && (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             Tidak ada pembeli.
           </div>
         )}
-        <div className="text-slate-400 mt-2 text-xs">
+        <div className="text-faint mt-2 text-xs">
           {buyers.length} pembeli
         </div>
       </Panel>

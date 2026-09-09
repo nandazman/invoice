@@ -11,9 +11,56 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      /* Static boot skeleton, shown until the first React render replaces
+         #root's children. Pure CSS, no JS: it must render before the bundle
+         (and Tailwind's stylesheet, which the bundle loads) is available. */
+      #boot-skeleton {
+        background: #ffffff;
+      }
+      #boot-skeleton .boot-bar {
+        height: 56px;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        box-sizing: border-box;
+      }
+      #boot-skeleton .boot-rows {
+        padding: 16px;
+      }
+      #boot-skeleton .boot-row {
+        height: 56px;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        background: #e2e8f0;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        #boot-skeleton .boot-row {
+          animation: boot-pulse 1.4s ease-in-out infinite;
+        }
+      }
+      @keyframes boot-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-skeleton">
+        <div class="boot-bar"></div>
+        <div class="boot-rows">
+          <div class="boot-row"></div>
+          <div class="boot-row"></div>
+          <div class="boot-row"></div>
+          <div class="boot-row"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

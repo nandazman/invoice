@@ -9,9 +9,9 @@ import { ATTRIBUTION_COLUMNS } from "../lib/columns";
 // copy has no Worker to stamp it at all. So an em-dash — never "undefined",
 // which is what a bare {row.createdBy} would print.
 export function ByCell({ email }: { email?: string | null }) {
-  if (!email) return <span className="text-slate-400">—</span>;
+  if (!email) return <span className="text-faint">—</span>;
   return (
-    <span className="text-slate-500 text-xs break-all" title={email}>
+    <span className="text-faint text-xs break-all" title={email}>
       {email}
     </span>
   );
@@ -87,10 +87,10 @@ export function AttributionToggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer shrink-0">
+    <label className="flex items-center gap-2 text-sm text-muted cursor-pointer shrink-0">
       <input
         type="checkbox"
-        className="w-4 h-4 accent-blue-600 cursor-pointer"
+        className="w-4 h-4 accent-brand cursor-pointer"
         checked={show}
         onChange={(e) => onChange(e.target.checked)}
       />

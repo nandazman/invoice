@@ -11,6 +11,7 @@ import { Button, PrimaryButton, DangerButton } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
 import { Stat } from "./Stat";
+import { thClass, tdClass } from "./DataTable";
 
 // The sync affordance in the sidebar. It is a CHIP first and a button second:
 // a bare "Sinkronisasi" button says nothing about whether sync is actually
@@ -22,9 +23,6 @@ import { Stat } from "./Stat";
 // client.ts). Nothing here is the mechanism by which sync happens, and the copy
 // below is careful never to imply otherwise.
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 // Indonesian names for the wire table names in tables.ts. Kept out of that file
 // on purpose — it is compiled by the Worker too, and the Worker has no UI.
@@ -59,21 +57,21 @@ function chipOf(status: SyncStatus): Chip {
     return {
       icon: "⚠️",
       label: "gagal",
-      tone: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+      tone: "border-negative-line bg-negative-soft text-negative-text hover:bg-negative-soft-strong",
     };
   }
   if (!status.online) {
     return {
       icon: "☁️",
       label: "offline",
-      tone: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+      tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
   if (status.busy) {
     return {
       icon: "☁️",
       label: "menyinkronkan…",
-      tone: "border-slate-200 bg-white text-slate-500 hover:bg-slate-100",
+      tone: "border-line bg-surface text-faint hover:bg-surface-hover",
     };
   }
   // Before the backlog, because for this account there IS no backlog: the
@@ -87,20 +85,20 @@ function chipOf(status: SyncStatus): Chip {
           ? `${formatAngka(status.pendingTotal)} lokal`
           : "lokal saja",
       // Slate, not amber: this is a setting someone chose, not a fault.
-      tone: "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100",
+      tone: "border-line bg-surface-sunken text-muted hover:bg-surface-hover",
     };
   }
   if (status.pendingTotal > 0) {
     return {
       icon: "☁️",
       label: `${formatAngka(status.pendingTotal)} menunggu`,
-      tone: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+      tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
   return {
     icon: "☁️",
     label: "tersinkron",
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    tone: "border-ok-line bg-ok-soft text-ok-text hover:bg-ok-soft-strong",
   };
 }
 
@@ -198,17 +196,17 @@ function SyncPanel({
   return (
     <Modal
       onClose={onClose}
-      className="bg-white rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-auto border border-slate-200"
+      className="bg-surface rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-auto border border-line"
     >
       <h2 className="text-lg font-bold mb-1">Sinkronisasi</h2>
-      <p className="text-sm text-slate-500 mb-4">
+      <p className="text-sm text-faint mb-4">
         {localOnly
           ? "Akun ini disetel menyimpan di perangkat sendiri saja. Data terbaru dari cloud tetap masuk seperti biasa, tapi apa pun yang Anda catat di sini tidak dikirim ke sana dan tidak terlihat oleh orang lain."
           : "Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya — dan memaksanya kalau sedang buru-buru."}
       </p>
 
       {localOnly && (
-        <p className="mb-4 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+        <p className="mb-4 text-sm text-muted bg-surface-sunken border border-line rounded-lg px-3 py-2">
           <strong>Catatan penting.</strong> Karena tidak ada salinan di cloud,
           data yang hanya ada di perangkat ini akan hilang kalau riwayat
           browser dibersihkan atau perangkatnya diganti. Pakai “Backup semua” di
@@ -221,13 +219,13 @@ function SyncPanel({
         <Stat
           label="Koneksi"
           value={status.online ? "Online" : "Offline"}
-          className={status.online ? "text-emerald-700" : "text-amber-600"}
+          className={status.online ? "text-ok-text" : "text-warn"}
         />
         <Stat
           label={localOnly ? "Hanya di perangkat ini" : "Menunggu dikirim"}
           value={`${formatAngka(status.pendingTotal)} baris`}
           className={
-            localOnly ? "" : status.pendingTotal > 0 ? "text-amber-600" : ""
+            localOnly ? "" : status.pendingTotal > 0 ? "text-warn" : ""
           }
         />
         {/* Kept as-is for a local-only account rather than blanked: if the flag
@@ -245,7 +243,7 @@ function SyncPanel({
 
       {status.pendingTotal > 0 && (
         <>
-          <p className="mb-2 text-sm text-slate-500">
+          <p className="mb-2 text-sm text-faint">
             {localOnly
               ? "Baris berikut tersimpan di perangkat ini saja. Selama “Kirim ke cloud” mati, jumlahnya akan terus bertambah — ini bukan antrean yang sedang menunggu, melainkan selisih dengan isi cloud."
               : "Baris berikut sudah tersimpan di perangkat ini dan menunggu giliran dikirim ke cloud."}
@@ -260,7 +258,7 @@ function SyncPanel({
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.name} className="hover:bg-slate-50">
+                  <tr key={r.name} className="hover:bg-surface-sunken">
                     <td className={tdClass}>{tableLabel(r.name)}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatAngka(r.count)}
@@ -274,7 +272,7 @@ function SyncPanel({
       )}
 
       {status.pendingTotal === 0 && (
-        <p className="mb-4 text-sm text-slate-400">
+        <p className="mb-4 text-sm text-faint">
           {localOnly
             ? "Belum ada perubahan yang dicatat di perangkat ini sejak terakhir disamakan dengan cloud."
             : "Semua data di perangkat ini sudah sama dengan cloud."}
@@ -282,7 +280,7 @@ function SyncPanel({
       )}
 
       {status.error && (
-        <p className="mb-4 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+        <p className="mb-4 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
           Sinkronisasi terakhir gagal: {status.error}
         </p>
       )}
@@ -298,18 +296,18 @@ function SyncPanel({
           {localOnly ? "Ambil data terbaru" : "Sinkronkan sekarang"}
         </PrimaryButton>
         {status.busy && (
-          <span className="text-sm text-slate-400">Sedang berjalan…</span>
+          <span className="text-sm text-faint">Sedang berjalan…</span>
         )}
         <Button className="ml-auto" onClick={onClose}>
           Tutup
         </Button>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-200">
+      <div className="mt-4 pt-3 border-t border-line">
         <button
           onClick={() => setAdvanced((a) => !a)}
           aria-expanded={advanced}
-          className="flex items-center gap-1 text-xs uppercase tracking-wide font-semibold text-slate-400 hover:text-slate-600 cursor-pointer"
+          className="flex items-center gap-1 text-xs uppercase tracking-wide font-semibold text-faint hover:text-muted cursor-pointer"
         >
           <span className="text-[10px] w-3 inline-block">
             {advanced ? "▾" : "▸"}
@@ -318,7 +316,7 @@ function SyncPanel({
         </button>
         {advanced && (
           <div className="mt-3">
-            <p className="text-sm text-slate-500 mb-2">
+            <p className="text-sm text-faint mb-2">
               {localOnly
                 ? "Untuk keadaan yang tidak biasa saja: kalau Anda rela membuang semua catatan yang hanya ada di perangkat ini demi menyamakan isinya dengan cloud. Karena akun ini tidak mengirim apa pun ke cloud, yang dibuang tidak bisa diambil kembali dari sana."
                 : "Untuk keadaan yang tidak biasa saja: kalau baris di perangkat ini menolak terkirim dan Anda rela membuangnya demi menyamakan isi dengan cloud."}
@@ -334,12 +332,12 @@ function SyncPanel({
       </div>
 
       {note && (
-        <p className="mt-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+        <p className="mt-3 text-sm text-ok-text bg-ok-soft border border-ok-line rounded-lg px-3 py-2">
           {note}
         </p>
       )}
       {error && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+        <p className="mt-3 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -371,7 +369,7 @@ function SyncPanel({
           onConfirm={confirmed}
           onClose={() => setConfirming(null)}
         >
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-danger-text">
             {diverging > 0
               ? `${formatAngka(diverging)} baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus.`
               : "Semua baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus."}

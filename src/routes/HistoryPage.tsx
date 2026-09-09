@@ -14,10 +14,10 @@ import { Field } from "../components/Field";
 import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Button } from "../components/Button";
+import { thClass, tdClass as tdBase } from "../components/DataTable";
+import { MobileList, MobileRow } from "../components/MobileList";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100 align-top";
+const tdClass = `${tdBase} align-top`;
 
 const ENTITY_LABELS: Record<AuditEntry["entity"], string> = {
   product: "Produk",
@@ -56,12 +56,27 @@ function entityBadgeClass(entity: AuditEntry["entity"]): string {
 function actionBadgeClass(action: AuditEntry["action"]): string {
   switch (action) {
     case "create":
-      return "text-emerald-700 bg-emerald-50 border-emerald-200";
+      return "text-ok-text bg-ok-soft border-ok-line";
     case "update":
-      return "text-blue-700 bg-blue-50 border-blue-200";
+      return "text-brand-text bg-brand-soft border-brand-line";
     case "delete":
-      return "text-red-700 bg-red-50 border-red-200";
+      return "text-danger-text bg-danger-soft border-danger-line";
   }
+}
+
+// The phone Waktu column has no room for formatDateTimeID's full
+// "27 Jun 2026, 15.30" next to a badge-carrying left column, so this trims it
+// to "27/06, 15.30" for that layout only — desktop keeps the full form.
+// The phone layout's right column is a timestamp, not an amount, and
+// "27 Jun 2026, 15.30" on one non-wrapping line would set the column's minimum
+// width. Splitting it across the value and its note keeps the YEAR — an audit
+// log outlives a calendar year, so a date without one is ambiguous — while
+// letting the column stay narrow. Desktop still shows the single-line form.
+function splitWaktu(iso: string): { tanggal: string; jam: string } {
+  const full = formatDateTimeID(iso);
+  const at = full.lastIndexOf(", ");
+  if (at < 0) return { tanggal: full, jam: "" };
+  return { tanggal: full.slice(0, at), jam: full.slice(at + 2) };
 }
 
 function formatValue(v: unknown): string {
@@ -118,7 +133,7 @@ export function HistoryPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Riwayat</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Catatan perubahan produk, pesanan, stok, dan tipe.
       </p>
 
@@ -168,19 +183,68 @@ export function HistoryPage() {
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">
-          <span className="text-slate-400">{filtered.length} entri</span>
+          <span className="text-faint">{filtered.length} entri</span>
           <span className="flex-1" />
           <AttributionToggle show={showBy} onChange={setShowBy} />
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             {hasFilter
               ? "Tidak ada yang cocok dengan filter."
               : "Belum ada riwayat."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* The phone layout. Four columns (plus attribution) don't fit at
+                390px, so below `md` the row collapses to what it IS on the
+                left (Keterangan, with the entitas/aksi badges and the
+                per-change chips restacked under it) and what it is WORTH on
+                the right (Waktu). Attribution is a desktop-only affordance
+                here, same as elsewhere. */}
+            <div className="md:hidden">
+              <MobileList left="Keterangan" right="Waktu">
+                {filtered.map((e) => (
+                  <MobileRow
+                    key={e.id}
+                    title={<span className="text-body">{e.label}</span>}
+                    meta={
+                      <>
+                        <span
+                          className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full border ${entityBadgeClass(
+                            e.entity,
+                          )}`}
+                        >
+                          {ENTITY_LABELS[e.entity]}
+                        </span>
+                        <span
+                          className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full border ${actionBadgeClass(
+                            e.action,
+                          )}`}
+                        >
+                          {ACTION_LABELS[e.action]}
+                        </span>
+                        {e.changes &&
+                          e.changes.length > 0 &&
+                          e.changes.map((c, i) => (
+                            <span
+                              key={i}
+                              className="inline-block px-1.5 py-0.5 text-xs text-faint bg-surface-sunken border border-line rounded"
+                            >
+                              <span className="font-medium">{c.field}</span>:{" "}
+                              {formatValue(c.from)} → {formatValue(c.to)}
+                            </span>
+                          ))}
+                      </>
+                    }
+                    value={splitWaktu(e.timestamp).tanggal}
+                    note={splitWaktu(e.timestamp).jam}
+                  />
+                ))}
+              </MobileList>
+            </div>
+
+            <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -193,9 +257,9 @@ export function HistoryPage() {
               </thead>
               <tbody>
                 {filtered.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50">
+                  <tr key={e.id} className="hover:bg-surface-sunken">
                     <td
-                      className={`${tdClass} text-xs text-slate-500 whitespace-nowrap`}
+                      className={`${tdClass} text-xs text-faint whitespace-nowrap`}
                     >
                       {formatDateTimeID(e.timestamp)}
                     </td>
@@ -218,13 +282,13 @@ export function HistoryPage() {
                       </span>
                     </td>
                     <td className={tdClass}>
-                      <div className="text-slate-700">{e.label}</div>
+                      <div className="text-body">{e.label}</div>
                       {e.changes && e.changes.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {e.changes.map((c, i) => (
                             <span
                               key={i}
-                              className="inline-block px-1.5 py-0.5 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded"
+                              className="inline-block px-1.5 py-0.5 text-xs text-faint bg-surface-sunken border border-line rounded"
                             >
                               <span className="font-medium">{c.field}</span>:{" "}
                               {formatValue(c.from)} → {formatValue(c.to)}
@@ -242,7 +306,8 @@ export function HistoryPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Panel>
     </div>

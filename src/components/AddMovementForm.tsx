@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import type { Product, StockMovement, StockReason } from "../lib/types";
 import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
-import { Button, PrimaryButton, GhostButton } from "./Button";
+import { Button, PrimaryButton, DangerGhostButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Panel } from "./Panel";
 import { Field } from "./Field";
+import { TrashIcon } from "./icons";
 
 interface UnitOption {
   label: string; // displayed unit name
@@ -147,7 +148,7 @@ export function AddMovementForm({ products, onAdd }: Props) {
 
   return (
     <Panel>
-      <strong className="text-slate-700">Catat Pergerakan Stok</strong>
+      <strong className="text-body">Catat Pergerakan Stok</strong>
 
       <div className="flex flex-col gap-2 mt-3">
         {rows.map((r) => {
@@ -161,8 +162,8 @@ export function AddMovementForm({ products, onAdd }: Props) {
           return (
             <div
               key={r.uid}
-              className={`rounded-lg border border-slate-100 bg-slate-50/40 ${
-                invalid ? "ring-1 ring-red-400" : ""
+              className={`rounded-lg border border-line-soft bg-surface-sunken/40 ${
+                invalid ? "ring-1 ring-danger-focus" : ""
               }`}
             >
               <div className="flex flex-wrap gap-3 items-end p-2">
@@ -246,20 +247,21 @@ export function AddMovementForm({ products, onAdd }: Props) {
                 </Field>
                 <div className="flex items-center h-9 shrink-0">
                   {product && qtyNum > 0 && (
-                    <span className="text-xs text-slate-500 whitespace-nowrap mr-1">
+                    <span className="text-xs text-faint whitespace-nowrap mr-1">
                       {isIn ? "Menambah" : "Mengurangi"}{" "}
                       <b>
                         {baseQty} {product.satuan ?? "satuan"}
                       </b>
                     </span>
                   )}
-                  <GhostButton
+                  <DangerGhostButton
                     onClick={() => removeRow(r.uid)}
                     title="Hapus baris"
+                    aria-label="Hapus baris"
                     className="shrink-0"
                   >
-                    ✕
-                  </GhostButton>
+                    <TrashIcon />
+                  </DangerGhostButton>
                 </div>
               </div>
             </div>

@@ -26,10 +26,10 @@ const root = ReactDOM.createRoot(document.getElementById("root")!);
 function renderBootError(err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   root.render(
-    <div className="mx-auto max-w-lg p-8 text-slate-800">
-      <h1 className="mb-2 text-lg font-semibold text-red-600">Gagal memuat data</h1>
+    <div className="mx-auto max-w-lg p-8 text-ink">
+      <h1 className="mb-2 text-lg font-semibold text-danger">Gagal memuat data</h1>
       <p className="mb-4 text-sm">{message}</p>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-faint">
         Data lama Anda tidak dihapus. Muat ulang halaman untuk mencoba lagi.
       </p>
     </div>,

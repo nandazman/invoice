@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
 import { flushWrites } from "../lib/db";
@@ -11,11 +11,13 @@ import {
   canPushToCloud,
 } from "../lib/sync/client";
 import { formatAngka } from "../lib/format";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { PrimaryButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { GateScreen } from "../components/GateScreen";
-import { Modal } from "../components/Modal";
+import { Modal, useEscapeToClose } from "../components/Modal";
 import { SyncChip } from "../components/SyncChip";
+import { CloseIcon } from "../components/icons";
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
 const GROUPS_KEY = "invoice.sidebar.groups";
@@ -27,8 +29,11 @@ const GROUPS_KEY = "invoice.sidebar.groups";
 const BACKUP_GROUP = "Cadangan";
 
 const linkBase =
-  "flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-semibold text-slate-500 hover:bg-slate-100 transition-colors";
-const linkActive = "bg-blue-50 text-blue-600 hover:bg-blue-50";
+  // `min-h-11` is the 44px touch minimum, and it is mobile-only: the drawer is
+  // thumb-driven, the desktop sidebar is not, and stretching every row there
+  // would just cost vertical space.
+  "flex items-center gap-2.5 px-3 py-2.5 min-h-11 md:min-h-0 rounded-lg font-semibold text-faint hover:bg-surface-hover transition-colors";
+const linkActive = "bg-brand-soft text-brand hover:bg-brand-soft";
 
 // Sidebar navigation, grouped. Each group's item list is collapsible.
 interface NavItem {
@@ -95,6 +100,50 @@ export function RootLayout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1",
   );
+  // The mobile drawer. Deliberately NOT persisted like `collapsed` is: a
+  // drawer that is still open when you come back is a drawer covering the page
+  // you asked for.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const desktop = useMediaQuery("(min-width: 768px)");
+  // `collapsed` decides what is rendered, not just how wide it is, so the
+  // icon-only mode has to stay out of the drawer — a 16rem panel showing four
+  // emoji and no words is not a menu.
+  const iconOnly = desktop && collapsed;
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+
+  useEscapeToClose(() => setDrawerOpen(false), drawerOpen);
+
+  // Close on navigation. Without this the drawer stays over the page it just
+  // sent you to, which reads as a broken tap.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
+
+  // Crossing into desktop with the drawer open would otherwise leave the
+  // backdrop and the scroll lock behind, since both are mobile-only.
+  useEffect(() => {
+    if (desktop) setDrawerOpen(false);
+  }, [desktop]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Focus into the drawer so the keyboard follows the eye. The first LINK,
+    // not the first focusable: the first focusable is the ✕, and landing the
+    // keyboard on "close" makes the drawer feel like something to escape
+    // rather than something to use.
+    const first =
+      drawerRef.current?.querySelector<HTMLElement>("nav a[href]") ??
+      drawerRef.current?.querySelector<HTMLElement>("button");
+    first?.focus();
+    return () => {
+      document.body.style.overflow = previous;
+      // Back to the control that opened it, not to the top of the document.
+      hamburgerRef.current?.focus();
+    };
+  }, [drawerOpen]);
   // Per-group collapse state: a set of group labels whose item list is hidden.
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
     try {
@@ -270,20 +319,62 @@ export function RootLayout() {
 
   return (
     <div className="flex min-h-screen">
+      {/* The mobile app bar. The sync chip rides in it rather than in the
+          drawer: sync state is the one thing that must never cost a tap to
+          see. */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-20 h-14 bg-surface border-b border-line flex items-center gap-1 px-2">
+        <button
+          ref={hamburgerRef}
+          onClick={() => setDrawerOpen(true)}
+          aria-expanded={drawerOpen}
+          aria-controls="nav-utama"
+          aria-label="Buka menu"
+          className="h-11 w-11 shrink-0 rounded-lg text-xl text-muted hover:bg-surface-hover cursor-pointer"
+        >
+          ☰
+        </button>
+        <span className="font-bold text-lg truncate">🧾 Invoice</span>
+        <div className="ml-auto shrink-0">
+          <SyncChip collapsed={false} />
+        </div>
+      </header>
+
+      {drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+        />
+      )}
+
       <aside
-        className={`${
-          collapsed ? "w-16" : "w-56"
-        } shrink-0 bg-white border-r border-slate-200 p-3 flex flex-col sticky top-0 h-screen transition-[width] duration-200`}
+        ref={drawerRef}
+        id="nav-utama"
+        className={`fixed inset-y-0 left-0 z-40 w-64 ${
+          drawerOpen ? "translate-x-0" : "-translate-x-full"
+        } motion-safe:transition-transform motion-safe:duration-200 ease-out
+        md:sticky md:top-0 md:h-screen md:translate-x-0 md:shrink-0 ${
+          iconOnly ? "md:w-16" : "md:w-56"
+        } md:motion-safe:transition-[width,transform] bg-surface border-r border-line p-3 flex flex-col h-screen`}
       >
         <div className="shrink-0 flex items-center justify-between mb-4">
-          {!collapsed && (
+          {!iconOnly && (
             <span className="font-bold text-lg px-2">🧾 Invoice</span>
           )}
+          {/* Two different jobs, so two buttons: below md the control closes an
+              overlay, above md it narrows a column that never goes away. */}
+          <button
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Tutup menu"
+            className="md:hidden ml-auto inline-flex items-center justify-center h-11 w-11 rounded-lg text-faint hover:bg-surface-hover cursor-pointer"
+          >
+            <CloseIcon />
+          </button>
           <button
             onClick={toggle}
             title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
             aria-label="Toggle sidebar"
-            className="ml-auto p-2 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer"
+            className="hidden md:block ml-auto p-2 rounded-lg text-faint hover:bg-surface-hover cursor-pointer"
           >
             {collapsed ? "»" : "«"}
           </button>
@@ -306,19 +397,23 @@ export function RootLayout() {
             );
             return (
               <div key={group.label} className="flex flex-col gap-1">
-                {collapsed ? (
+                {iconOnly ? (
                   // Icon-only mode: a thin divider separates groups; items always show.
-                  gi > 0 && <div className="my-2 border-t border-slate-200" />
+                  gi > 0 && <div className="my-2 border-t border-line" />
                 ) : (
                   <button
                     onClick={() => toggleGroup(group.label)}
                     aria-expanded={!groupClosed}
-                    className={`flex items-center gap-1 px-2.5 text-xs uppercase tracking-wide cursor-pointer ${
+                    // `min-h-11` below `md`: in the drawer this is a real tap
+                    // target, and the label's own 12px line-height left it a
+                    // 24px strip. Released at `md`, where the sidebar is
+                    // pointer-driven and the tighter rhythm reads better.
+                    className={`flex items-center gap-1 px-2.5 text-xs uppercase tracking-wide cursor-pointer min-h-11 md:min-h-0 ${
                       gi > 0 ? "pt-3 pb-1" : "pt-1 pb-1"
                     } ${
                       groupActive
-                        ? "text-blue-600 font-semibold"
-                        : "text-slate-400 hover:text-slate-600"
+                        ? "text-brand font-semibold"
+                        : "text-faint hover:text-muted"
                     }`}
                   >
                     <span className="text-[10px] w-3 inline-block">
@@ -327,23 +422,23 @@ export function RootLayout() {
                     {group.label}
                   </button>
                 )}
-                {(collapsed || !groupClosed) &&
+                {(iconOnly || !groupClosed) &&
                   group.items.map((item) => (
                     <Link
                       key={item.to}
                       to={item.to}
                       title={item.label}
                       className={`${linkBase} ${
-                        collapsed ? "justify-center px-0" : ""
+                        iconOnly ? "justify-center px-0" : ""
                       }`}
                       activeProps={{
                         className: `${linkBase} ${linkActive} ${
-                          collapsed ? "justify-center px-0" : ""
+                          iconOnly ? "justify-center px-0" : ""
                         }`,
                       }}
                     >
                       <span className="text-base">{item.icon}</span>
-                      {!collapsed && item.label}
+                      {!iconOnly && item.label}
                     </Link>
                   ))}
               </div>
@@ -359,13 +454,13 @@ export function RootLayout() {
               It lives inside <nav> so it scrolls and folds exactly like the
               others; only the sync chip stays pinned below. */}
           <div className="flex flex-col gap-1">
-            {collapsed ? (
-              <div className="my-2 border-t border-slate-200" />
+            {iconOnly ? (
+              <div className="my-2 border-t border-line" />
             ) : (
               <button
                 onClick={() => toggleGroup(BACKUP_GROUP)}
                 aria-expanded={!closedGroups.has(BACKUP_GROUP)}
-                className="flex items-center gap-1 px-2.5 pt-3 pb-1 text-xs uppercase tracking-wide text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="flex items-center gap-1 px-2.5 pt-3 pb-1 text-xs uppercase tracking-wide text-faint hover:text-muted cursor-pointer min-h-11 md:min-h-0"
               >
                 <span className="text-[10px] w-3 inline-block">
                   {closedGroups.has(BACKUP_GROUP) ? "▸" : "▾"}
@@ -373,7 +468,7 @@ export function RootLayout() {
                 {BACKUP_GROUP}
               </button>
             )}
-            {(collapsed || !closedGroups.has(BACKUP_GROUP)) && (
+            {(iconOnly || !closedGroups.has(BACKUP_GROUP)) && (
               <>
                 {/* Hidden entirely where there is no cloud to take data from — the
               GitHub Pages copy, which has no Worker behind it. A button that
@@ -383,10 +478,10 @@ export function RootLayout() {
                   <button
                     onClick={() => setConfirmingReset(true)}
                     title="Ambil ulang semua data dari cloud"
-                    className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+                    className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
                   >
                     <span className="text-base">☁️</span>
-                    {!collapsed && "Ambil dari cloud"}
+                    {!iconOnly && "Ambil dari cloud"}
                   </button>
                 )}
                 {/* The opposite direction, and its own button rather than a link
@@ -403,27 +498,27 @@ export function RootLayout() {
                   <button
                     onClick={() => setConfirmingPublish(true)}
                     title="Ganti isi cloud dengan data di perangkat ini"
-                    className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+                    className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
                   >
                     <span className="text-base">⬆️</span>
-                    {!collapsed && "Kirim ke cloud"}
+                    {!iconOnly && "Kirim ke cloud"}
                   </button>
                 )}
                 <button
                   onClick={doBackup}
                   title="Backup semua data"
-                  className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+                  className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
                 >
                   <span className="text-base">💾</span>
-                  {!collapsed && "Backup semua"}
+                  {!iconOnly && "Backup semua"}
                 </button>
                 <button
                   onClick={() => setConfirmingRestore(true)}
                   title="Pulihkan dari cadangan"
-                  className={`${linkBase} ${collapsed ? "justify-center px-0" : ""} cursor-pointer`}
+                  className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
                 >
                   <span className="text-base">♻️</span>
-                  {!collapsed && "Pulihkan"}
+                  {!iconOnly && "Pulihkan"}
                 </button>
               </>
             )}
@@ -434,18 +529,20 @@ export function RootLayout() {
             is. The chip REPORTS rather than offers, and a status you have to
             scroll to — or expand a section to reach — is a status nobody reads,
             which is the whole reason it is a chip and not a nav link. */}
-        <div className="shrink-0 pt-3 flex flex-col gap-1">
-          <SyncChip collapsed={collapsed} />
-          {!collapsed && (
-            <div className="px-2.5 pt-2 text-xs text-slate-400">
+        {/* Hidden below md: the same chip already sits in the app bar there,
+            and two of them would report the same state twice. */}
+        <div className="shrink-0 pt-3 hidden md:flex flex-col gap-1">
+          <SyncChip collapsed={iconOnly} />
+          {!iconOnly && (
+            <div className="px-2.5 pt-2 text-xs text-faint">
               Tersimpan lokal di browser
             </div>
           )}
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
-        <div className="max-w-5xl mx-auto p-6">
+      <main className="flex-1 min-w-0 pt-14 md:pt-0">
+        <div className="max-w-[1400px] mx-auto p-4 md:p-6">
           <Outlet />
         </div>
       </main>
@@ -461,7 +558,7 @@ export function RootLayout() {
           onConfirm={doReset}
           onClose={() => setConfirmingReset(false)}
         >
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-danger-text">
             {status.pendingTotal > 0
               ? `${formatAngka(status.pendingTotal)} baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus.`
               : "Semua baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus."}
@@ -492,7 +589,7 @@ export function RootLayout() {
           onConfirm={() => void doPublish()}
           onClose={() => setConfirmingPublish(false)}
         >
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-danger-text">
             Ini mengubah data SEMUA orang, bukan cuma perangkat ini.
           </p>
           <p>
@@ -523,7 +620,7 @@ export function RootLayout() {
           onConfirm={() => void doRestore()}
           onClose={() => setConfirmingRestore(false)}
         >
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-danger-text">
             SEMUA data di perangkat ini — produk, pesanan, stok, tipe, template,
             dan riwayat — diganti oleh isi berkas cadangan.
           </p>
@@ -547,14 +644,14 @@ export function RootLayout() {
         <Modal onClose={() => setResult(null)}>
           <h2
             className={`text-lg font-bold mb-2 ${
-              result.ok ? "text-emerald-700" : "text-red-700"
+              result.ok ? "text-ok-text" : "text-danger-text"
             }`}
           >
             {result.ok ? "Selesai" : "Gagal"}
           </h2>
-          <p className="text-sm text-slate-600 mb-5">{result.message}</p>
+          <p className="text-sm text-muted mb-5">{result.message}</p>
           {result.note && (
-            <p className="text-sm text-slate-600 mb-5">{result.note}</p>
+            <p className="text-sm text-muted mb-5">{result.note}</p>
           )}
           <div className="flex justify-end">
             <PrimaryButton autoFocus onClick={() => setResult(null)}>

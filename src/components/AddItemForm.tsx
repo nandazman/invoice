@@ -2,12 +2,13 @@ import { useMemo, useState } from "react";
 import type { Product, OrderItem, Buyer } from "../lib/types";
 import { formatRupiah, todayISO, uid, nowISO } from "../lib/format";
 import { useBuyers, upsertBuyer } from "../lib/store";
-import { Button, PrimaryButton, GhostButton } from "./Button";
+import { Button, PrimaryButton, DangerGhostButton } from "./Button";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Panel } from "./Panel";
 import { Field } from "./Field";
 import { BuyerSelect } from "./BuyerSelect";
+import { TrashIcon } from "./icons";
 
 interface UnitOption {
   label: string; // displayed unit name
@@ -159,7 +160,7 @@ export function AddItemForm({ products, onAdd }: Props) {
 
   return (
     <Panel>
-      <strong className="text-slate-700">Tambah Item</strong>
+      <strong className="text-body">Tambah Item</strong>
 
       <div className="mt-3">
         <Field label="Pembeli" className="w-64">
@@ -183,8 +184,8 @@ export function AddItemForm({ products, onAdd }: Props) {
           return (
             <div
               key={r.uid}
-              className={`rounded-lg border border-slate-100 bg-slate-50/40 ${
-                invalid ? "ring-1 ring-red-400" : ""
+              className={`rounded-lg border border-line-soft bg-surface-sunken/40 ${
+                invalid ? "ring-1 ring-danger-focus" : ""
               }`}
             >
               <div className="flex flex-wrap gap-3 items-end p-2">
@@ -244,24 +245,25 @@ export function AddItemForm({ products, onAdd }: Props) {
                     tabIndex={-1}
                   />
                 </Field>
-                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer h-9 shrink-0">
+                <label className="flex items-center gap-2 text-sm text-muted cursor-pointer h-9 shrink-0">
                   <input
                     type="checkbox"
                     checked={r.affectsStock}
                     onChange={(e) =>
                       patchRow(r.uid, { affectsStock: e.target.checked })
                     }
-                    className="w-4 h-4 accent-blue-600 cursor-pointer"
+                    className="w-4 h-4 accent-brand cursor-pointer"
                   />
                   Kurangi stok
                 </label>
-                <GhostButton
+                <DangerGhostButton
                   onClick={() => removeRow(r.uid)}
                   title="Hapus baris"
+                  aria-label="Hapus baris"
                   className="shrink-0 mb-0.5"
                 >
-                  ✕
-                </GhostButton>
+                  <TrashIcon />
+                </DangerGhostButton>
               </div>
             </div>
           );
@@ -274,7 +276,7 @@ export function AddItemForm({ products, onAdd }: Props) {
         {/* Say WHY the button is dead. A disabled Simpan with a filled-in form
             and no explanation reads as a bug. */}
         {validCount > 0 && !buyerId && (
-          <span className="text-sm text-red-600">Pilih pembeli dulu.</span>
+          <span className="text-sm text-danger">Pilih pembeli dulu.</span>
         )}
         <PrimaryButton onClick={commit} disabled={validCount === 0 || !buyerId}>
           Simpan {validCount > 1 ? `(${validCount})` : ""}

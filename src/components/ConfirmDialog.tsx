@@ -39,18 +39,18 @@ export function ConfirmDialog({
   return (
     <Modal
       onClose={onClose}
-      className={`bg-white rounded-xl p-5 w-full max-w-md max-h-[90vh] overflow-auto border ${
-        danger ? "border-red-200" : "border-slate-200"
+      className={`bg-surface rounded-xl p-5 w-full max-w-md max-h-[90vh] overflow-auto border ${
+        danger ? "border-danger-line" : "border-line"
       }`}
     >
       <div role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2
           id={titleId}
-          className={`text-lg font-bold mb-2 ${danger ? "text-red-700" : ""}`}
+          className={`text-lg font-bold mb-2 ${danger ? "text-danger-text" : ""}`}
         >
           {title}
         </h2>
-        <div className="text-sm text-slate-600 space-y-2 mb-5">{children}</div>
+        <div className="text-sm text-muted space-y-2 mb-5">{children}</div>
         <div className="flex justify-end gap-2">
           {/* Focus starts inside the dialog so the keyboard works immediately.
               On a destructive one it starts on "Batal", so a reflex Enter

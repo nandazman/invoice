@@ -141,7 +141,7 @@ function Sheet({
   }
   return (
     <div
-      className="bg-white mx-auto shadow-sm ring-1 ring-slate-200 overflow-hidden"
+      className="bg-surface mx-auto shadow-sm ring-1 ring-line overflow-hidden"
       style={{ width: PAGE_W * s, height: PAGE_H * s, marginBottom: isLast ? 0 : 20 }}
     >
       <div className="origin-top-left" style={{ width: PAGE_W, transform: `scale(${s})` }}>
@@ -179,7 +179,7 @@ function PageContent({
   const listEndY = tableTop + (hasRows ? theadH + sliceH : 0);
 
   return (
-    <div className="invoice-doc relative bg-white" style={{ width: PAGE_W, height: PAGE_H, overflow: "hidden" }}>
+    <div className="invoice-doc relative bg-surface" style={{ width: PAGE_W, height: PAGE_H, overflow: "hidden" }}>
       {page.header &&
         zones.header.map((el) => (
           <div
@@ -228,7 +228,7 @@ function FixedPage({
   sorted: TemplateElement[];
 }) {
   return (
-    <div className="invoice-doc relative bg-white" style={{ width: PAGE_W, height: PAGE_H, overflow: "hidden" }}>
+    <div className="invoice-doc relative bg-surface" style={{ width: PAGE_W, height: PAGE_H, overflow: "hidden" }}>
       {sorted.map((el) => (
         <div
           key={el.id}

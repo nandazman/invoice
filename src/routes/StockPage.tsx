@@ -19,10 +19,9 @@ import { AddMovementForm } from "../components/AddMovementForm";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
+import { thClass, tdClass } from "../components/DataTable";
+import { MobileList, MobileRow } from "../components/MobileList";
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 interface Row {
   product: Product;
@@ -80,12 +79,12 @@ export function StockPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Stok</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Catat stok masuk & keluar, pantau stok menipis, dan nilai persediaan.
       </p>
 
       {products.length === 0 ? (
-        <Panel className="text-center text-slate-400 py-8">
+        <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
       ) : (
@@ -98,7 +97,7 @@ export function StockPage() {
             Nilai persediaan: {formatRupiah(totalValue)}
           </span>
           {lowCount > 0 && (
-            <span className="text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+            <span className="text-sm font-semibold text-warn bg-warn-soft border border-warn-line rounded-lg px-2 py-1">
               {lowCount} produk stok menipis
             </span>
           )}
@@ -114,11 +113,71 @@ export function StockPage() {
         </div>
 
         {rows.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             {cari ? "Tidak ada produk cocok." : "Belum ada produk."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* The phone layout: six columns will not fit on 390px, so the row
+                collapses to what the product IS on the left and what its stock
+                is WORTH on the right. Stok, min, and satuan restack under the
+                name; modal/satuan sits under the value. The attribution
+                columns stay a desktop affordance — the toggle above still
+                drives the wide table. */}
+            <div className="md:hidden">
+              <MobileList left="Produk" right="Nilai">
+                {rows.map((r) => {
+                  const satuan = r.product.satuan ?? "satuan";
+                  return (
+                    <MobileRow
+                      key={r.product.id}
+                      title={
+                        <Link
+                          to="/produk/$id"
+                          params={{ id: r.product.id }}
+                          className="flex items-center w-full min-h-11 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                        >
+                          {r.product.namaProduk}
+                        </Link>
+                      }
+                      meta={
+                        <>
+                          <span
+                            className={`tabular-nums font-semibold ${
+                              r.qty < 0
+                                ? "text-danger"
+                                : r.low
+                                  ? "text-warn"
+                                  : "text-body"
+                            }`}
+                          >
+                            {formatAngka(r.qty)} {satuan}
+                          </span>
+                          {r.product.stokMin > 0 && (
+                            <span className="tabular-nums">
+                              min {formatAngka(r.product.stokMin)}
+                            </span>
+                          )}
+                          {r.low && (
+                            <span className="font-semibold text-warn">
+                              ⚠ menipis
+                            </span>
+                          )}
+                        </>
+                      }
+                      value={formatRupiah(r.value)}
+                      note={
+                        r.qty > 0
+                          ? `${formatRupiah(r.unitCost)}/${satuan}`
+                          : `—/${satuan}`
+                      }
+                    />
+                  );
+                })}
+              </MobileList>
+            </div>
+
+            <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -137,32 +196,32 @@ export function StockPage() {
                   return (
                     <tr
                       key={r.product.id}
-                      className={`hover:bg-slate-50 ${r.low ? "bg-amber-50" : ""}`}
+                      className={`hover:bg-surface-sunken ${r.low ? "bg-warn-soft" : ""}`}
                     >
                       <td className={tdClass}>
                         <Link
                           to="/produk/$id"
                           params={{ id: r.product.id }}
-                          className="text-blue-600 hover:underline font-medium"
+                          className="text-brand hover:underline font-medium"
                         >
                           {r.product.namaProduk}
                         </Link>
                         {r.low && (
-                          <span className="ml-2 text-xs font-semibold text-amber-600">
+                          <span className="ml-2 text-xs font-semibold text-warn">
                             ⚠ menipis
                           </span>
                         )}
                       </td>
                       <td
                         className={`${tdClass} text-right tabular-nums font-semibold ${
-                          r.qty < 0 ? "text-red-600" : ""
+                          r.qty < 0 ? "text-danger" : ""
                         }`}
                       >
                         {formatAngka(r.qty)}
                       </td>
                       <td className={tdClass}>{satuan}</td>
                       <td
-                        className={`${tdClass} text-right tabular-nums text-slate-400`}
+                        className={`${tdClass} text-right tabular-nums text-faint`}
                       >
                         {r.product.stokMin > 0
                           ? formatAngka(r.product.stokMin)
@@ -184,7 +243,8 @@ export function StockPage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Panel>
     </div>

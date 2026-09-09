@@ -1,14 +1,44 @@
 import { useEffect, type ReactNode } from "react";
 
-// Mount order of every open Modal, innermost last.
+// Mount order of every open overlay, innermost last. Modals nest, and the
+// mobile nav drawer can sit under one of them, so a single Escape must reach
+// exactly one of them.
 const open: object[] = [];
+
+// Escape-to-close, sharing the stack above. Exported because the nav drawer in
+// RootLayout is an overlay too but not a Modal: it is not centred, it does not
+// take a backdrop click the same way, and it must not be able to close from
+// under an open dialog.
+export function useEscapeToClose(onClose: () => void, active = true) {
+  useEffect(() => {
+    if (!active) return;
+    const token = {};
+    open.push(token);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && open[open.length - 1] === token) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      open.splice(open.indexOf(token), 1);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose, active]);
+}
+
+// Every dialog is a bottom sheet on a phone (full-width, anchored to the
+// bottom edge, capped short of the viewport so it never hides behind the
+// keyboard) and a centred dialog from `md` up. This is `!important` so it
+// always wins regardless of what a caller passes as `className` — every
+// existing call site already sets its own `rounded-*`/`max-h-*`, and losing
+// the sheet shape to that would defeat the point of making it the default.
+const panelShape = "!rounded-t-2xl md:!rounded-xl !max-h-[85vh]";
 
 // The overlay every dialog was repeating: click-outside to close, Escape to
 // close, and a panel that swallows its own clicks. Only the panel's width and
 // padding ever differed between them, so that is the one prop — `className`.
 export function Modal({
   onClose,
-  className = "bg-white rounded-xl p-5 w-full max-w-md max-h-[90vh] overflow-auto",
+  className = "bg-surface p-5 w-full max-w-md overflow-auto",
   overlayClassName = "z-50",
   closeOnOverlay = true,
   children,
@@ -23,28 +53,19 @@ export function Modal({
   closeOnOverlay?: boolean;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    // Modals can nest (BuyFromOrderDialog opens a confirm over itself). Every
-    // one listens on window, so without this stack a single Escape would close
-    // the confirm AND the dialog underneath it. Only the topmost reacts.
-    const token = {};
-    open.push(token);
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && open[open.length - 1] === token) onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      open.splice(open.indexOf(token), 1);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  // Modals can nest (BuyFromOrderDialog opens a confirm over itself), so only
+  // the topmost overlay reacts to Escape.
+  useEscapeToClose(onClose);
 
   return (
     <div
-      className={`fixed inset-0 bg-black/40 flex items-center justify-center p-4 ${overlayClassName}`}
+      className={`fixed inset-0 bg-black/40 flex items-end md:items-center justify-center p-4 ${overlayClassName}`}
       onClick={closeOnOverlay ? onClose : undefined}
     >
-      <div className={className} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`${panelShape} ${className}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>

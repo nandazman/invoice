@@ -48,7 +48,7 @@ export function BuyerBackfillDialog({
     <Modal onClose={onClose}>
       <h2 className="text-xl font-bold mb-2">Pembeli untuk pesanan lama</h2>
 
-      <p className="text-sm text-slate-600 mb-3">
+      <p className="text-sm text-muted mb-3">
         Ada <b>{count} pesanan lama</b> yang belum punya pembeli. Pilih satu
         pembeli untuk diterapkan ke semuanya sekaligus.
       </p>
@@ -62,7 +62,7 @@ export function BuyerBackfillDialog({
         />
       </Field>
 
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-faint mb-4">
         Pilihan ini bisa diubah per pesanan kapan saja lewat kolom{" "}
         <b>Pembeli</b> di tabel — jadi menerapkannya ke semua pesanan tidak
         mengunci apa pun.

@@ -146,11 +146,11 @@ export function BuyFromOrderDialog({
     return (
       <Modal
         onClose={onClose}
-        className="bg-white rounded-xl p-6 w-full max-w-md text-center"
+        className="bg-surface rounded-xl p-6 w-full max-w-md text-center"
       >
           <SuccessCheck />
           <h2 className="text-xl font-bold mb-1">Tersimpan</h2>
-          <p className="text-slate-600 mb-5">
+          <p className="text-muted mb-5">
             {savedCount} item dicatat sebagai pembelian stok dari pesanan{" "}
             {formatTanggalID(tanggal)}.
           </p>
@@ -172,10 +172,10 @@ export function BuyFromOrderDialog({
   return (
     <Modal
       onClose={onClose}
-      className="bg-white rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
+      className="bg-surface rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
     >
         <h2 className="text-xl font-bold mb-1">Beli Stok dari Pesanan</h2>
-        <p className="text-slate-500 mb-4">
+        <p className="text-faint mb-4">
           Pesanan {formatTanggalID(tanggal)} — pilih barang yang akan dibeli.
           Semua terpilih otomatis; hilangkan centang bila tak jadi dibeli.
         </p>
@@ -183,19 +183,19 @@ export function BuyFromOrderDialog({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-2 py-2 border-b border-slate-200"></th>
-                <th className="px-2 py-2 border-b border-slate-200">
+              <tr className="text-left text-xs uppercase tracking-wide text-faint">
+                <th className="px-2 py-2 border-b border-line"></th>
+                <th className="px-2 py-2 border-b border-line">
                   Nama Produk
                 </th>
-                <th className="px-2 py-2 border-b border-slate-200">Satuan</th>
-                <th className="px-2 py-2 border-b border-slate-200 text-right">
+                <th className="px-2 py-2 border-b border-line">Satuan</th>
+                <th className="px-2 py-2 border-b border-line text-right">
                   Qty
                 </th>
-                <th className="px-2 py-2 border-b border-slate-200 text-right">
+                <th className="px-2 py-2 border-b border-line text-right">
                   Harga Dasar
                 </th>
-                <th className="px-2 py-2 border-b border-slate-200 text-right">
+                <th className="px-2 py-2 border-b border-line text-right">
                   Total
                 </th>
               </tr>
@@ -209,34 +209,34 @@ export function BuyFromOrderDialog({
                     key={r.order.id}
                     className={r.selected ? "" : "opacity-50"}
                   >
-                    <td className="px-2 py-2 border-b border-slate-100">
+                    <td className="px-2 py-2 border-b border-line-soft">
                       <input
                         type="checkbox"
                         checked={r.selected}
                         onChange={(e) => toggle(r.order.id, e.target.checked)}
                       />
                     </td>
-                    <td className="px-2 py-2 border-b border-slate-100 text-sm">
+                    <td className="px-2 py-2 border-b border-line-soft text-sm">
                       {r.order.namaProduk}
                       {unmatched && (
                         <span
-                          className="ml-1 text-xs text-amber-600"
+                          className="ml-1 text-xs text-warn"
                           title="Produk tak tertaut — harga default 0"
                         >
                           (tak tertaut)
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-2 border-b border-slate-100 text-sm">
+                    <td className="px-2 py-2 border-b border-line-soft text-sm">
                       {r.order.satuan}
                     </td>
-                    <td className="px-2 py-2 border-b border-slate-100 text-right text-sm tabular-nums">
+                    <td className="px-2 py-2 border-b border-line-soft text-right text-sm tabular-nums">
                       {formatAngka(r.order.kuantitas)}
                     </td>
-                    <td className="px-2 py-2 border-b border-slate-100 text-right text-sm tabular-nums">
+                    <td className="px-2 py-2 border-b border-line-soft text-right text-sm tabular-nums">
                       {formatRupiah(r.harga)}
                     </td>
-                    <td className="px-2 py-2 border-b border-slate-100 text-right text-sm tabular-nums">
+                    <td className="px-2 py-2 border-b border-line-soft text-right text-sm tabular-nums">
                       {formatRupiah(lineTotal)}
                     </td>
                   </tr>
@@ -250,7 +250,7 @@ export function BuyFromOrderDialog({
           <span className="text-lg font-bold">
             Total: {formatRupiah(total)}
           </span>
-          <span className="text-slate-400">
+          <span className="text-faint">
             · {selectedRows.length} item terpilih
           </span>
           <span className="flex-1" />
@@ -264,14 +264,14 @@ export function BuyFromOrderDialog({
           <Modal
             onClose={() => setConfirming(false)}
             overlayClassName="z-[60]"
-            className="bg-white rounded-xl p-5 w-full max-w-md"
+            className="bg-surface rounded-xl p-5 w-full max-w-md"
           >
               <h3 className="text-lg font-bold mb-2">Konfirmasi</h3>
-              <p className="text-sm text-slate-600 mb-1">
+              <p className="text-sm text-muted mb-1">
                 {selectedRows.length} item akan dicatat sebagai pembelian stok
                 ({formatRupiah(total)}).
               </p>
-              <p className="text-sm text-red-600 font-medium mb-4">
+              <p className="text-sm text-danger font-medium mb-4">
                 Entri stok ini permanen dan tidak bisa diubah. Bila ada salah
                 input, perbaiki lewat penyesuaian stok manual.
               </p>

@@ -50,10 +50,10 @@ export function CopyTextDialog({
   return (
     <Modal
       onClose={onClose}
-      className="bg-white rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
+      className="bg-surface rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
     >
         <h2 className="text-xl font-bold mb-1">Salin Teks</h2>
-        <p className="text-slate-500 mb-4">
+        <p className="text-faint mb-4">
           Pratinjau teks yang akan disalin — {items.length} item.
         </p>
 
@@ -61,11 +61,11 @@ export function CopyTextDialog({
           readOnly
           value={text}
           rows={14}
-          className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-md bg-slate-50 text-slate-700 resize-y focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+          className="w-full px-3 py-2 text-sm font-mono border border-line rounded-md bg-surface-sunken text-body resize-y focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge"
         />
 
         <div className="flex items-center gap-3 mt-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="flex items-center gap-2 text-sm text-body">
             <input
               type="checkbox"
               checked={showPrice}
@@ -74,7 +74,7 @@ export function CopyTextDialog({
             Tampilkan harga
           </label>
           {copyState === "error" && (
-            <span className="text-sm text-red-600">
+            <span className="text-sm text-danger">
               Gagal menyalin — salin manual dari kotak di atas.
             </span>
           )}

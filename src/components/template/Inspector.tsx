@@ -15,7 +15,8 @@ import { downscaleImage, imageSize } from "../../lib/image";
 import { Input } from "../Input";
 import { Select } from "../Select";
 import { Field } from "../Field";
-import { Button, DangerButton } from "../Button";
+import { Button, DangerButton, DangerGhostButton } from "../Button";
+import { TrashIcon } from "../icons";
 
 const TOKENS = [
   "{{business.nama}}",
@@ -56,7 +57,7 @@ function StyleControls({
           type="color"
           value={style.color}
           onChange={(e) => onChange({ color: e.target.value })}
-          className="h-9 w-full rounded-lg border border-slate-200"
+          className="h-9 w-full rounded-lg border border-line"
         />
       </Field>
       <Field label="Warna latar">
@@ -65,25 +66,30 @@ function StyleControls({
             type="color"
             value={style.bg ?? "#ffffff"}
             onChange={(e) => onChange({ bg: e.target.value })}
-            className="h-9 flex-1 rounded-lg border border-slate-200"
+            className="h-9 flex-1 rounded-lg border border-line"
           />
-          <Button size="sm" onClick={() => onChange({ bg: null })} title="Hapus latar">
-            ✕
-          </Button>
+          <DangerGhostButton
+            size="sm"
+            onClick={() => onChange({ bg: null })}
+            title="Hapus latar"
+            aria-label="Hapus latar"
+          >
+            <TrashIcon />
+          </DangerGhostButton>
         </div>
       </Field>
       <div className="col-span-2 flex gap-2">
         <Button
           size="sm"
           onClick={() => onChange({ fontWeight: style.fontWeight >= 700 ? 400 : 700 })}
-          className={style.fontWeight >= 700 ? "bg-slate-200" : ""}
+          className={style.fontWeight >= 700 ? "bg-surface-active" : ""}
         >
           <b>B</b>
         </Button>
         <Button
           size="sm"
           onClick={() => onChange({ italic: !style.italic })}
-          className={style.italic ? "bg-slate-200" : ""}
+          className={style.italic ? "bg-surface-active" : ""}
         >
           <i>I</i>
         </Button>
@@ -179,7 +185,7 @@ export function Inspector({
   if (!selected) {
     return (
       <div className="space-y-3">
-        <h3 className="font-bold text-sm text-slate-700">Pengaturan Template</h3>
+        <h3 className="font-bold text-sm text-body">Pengaturan Template</h3>
         <Field label="Nama template">
           <Input
             value={template.nama}
@@ -187,8 +193,8 @@ export function Inspector({
           />
         </Field>
 
-        <div className="border-t border-slate-200 pt-3 space-y-2">
-          <h4 className="font-semibold text-xs uppercase text-slate-400">Bisnis</h4>
+        <div className="border-t border-line pt-3 space-y-2">
+          <h4 className="font-semibold text-xs uppercase text-faint">Bisnis</h4>
           <Field label="Nama bisnis">
             <Input
               value={template.business.nama}
@@ -220,7 +226,7 @@ export function Inspector({
                   <img
                     src={template.business.logo}
                     alt="logo"
-                    className="h-8 border border-slate-200 rounded"
+                    className="h-8 border border-line rounded"
                   />
                 )}
                 <input type="file" accept="image/*" onChange={onLogoUpload} className="text-xs" />
@@ -240,8 +246,8 @@ export function Inspector({
           </Field>
         </div>
 
-        <div className="border-t border-slate-200 pt-3 space-y-2">
-          <h4 className="font-semibold text-xs uppercase text-slate-400">Pelanggan</h4>
+        <div className="border-t border-line pt-3 space-y-2">
+          <h4 className="font-semibold text-xs uppercase text-faint">Pelanggan</h4>
           <Field label="Nama pelanggan">
             <Input
               value={template.customer.nama}
@@ -260,7 +266,7 @@ export function Inspector({
           </Field>
         </div>
 
-        <p className="text-xs text-slate-400 pt-2">
+        <p className="text-xs text-faint pt-2">
           Klik sebuah elemen di kanvas untuk mengeditnya. Tambah data isian lewat
           tombol <b>+ Field</b>, lalu atur judul & tipenya.
         </p>
@@ -276,15 +282,30 @@ export function Inspector({
         ← Pengaturan Template
       </Button>
       <div className="flex items-center justify-between">
-        <h3 className="font-bold text-sm text-slate-700 capitalize">{el.type}</h3>
+        <h3 className="font-bold text-sm text-body capitalize">{el.type}</h3>
         <div className="flex gap-1">
-          <Button size="sm" onClick={() => onBringFront(el.id)} title="Ke depan">
+          <Button
+            size="sm"
+            onClick={() => onBringFront(el.id)}
+            title="Ke depan"
+            aria-label="Ke depan"
+          >
             ⬆
           </Button>
-          <Button size="sm" onClick={() => onSendBack(el.id)} title="Ke belakang">
+          <Button
+            size="sm"
+            onClick={() => onSendBack(el.id)}
+            title="Ke belakang"
+            aria-label="Ke belakang"
+          >
             ⬇
           </Button>
-          <Button size="sm" onClick={() => onDuplicate(el.id)} title="Duplikat">
+          <Button
+            size="sm"
+            onClick={() => onDuplicate(el.id)}
+            title="Duplikat"
+            aria-label="Duplikat"
+          >
             ⧉
           </Button>
         </div>
@@ -308,18 +329,18 @@ export function Inspector({
             value={el.content ?? ""}
             onChange={(e) => onElementChange(el.id, { content: e.target.value })}
             rows={4}
-            className="w-full px-2.5 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+            className="w-full px-2.5 py-2 text-sm border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge"
           />
         </Field>
       )}
 
       {el.type === "text" && (
-        <div className="text-[11px] text-slate-400 leading-relaxed">
+        <div className="text-[11px] text-faint leading-relaxed">
           Token tersedia:{" "}
           {TOKENS.map((t) => (
             <code
               key={t}
-              className="cursor-pointer bg-slate-100 rounded px-1 mr-1"
+              className="cursor-pointer bg-surface-hover rounded px-1 mr-1"
               onClick={() =>
                 onElementChange(el.id, { content: (el.content ?? "") + t })
               }
@@ -369,7 +390,7 @@ export function Inspector({
               />
             </Field>
           )}
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-faint">
             Judul ini menjadi input otomatis di halaman <b>Buat Invoice</b>. Judul
             yang sama dipakai ulang berbagi satu isian.
           </p>
@@ -401,7 +422,7 @@ export function Inspector({
       )}
 
       {el.type === "logo" && (
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-faint">
           Logo diambil dari <b>Pengaturan Template</b>. Ubah gambar logo di sana.
         </p>
       )}
@@ -444,7 +465,7 @@ export function Inspector({
             type="color"
             value={el.style.color}
             onChange={(e) => setStyle(el, { color: e.target.value })}
-            className="h-9 w-full rounded-lg border border-slate-200"
+            className="h-9 w-full rounded-lg border border-line"
           />
         </Field>
       )}

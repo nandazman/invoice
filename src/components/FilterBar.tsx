@@ -108,7 +108,7 @@ export function FilterBar({
             </Button>
           ))}
           <span className="flex-1" />
-          <span className="text-sm text-slate-400">
+          <span className="text-sm text-faint">
             {filtered.length} cocok
           </span>
           {hasFilter && (

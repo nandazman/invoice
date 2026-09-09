@@ -46,12 +46,21 @@ import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
 import { LinkProductDialog } from "../components/LinkProductDialog";
 import { BuyerBackfillDialog } from "../components/BuyerBackfillDialog";
 import { BuyerSelect } from "../components/BuyerSelect";
-import { Button, DangerButton, GhostButton } from "../components/Button";
+import { Button, DangerGhostButton, GhostButton } from "../components/Button";
 import { FilterBar } from "../components/FilterBar";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
+import { MobileList, MobileRow } from "../components/MobileList";
+import { thClass, tdClass } from "../components/DataTable";
+import {
+  TrashIcon,
+  PencilIcon,
+  EyeIcon,
+  EyeOffIcon,
+  CloseIcon,
+} from "../components/icons";
 
 interface DateGroup {
   tanggal: string;
@@ -72,10 +81,6 @@ interface BuyerSection {
   items: OrderItem[];
   total: number;
 }
-
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 // Columns shown left of the "Total" column, in display order.
 const COLS_BEFORE_TOTAL = [
@@ -222,8 +227,8 @@ function newBuyer(nama: string): Buyer {
 // Colored badge feel for the inline status dropdown.
 function statusSelectClass(status: OrderStatus): string {
   return status === "paid"
-    ? "text-emerald-600 bg-emerald-50 border-emerald-200 font-semibold"
-    : "text-amber-600 bg-amber-50 border-amber-200 font-semibold";
+    ? "text-ok bg-ok-soft border-ok-line font-semibold"
+    : "text-warn bg-warn-soft border-warn-line font-semibold";
 }
 
 export function OrdersPage() {
@@ -239,7 +244,10 @@ export function OrdersPage() {
   // an install with no orders and one where every order already has a buyer are
   // the same question — "nothing to ask about" — and both must answer silently
   // rather than offer to stamp zero rows.
-  const withoutBuyer = useMemo(() => orders.filter(needsBuyer).length, [orders]);
+  const withoutBuyer = useMemo(
+    () => orders.filter(needsBuyer).length,
+    [orders],
+  );
   useEffect(() => {
     if (backfillPending && withoutBuyer === 0) dismissBuyerBackfill();
   }, [backfillPending, withoutBuyer]);
@@ -248,7 +256,9 @@ export function OrdersPage() {
     "invoice.pesanan.cols.v2",
     COLUMN_DEFAULTS,
   );
-  const [hidden, toggleHidden] = usePersistentHidden("invoice.pesanan.hidden.v1");
+  const [hidden, toggleHidden] = usePersistentHidden(
+    "invoice.pesanan.hidden.v1",
+  );
 
   // Group the table by pembeli instead of running one flat date list. Off by
   // default: the flat list is the shape the page has always had, and a user who
@@ -299,7 +309,8 @@ export function OrdersPage() {
   const toggleAll = useCallback((ids: string[]) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (ids.every((id) => next.has(id))) for (const id of ids) next.delete(id);
+      if (ids.every((id) => next.has(id)))
+        for (const id of ids) next.delete(id);
       else for (const id of ids) next.add(id);
       return next;
     });
@@ -406,8 +417,7 @@ export function OrdersPage() {
 
   // Full-width span for the buyer header row: the checkbox column, every
   // visible data column, and the actions column.
-  const totalCols =
-    2 + COLUMNS.filter((c) => visible[c.id] !== false).length;
+  const totalCols = 2 + COLUMNS.filter((c) => visible[c.id] !== false).length;
 
   const counted = filtered.filter((i) => !hidden.has(i.id));
   const grandTotal = sumRupiah(counted.map((i) => i.totalHarga));
@@ -416,12 +426,12 @@ export function OrdersPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Pesanan</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Tambah item dari daftar harga, lihat riwayat per tanggal.
       </p>
 
       {products.length === 0 ? (
-        <Panel className="text-center text-slate-400 py-8">
+        <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
       ) : (
@@ -443,12 +453,12 @@ export function OrdersPage() {
         </Field>
         {/* A view switch, not a filter — so it sits here rather than in
             FilterBar's own row, and Reset deliberately leaves it alone. */}
-        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer h-9 shrink-0">
+        <label className="flex items-center gap-2 text-sm text-muted cursor-pointer h-9 shrink-0">
           <input
             type="checkbox"
             checked={perBuyer}
             onChange={(e) => setPerBuyer(e.target.checked)}
-            className="w-4 h-4 accent-blue-600 cursor-pointer"
+            className="w-4 h-4 accent-brand cursor-pointer"
           />
           Pisahkan per pembeli
         </label>
@@ -459,7 +469,7 @@ export function OrdersPage() {
           <span className="text-lg font-bold">
             Total: {formatRupiah(grandTotal)}
           </span>
-          <span className="text-slate-400">
+          <span className="text-faint">
             · {counted.length} item
             {hiddenCount > 0 && ` (${hiddenCount} disembunyikan)`}
           </span>
@@ -479,122 +489,327 @@ export function OrdersPage() {
         )}
 
         {sections.every((s) => s.dates.length === 0) ? (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             {hasFilter
               ? "Tidak ada item cocok dengan filter."
               : "Belum ada pesanan."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={`${thClass} w-8`}>
-                    <SelectAllBox
-                      ids={filtered.map((o) => o.id)}
-                      selected={chosen}
-                      onToggle={toggleAll}
-                      title="Pilih semua item yang tampil"
-                    />
-                  </th>
-                  {visible.namaProduk !== false && (
-                    <th className={thClass}>Produk</th>
-                  )}
-                  {visible.satuan !== false && (
-                    <th className={thClass}>Satuan</th>
-                  )}
-                  {visible.kuantitas !== false && (
-                    <th className={`${thClass} text-right`}>Qty</th>
-                  )}
-                  {visible.hargaSatuan !== false && (
-                    <th className={`${thClass} text-right`}>Harga Satuan</th>
-                  )}
-                  {visible.totalHarga !== false && (
-                    <th className={`${thClass} text-right`}>Total</th>
-                  )}
-                  {visible.status !== false && (
-                    <th className={thClass}>Status</th>
-                  )}
-                  {visible.buyer !== false && (
-                    <th className={thClass}>Pembeli</th>
-                  )}
-                  {visible.createdAt !== false && (
-                    <th className={thClass}>Dibuat</th>
-                  )}
-                  {visible.updatedAt !== false && (
-                    <th className={thClass}>Diperbarui</th>
-                  )}
-                  <ByHeaders show={byVisible} className={thClass} />
-                  <th className={thClass}></th>
-                </tr>
-              </thead>
-              <tbody>
+          <>
+            {/* The phone layout. Nine-plus columns do not fit on 390px, so
+                below `md` the row collapses to what it IS on the left and
+                what it is WORTH on the right — same shape as Beli Stock and
+                Harga. The leading select-all/select checkboxes and the
+                trailing hide/delete actions have nowhere else to go on a
+                phone, so they ride along on the product side; status and
+                pembeli stay their full interactive selves (the badge-styled
+                dropdown and the buyer picker) rather than flattening to
+                plain text, since neither the phone layout nor the desktop
+                one should be able to do something the other can't. */}
+            <div className="md:hidden">
+              <MobileList left="Produk" right="Total">
                 {sections.map((s) => (
                   <Fragment key={s.key}>
                     {s.label !== null && (
-                      <tr className="bg-blue-50 border-t-2 border-blue-200">
+                      <tr className="bg-brand-soft border-t-2 border-brand-line">
                         <td className={tdClass}>
-                          <SelectAllBox
-                            ids={s.items.map((i) => i.id)}
-                            selected={chosen}
-                            onToggle={toggleAll}
-                            title={`Pilih semua item ${s.label}`}
-                          />
+                          <div className="flex items-center gap-2">
+                            <SelectAllBox
+                              ids={s.items.map((i) => i.id)}
+                              selected={chosen}
+                              onToggle={toggleAll}
+                              title={`Pilih semua item ${s.label}`}
+                            />
+                            <span className="font-bold text-brand-strong">
+                              {s.label}
+                              <span className="ml-1 font-normal text-brand-edge">
+                                · {s.items.length} item
+                              </span>
+                            </span>
+                          </div>
                         </td>
                         <td
-                          className={`${tdClass} font-bold text-blue-800`}
-                          colSpan={Math.max(1, totalCols - 2)}
+                          className={`${tdClass} text-right font-bold tabular-nums text-brand-strong`}
                         >
-                          {s.label}
-                          <span className="ml-2 font-normal text-blue-500">
-                            · {s.items.length} item
-                          </span>
+                          {formatRupiah(s.total)}
                         </td>
-                        {/* Only when there is a column left to put it in. With
-                            every data column hidden the header would otherwise
-                            emit more cells than the table has, stretching it
-                            past its own <thead>. */}
-                        {totalCols > 2 && (
-                          <td
-                            className={`${tdClass} text-right font-bold tabular-nums text-blue-800`}
-                          >
-                            {formatRupiah(s.total)}
-                          </td>
-                        )}
                       </tr>
                     )}
                     {s.dates.map((g) => (
-                      <GroupRows
-                        key={g.tanggal}
-                        group={g}
-                        visible={visible}
-                        hidden={hidden}
-                        onToggleHidden={toggleHidden}
-                        onRemove={removeItem}
-                        onSetStatus={setOrderStatus}
-                        onBuy={() =>
-                          setBuying({
-                            tanggal: g.tanggal,
-                            buyerId: s.buyerId,
-                          })
-                        }
-                        onLink={setLinking}
-                        buyers={buyers}
-                        buyerById={buyerById}
-                        assigning={assigning}
-                        onAssign={setAssigning}
-                        onSetBuyer={setOrderBuyer}
-                        onCreateBuyer={createBuyerFor}
-                        selected={chosen}
-                        onToggleSelected={toggleSelected}
-                        onToggleAll={toggleAll}
-                      />
+                      <Fragment key={g.tanggal}>
+                        {/* Scrolling a long day, the one thing you lose
+                            first is which day you are looking at — the
+                            amounts below stop meaning anything without it.
+                            The date row pins under the fixed app bar
+                            (`top-14`) and carries its own background, since
+                            a `<tr>`'s paint does not travel with a stuck
+                            `<td>`. "Beli stok" rides along inside it instead
+                            of costing a row of its own. */}
+                        <tr className="font-bold">
+                          <td
+                            className={`${tdClass} sticky top-14 z-10 bg-surface-hover`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <SelectAllBox
+                                ids={g.items.map((i) => i.id)}
+                                selected={chosen}
+                                onToggle={toggleAll}
+                                title={`Pilih semua item ${formatTanggalID(g.tanggal)}`}
+                              />
+                              {formatTanggalID(g.tanggal)}
+                            </div>
+                          </td>
+                          <td
+                            className={`${tdClass} sticky top-14 z-10 bg-surface-hover text-right font-bold tabular-nums`}
+                          >
+                            <div className="flex items-center justify-end gap-2">
+                              {formatRupiah(g.total)}
+                              <Button
+                                size="sm"
+                                className="min-h-9 min-w-0 px-2 py-1 text-xs font-semibold"
+                                onClick={() =>
+                                  setBuying({
+                                    tanggal: g.tanggal,
+                                    buyerId: s.buyerId,
+                                  })
+                                }
+                                title="Catat pembelian stok untuk tanggal ini"
+                              >
+                                Beli stok
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {g.items.map((it) => (
+                          <MobileRow
+                            key={it.id}
+                            // Same row-state paint as the desktop `<tr>`: a
+                            // line excluded from the total reads dimmed, a
+                            // selected one reads tinted.
+                            className={`${hidden.has(it.id) ? "opacity-40" : ""} ${chosen.has(it.id) ? "bg-brand-soft" : ""}`}
+                            title={
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  className="accent-brand shrink-0"
+                                  checked={chosen.has(it.id)}
+                                  onChange={() => toggleSelected(it.id)}
+                                  aria-label={`Pilih ${it.namaProduk}`}
+                                />
+                                {it.productId ? (
+                                  <Link
+                                    to="/produk/$id"
+                                    params={{ id: it.productId }}
+                                    className="text-brand hover:underline font-medium"
+                                  >
+                                    {it.namaProduk}
+                                  </Link>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
+                                    title="Belum tertaut ke produk — klik untuk menautkan"
+                                    onClick={() => setLinking(it)}
+                                  >
+                                    ⚠ {it.namaProduk}
+                                  </button>
+                                )}
+                              </div>
+                            }
+                            meta={
+                              <>
+                                <span>{it.satuan}</span>
+                                <Select
+                                  className={`w-auto py-0.5 text-xs ${statusSelectClass(it.status)}`}
+                                  value={it.status}
+                                  onChange={(e) =>
+                                    setOrderStatus(
+                                      it.id,
+                                      e.target.value as OrderStatus,
+                                    )
+                                  }
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="paid">Paid</option>
+                                </Select>
+                                <BuyerCell
+                                  item={it}
+                                  buyers={buyers}
+                                  buyerById={buyerById}
+                                  picking={assigning === it.id}
+                                  onPick={() => setAssigning(it.id)}
+                                  onChange={(buyerId) => {
+                                    setOrderBuyer(it.id, buyerId);
+                                    setAssigning(null);
+                                  }}
+                                  onCreate={(nama) =>
+                                    createBuyerFor(it.id, nama)
+                                  }
+                                  onCancel={() => setAssigning(null)}
+                                />
+                                <span>{formatDateTimeID(it.createdAt)}</span>
+                                {/* No `w-full` wrapper: forcing the two row
+                                    actions onto a line of their own cost a
+                                    full 44px band of empty space under every
+                                    item. They wrap with the rest of the meta
+                                    now, and fill the tail of whichever line
+                                    they land on. */}
+                                <span className="ml-auto flex items-center gap-0.5">
+                                  <GhostButton
+                                    size="sm"
+                                    onClick={() => toggleHidden(it.id)}
+                                    title={
+                                      hidden.has(it.id)
+                                        ? "Tampilkan & hitung di total"
+                                        : "Sembunyikan dari total"
+                                    }
+                                    aria-label={
+                                      hidden.has(it.id)
+                                        ? "Tampilkan & hitung di total"
+                                        : "Sembunyikan dari total"
+                                    }
+                                  >
+                                    {hidden.has(it.id) ? (
+                                      <EyeOffIcon />
+                                    ) : (
+                                      <EyeIcon />
+                                    )}
+                                  </GhostButton>
+                                  <DangerGhostButton
+                                    size="sm"
+                                    onClick={() => removeItem(it.id)}
+                                    title={`Hapus "${it.namaProduk}"`}
+                                    aria-label={`Hapus "${it.namaProduk}"`}
+                                  >
+                                    <TrashIcon />
+                                  </DangerGhostButton>
+                                </span>
+                              </>
+                            }
+                            value={formatRupiah(it.totalHarga)}
+                            note={`${formatAngka(it.kuantitas)} × ${formatRupiah(
+                              it.hargaSatuan,
+                            )}`}
+                          />
+                        ))}
+                      </Fragment>
                     ))}
                   </Fragment>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </MobileList>
+            </div>
+
+            <div className="overflow-x-auto hidden md:block">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className={`${thClass} w-8`}>
+                      <SelectAllBox
+                        ids={filtered.map((o) => o.id)}
+                        selected={chosen}
+                        onToggle={toggleAll}
+                        title="Pilih semua item yang tampil"
+                      />
+                    </th>
+                    {visible.namaProduk !== false && (
+                      <th className={thClass}>Produk</th>
+                    )}
+                    {visible.satuan !== false && (
+                      <th className={thClass}>Satuan</th>
+                    )}
+                    {visible.kuantitas !== false && (
+                      <th className={`${thClass} text-right`}>Qty</th>
+                    )}
+                    {visible.hargaSatuan !== false && (
+                      <th className={`${thClass} text-right`}>Harga Satuan</th>
+                    )}
+                    {visible.totalHarga !== false && (
+                      <th className={`${thClass} text-right`}>Total</th>
+                    )}
+                    {visible.status !== false && (
+                      <th className={thClass}>Status</th>
+                    )}
+                    {visible.buyer !== false && (
+                      <th className={thClass}>Pembeli</th>
+                    )}
+                    {visible.createdAt !== false && (
+                      <th className={thClass}>Dibuat</th>
+                    )}
+                    {visible.updatedAt !== false && (
+                      <th className={thClass}>Diperbarui</th>
+                    )}
+                    <ByHeaders show={byVisible} className={thClass} />
+                    <th className={thClass}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sections.map((s) => (
+                    <Fragment key={s.key}>
+                      {s.label !== null && (
+                        <tr className="bg-brand-soft border-t-2 border-brand-line">
+                          <td className={tdClass}>
+                            <SelectAllBox
+                              ids={s.items.map((i) => i.id)}
+                              selected={chosen}
+                              onToggle={toggleAll}
+                              title={`Pilih semua item ${s.label}`}
+                            />
+                          </td>
+                          <td
+                            className={`${tdClass} font-bold text-brand-strong`}
+                            colSpan={Math.max(1, totalCols - 2)}
+                          >
+                            {s.label}
+                            <span className="ml-2 font-normal text-brand-edge">
+                              · {s.items.length} item
+                            </span>
+                          </td>
+                          {/* Only when there is a column left to put it in. With
+                            every data column hidden the header would otherwise
+                            emit more cells than the table has, stretching it
+                            past its own <thead>. */}
+                          {totalCols > 2 && (
+                            <td
+                              className={`${tdClass} text-right font-bold tabular-nums text-brand-strong`}
+                            >
+                              {formatRupiah(s.total)}
+                            </td>
+                          )}
+                        </tr>
+                      )}
+                      {s.dates.map((g) => (
+                        <GroupRows
+                          key={g.tanggal}
+                          group={g}
+                          visible={visible}
+                          hidden={hidden}
+                          onToggleHidden={toggleHidden}
+                          onRemove={removeItem}
+                          onSetStatus={setOrderStatus}
+                          onBuy={() =>
+                            setBuying({
+                              tanggal: g.tanggal,
+                              buyerId: s.buyerId,
+                            })
+                          }
+                          onLink={setLinking}
+                          buyers={buyers}
+                          buyerById={buyerById}
+                          assigning={assigning}
+                          onAssign={setAssigning}
+                          onSetBuyer={setOrderBuyer}
+                          onCreateBuyer={createBuyerFor}
+                          selected={chosen}
+                          onToggleSelected={toggleSelected}
+                          onToggleAll={toggleAll}
+                        />
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Panel>
 
@@ -682,7 +897,7 @@ function GroupRows({
 
   return (
     <>
-      <tr className="bg-slate-100 font-bold">
+      <tr className="bg-surface-hover font-bold">
         <td className={tdClass}>
           <SelectAllBox
             ids={group.items.map((i) => i.id)}
@@ -691,7 +906,10 @@ function GroupRows({
             title={`Pilih semua item ${formatTanggalID(group.tanggal)}`}
           />
         </td>
-        <td className={`${tdClass} font-bold`} colSpan={Math.max(1, beforeCount)}>
+        <td
+          className={`${tdClass} font-bold`}
+          colSpan={Math.max(1, beforeCount)}
+        >
           {formatTanggalID(group.tanggal)}
         </td>
         {visible.totalHarga !== false && (
@@ -700,7 +918,11 @@ function GroupRows({
           </td>
         )}
         <td className={`${tdClass} text-right`} colSpan={afterCount}>
-          <Button size="sm" onClick={onBuy} title="Catat pembelian stok untuk tanggal ini">
+          <Button
+            size="sm"
+            onClick={onBuy}
+            title="Catat pembelian stok untuk tanggal ini"
+          >
             Beli stok
           </Button>
         </td>
@@ -708,14 +930,14 @@ function GroupRows({
       {group.items.map((it) => (
         <tr
           key={it.id}
-          className={`hover:bg-slate-50 ${
+          className={`hover:bg-surface-sunken ${
             hidden.has(it.id) ? "opacity-40" : ""
-          } ${selected.has(it.id) ? "bg-blue-50" : ""}`}
+          } ${selected.has(it.id) ? "bg-brand-soft" : ""}`}
         >
           <td className={tdClass}>
             <input
               type="checkbox"
-              className="align-middle accent-blue-600"
+              className="align-middle accent-brand"
               checked={selected.has(it.id)}
               onChange={() => onToggleSelected(it.id)}
               aria-label={`Pilih ${it.namaProduk}`}
@@ -727,14 +949,14 @@ function GroupRows({
                 <Link
                   to="/produk/$id"
                   params={{ id: it.productId }}
-                  className="text-blue-600 hover:underline font-medium"
+                  className="text-brand hover:underline font-medium"
                 >
                   {it.namaProduk}
                 </Link>
               ) : (
                 <button
                   type="button"
-                  className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100"
+                  className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
                   title="Belum tertaut ke produk — klik untuk menautkan"
                   onClick={() => onLink(it)}
                 >
@@ -743,9 +965,7 @@ function GroupRows({
               )}
             </td>
           )}
-          {visible.satuan !== false && (
-            <td className={tdClass}>{it.satuan}</td>
-          )}
+          {visible.satuan !== false && <td className={tdClass}>{it.satuan}</td>}
           {visible.kuantitas !== false && (
             <td className={`${tdClass} text-right tabular-nums`}>
               {formatAngka(it.kuantitas)}
@@ -793,12 +1013,12 @@ function GroupRows({
             </td>
           )}
           {visible.createdAt !== false && (
-            <td className={`${tdClass} text-xs text-slate-400 whitespace-nowrap`}>
+            <td className={`${tdClass} text-xs text-faint whitespace-nowrap`}>
               {formatDateTimeID(it.createdAt)}
             </td>
           )}
           {visible.updatedAt !== false && (
-            <td className={`${tdClass} text-xs text-slate-400 whitespace-nowrap`}>
+            <td className={`${tdClass} text-xs text-faint whitespace-nowrap`}>
               {formatDateTimeID(it.updatedAt)}
             </td>
           )}
@@ -820,16 +1040,22 @@ function GroupRows({
                   ? "Tampilkan & hitung di total"
                   : "Sembunyikan dari total"
               }
+              aria-label={
+                hidden.has(it.id)
+                  ? "Tampilkan & hitung di total"
+                  : "Sembunyikan dari total"
+              }
             >
-              {hidden.has(it.id) ? "🙈" : "👁"}
+              {hidden.has(it.id) ? <EyeOffIcon /> : <EyeIcon />}
             </GhostButton>
-            <DangerButton
+            <DangerGhostButton
               size="sm"
               onClick={() => onRemove(it.id)}
-              title="Hapus item"
+              title={`Hapus "${it.namaProduk}"`}
+              aria-label={`Hapus "${it.namaProduk}"`}
             >
-              ✕
-            </DangerButton>
+              <TrashIcon />
+            </DangerGhostButton>
           </td>
         </tr>
       ))}
@@ -863,7 +1089,7 @@ function SelectAllBox({
     <input
       ref={ref}
       type="checkbox"
-      className="align-middle accent-blue-600"
+      className="align-middle accent-brand"
       checked={all}
       disabled={ids.length === 0}
       onChange={() => onToggle(ids)}
@@ -892,8 +1118,8 @@ function BulkBar({
   onClear: () => void;
 }) {
   return (
-    <div className="flex gap-3 flex-wrap items-center mb-3 p-2.5 rounded-lg border border-blue-200 bg-blue-50">
-      <span className="text-sm font-semibold text-blue-700">
+    <div className="flex gap-3 flex-wrap items-center mb-3 p-2.5 rounded-lg border border-brand-line bg-brand-soft">
+      <span className="text-sm font-semibold text-brand-text">
         {count} item dipilih
       </span>
       <Select
@@ -902,7 +1128,9 @@ function BulkBar({
         // not a field, and leaving "Paid" showing would imply the selection is
         // now paid when the selection has already been cleared.
         value=""
-        onChange={(e) => e.target.value && onStatus(e.target.value as OrderStatus)}
+        onChange={(e) =>
+          e.target.value && onStatus(e.target.value as OrderStatus)
+        }
       >
         <option value="">Ubah status…</option>
         <option value="pending">Pending</option>
@@ -968,8 +1196,13 @@ function BuyerCell({
             dropdown but never unsets `assigning`, so a user who opens the picker
             on an already-assigned row and changes their mind would have to pick
             the same buyer again to get the name back. */}
-        <GhostButton size="sm" onClick={onCancel} title="Batal">
-          ✕
+        <GhostButton
+          size="sm"
+          onClick={onCancel}
+          title="Batal"
+          aria-label="Batal"
+        >
+          <CloseIcon />
         </GhostButton>
       </div>
     );
@@ -978,7 +1211,7 @@ function BuyerCell({
     return (
       <button
         type="button"
-        className="text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap hover:bg-slate-100"
+        className="text-faint bg-surface-sunken border border-line rounded px-1.5 py-0.5 font-medium whitespace-nowrap hover:bg-surface-hover"
         title="Belum ada pembeli — klik untuk memilih"
         onClick={onPick}
       >
@@ -996,15 +1229,20 @@ function BuyerCell({
         <Link
           to="/pembeli/$id"
           params={{ id: buyer.id }}
-          className="text-blue-600 hover:underline font-medium"
+          className="text-brand hover:underline font-medium"
         >
           {buyer.nama}
         </Link>
       ) : (
-        <span className="text-slate-400 italic">(pembeli dihapus)</span>
+        <span className="text-faint italic">(pembeli dihapus)</span>
       )}
-      <GhostButton size="sm" onClick={onPick} title="Ganti pembeli">
-        ✎
+      <GhostButton
+        size="sm"
+        onClick={onPick}
+        title="Ganti pembeli"
+        aria-label="Ganti pembeli"
+      >
+        <PencilIcon />
       </GhostButton>
     </span>
   );

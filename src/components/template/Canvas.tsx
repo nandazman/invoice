@@ -166,7 +166,7 @@ export function Canvas({
   return (
     <div ref={wrapRef} className="w-full">
       <div
-        className="relative bg-white shadow-md mx-auto overflow-hidden"
+        className="relative bg-surface shadow-md mx-auto overflow-hidden"
         style={{ width: PAGE_W * scale, height: PAGE_H * scale }}
         onPointerDown={() => onSelect(null)}
       >
@@ -206,7 +206,7 @@ export function Canvas({
                     <div
                       key={h.dir}
                       onPointerDown={(e) => startResize(e, el, h.dir)}
-                      className={`absolute w-2 h-2 bg-white border border-blue-600 rounded-sm ${h.cls}`}
+                      className={`absolute w-2 h-2 bg-surface border border-brand rounded-sm ${h.cls}`}
                       style={{ zIndex: 1000 }}
                     />
                   ))}

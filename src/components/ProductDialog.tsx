@@ -2,11 +2,12 @@ import { useState } from "react";
 import type { Product, Conversion } from "../lib/types";
 import { uid, nowISO, formatRupiah } from "../lib/format";
 import { addType } from "../lib/store";
-import { Button, PrimaryButton, GhostButton } from "./Button";
+import { Button, PrimaryButton, DangerGhostButton } from "./Button";
 import { Input } from "./Input";
 import { Field } from "./Field";
 import { TypeSelect } from "./TypeSelect";
 import { Modal } from "./Modal";
+import { TrashIcon } from "./icons";
 
 interface Props {
   product: Product | null; // null = creating new
@@ -88,16 +89,18 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
   return (
     <Modal
       onClose={onClose}
-      className="bg-white rounded-xl p-5 w-full max-w-xl max-h-[90vh] overflow-auto"
+      className="bg-surface p-5 w-full max-w-xl overflow-auto"
     >
         <h2 className="text-xl font-bold mb-4">
           {product ? "Ubah Produk" : "Tambah Produk"}
         </h2>
 
-        <div className="flex gap-3 flex-wrap mb-3">
+        {/* Single column on a phone — five side-by-side fields don't fit —
+            back to the row layout from `md` up. */}
+        <div className="flex flex-col md:flex-row gap-3 mb-3">
           <Field
             label="Nama Produk *"
-            className="flex-[2] min-w-[200px]"
+            className="md:flex-[2] md:min-w-[200px]"
             error={namaError}
           >
             <Input
@@ -109,7 +112,7 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
               autoFocus
             />
           </Field>
-          <Field label="Tipe" className="flex-1 min-w-[140px]">
+          <Field label="Tipe" className="md:flex-1 md:min-w-[140px]">
             <TypeSelect
               value={tipe}
               options={types}
@@ -119,25 +122,27 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
           </Field>
         </div>
 
-        <div className="flex gap-3 flex-wrap mb-3">
-          <Field label="Ukuran" className="flex-1 min-w-[120px]">
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-3 mb-3">
+          <Field label="Ukuran" className="md:flex-1 md:min-w-[120px]">
             <Input
               type="number"
+              inputMode="numeric"
               value={ukuran}
               onChange={(e) => setUkuran(e.target.value)}
               placeholder="mis. 1000"
             />
           </Field>
-          <Field label="Satuan dasar" className="flex-1 min-w-[120px]">
+          <Field label="Satuan dasar" className="md:flex-1 md:min-w-[120px]">
             <Input
               value={satuan}
               onChange={(e) => setSatuan(e.target.value)}
               placeholder="mis. gr, ml, pcs"
             />
           </Field>
-          <Field label="Harga Dasar" className="flex-1 min-w-[120px]">
+          <Field label="Harga Dasar" className="md:flex-1 md:min-w-[120px]">
             <Input
               type="number"
+              inputMode="numeric"
               value={hargaDasar}
               onChange={(e) => setHargaDasar(e.target.value)}
               placeholder="mis. 30000"
@@ -145,11 +150,12 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
           </Field>
           <Field
             label="Harga Satuan *"
-            className="flex-1 min-w-[120px]"
+            className="md:flex-1 md:min-w-[120px]"
             error={hargaError}
           >
             <Input
               type="number"
+              inputMode="numeric"
               value={hargaJual}
               onChange={(e) => {
                 setHarga(e.target.value);
@@ -158,9 +164,10 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
               placeholder="mis. 45000"
             />
           </Field>
-          <Field label="Stok minimum" className="flex-1 min-w-[120px]">
+          <Field label="Stok minimum" className="md:flex-1 md:min-w-[120px]">
             <Input
               type="number"
+              inputMode="numeric"
               value={stokMin}
               onChange={(e) => setStokMin(e.target.value)}
               placeholder="mis. 10 (satuan dasar)"
@@ -169,10 +176,10 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
         </div>
 
         <p className="text-xs mb-3">
-          <span className="text-slate-500">Laba per satuan: </span>
+          <span className="text-faint">Laba per satuan: </span>
           <span
             className={
-              laba < 0 ? "font-semibold text-red-600" : "font-semibold text-emerald-600"
+              laba < 0 ? "font-semibold text-danger" : "font-semibold text-ok"
             }
           >
             {formatRupiah(laba)}
@@ -186,47 +193,55 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
             + Tambah konversi
           </Button>
         </div>
-        <p className="text-xs text-slate-500 mt-0 mb-3">
+        <p className="text-xs text-faint mt-0 mb-3">
           Harga tiap konversi dihitung otomatis dari Harga Satuan × jumlah. Mis.
           1 box = 12 unit → harga box = 12 × harga satuan.
         </p>
 
         {konversi.length === 0 && (
-          <p className="text-sm text-slate-400">Belum ada konversi.</p>
+          <p className="text-sm text-faint">Belum ada konversi.</p>
         )}
 
         {konversi.map((k, i) => (
-          <div className="flex gap-3 flex-wrap items-end mb-2" key={i}>
-            <Field label="Nama unit" className="flex-[1.4] min-w-[110px]">
+          <div
+            className="flex flex-col md:flex-row md:flex-wrap gap-3 md:items-end mb-2"
+            key={i}
+          >
+            <Field label="Nama unit" className="md:flex-[1.4] md:min-w-[110px]">
               <Input
                 value={k.nama}
                 onChange={(e) => updateKonversi(i, { nama: e.target.value })}
                 placeholder="box / dus"
               />
             </Field>
-            <Field label="= berapa satuan" className="flex-1 min-w-[100px]">
+            <Field label="= berapa satuan" className="md:flex-1 md:min-w-[100px]">
               <Input
                 type="number"
+                inputMode="numeric"
                 value={k.jumlah}
                 onChange={(e) =>
                   updateKonversi(i, { jumlah: Number(e.target.value) })
                 }
               />
             </Field>
-            <Field label="Harga unit (otomatis)" className="flex-[1.2] min-w-[110px]">
+            <Field
+              label="Harga unit (otomatis)"
+              className="md:flex-[1.2] md:min-w-[110px]"
+            >
               <Input
                 value={formatRupiah((Number(k.jumlah) || 0) * (Number(hargaJual) || 0))}
                 readOnly
                 tabIndex={-1}
-                className="bg-slate-50 text-slate-500"
+                className="bg-surface-sunken text-faint"
               />
             </Field>
-            <GhostButton
+            <DangerGhostButton
               onClick={() => removeKonversi(i)}
               title="Hapus konversi"
+              aria-label="Hapus konversi"
             >
-              ✕
-            </GhostButton>
+              <TrashIcon />
+            </DangerGhostButton>
           </div>
         ))}
 

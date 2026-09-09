@@ -1,8 +1,91 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Semantic colour tokens.
+
+   Before this, thirteen route files and twenty components each spelled their
+   own `text-slate-500` and `border-slate-200`. Nothing said which greys meant
+   the same thing, so "make secondary text darker" was a find-and-replace over
+   700 occurrences with no way to tell a deliberate slate-400 from a careless
+   one. These name the ROLE instead, and every literal below is Tailwind's own
+   value for the palette step named in the comment — copied rather than aliased
+   with `var(--color-slate-500)`, because v4 only emits a theme variable that is
+   itself used, and an alias to a tree-shaken variable resolves to nothing.
+
+   Roles only. A CATEGORICAL palette — one colour per audit entity, one per
+   product type — is not a role and stays a palette: see `entityBadgeClass` in
+   HistoryPage.tsx and `src/lib/typeColor.ts`.
+   ------------------------------------------------------------------------- */
+@theme {
+  /* Text, darkest to lightest. `faint` is the contrast floor at 4.8:1 on white;
+     `ghost` is 3.1:1 and fails, so it is for ornament and disabled states only,
+     never for anything that has to be read. */
+  --color-ink: oklch(27.9% 0.041 260.031); /* slate-800 */
+  --color-body: oklch(37.2% 0.044 257.287); /* slate-700 */
+  --color-muted: oklch(44.6% 0.043 257.281); /* slate-600 */
+  --color-faint: oklch(55.4% 0.046 257.417); /* slate-500 */
+  --color-ghost: oklch(70.4% 0.04 256.788); /* slate-400 */
+
+  /* Surfaces. `sunken` is the page behind the cards; `hover`/`active` are the
+     two interaction steps above a white control. */
+  --color-surface: #fff;
+  --color-surface-sunken: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --color-surface-hover: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --color-surface-active: oklch(92.9% 0.013 255.508); /* slate-200 */
+
+  /* Rules and dividers. `soft` separates rows inside a table, `line` separates
+     components from each other. */
+  --color-line-soft: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --color-line: oklch(92.9% 0.013 255.508); /* slate-200 */
+  --color-line-strong: oklch(86.9% 0.022 252.894); /* slate-300 */
+  --color-line-inverse: oklch(27.9% 0.041 260.031); /* slate-800 */
+
+  /* Brand blue: primary actions, links, focus. */
+  --color-brand: oklch(54.6% 0.245 262.881); /* blue-600 */
+  --color-brand-hover: oklch(48.8% 0.243 264.376); /* blue-700 */
+  --color-brand-text: oklch(48.8% 0.243 264.376); /* blue-700 */
+  --color-brand-strong: oklch(42.4% 0.199 265.638); /* blue-800 */
+  --color-brand-edge: oklch(62.3% 0.214 259.815); /* blue-500 */
+  --color-brand-line: oklch(88.2% 0.059 254.128); /* blue-200 */
+  --color-brand-soft: oklch(97% 0.014 254.604); /* blue-50 */
+  --color-brand-focus: oklch(93.2% 0.032 255.585); /* blue-100 */
+
+  /* Danger red: destructive intent. Distinct from `negative` below, which is a
+     number being bad rather than an action being irreversible. */
+  --color-danger: oklch(57.7% 0.245 27.325); /* red-600 */
+  --color-danger-text: oklch(50.5% 0.213 27.518); /* red-700 */
+  --color-danger-edge: oklch(63.7% 0.237 25.331); /* red-500 */
+  --color-danger-focus: oklch(70.4% 0.191 22.216); /* red-400 */
+  --color-danger-line-strong: oklch(80.8% 0.114 19.571); /* red-300 */
+  --color-danger-line: oklch(88.5% 0.062 18.334); /* red-200 */
+  --color-danger-focus-soft: oklch(93.6% 0.032 17.717); /* red-100 */
+  --color-danger-soft: oklch(97.1% 0.013 17.38); /* red-50 */
+
+  /* Negative rose: a loss, an overdue balance, a sync that failed. */
+  --color-negative: oklch(58.6% 0.253 17.585); /* rose-600 */
+  --color-negative-text: oklch(51.4% 0.222 16.935); /* rose-700 */
+  --color-negative-line: oklch(89.2% 0.058 10.001); /* rose-200 */
+  --color-negative-soft-strong: oklch(94.1% 0.03 12.58); /* rose-100 */
+  --color-negative-soft: oklch(96.9% 0.015 12.422); /* rose-50 */
+
+  /* Warning amber: needs attention, nothing is broken yet. */
+  --color-warn: oklch(66.6% 0.179 58.318); /* amber-600 */
+  --color-warn-text: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --color-warn-line: oklch(92.4% 0.12 95.746); /* amber-200 */
+  --color-warn-soft-strong: oklch(96.2% 0.059 95.617); /* amber-100 */
+  --color-warn-soft: oklch(98.7% 0.022 95.277); /* amber-50 */
+
+  /* Success emerald: done, in stock, a positive margin. */
+  --color-ok: oklch(59.6% 0.145 163.225); /* emerald-600 */
+  --color-ok-text: oklch(50.8% 0.118 165.612); /* emerald-700 */
+  --color-ok-line: oklch(90.5% 0.093 164.15); /* emerald-200 */
+  --color-ok-soft-strong: oklch(95% 0.052 163.051); /* emerald-100 */
+  --color-ok-soft: oklch(97.9% 0.021 166.113); /* emerald-50 */
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-800 antialiased;
+    @apply bg-surface-sunken text-ink antialiased;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     margin: 0;
   }

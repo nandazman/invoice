@@ -28,12 +28,12 @@ export function Field({
   const errorId = useId();
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-semibold text-slate-500">{label}</span>
+      <span className="text-xs font-semibold text-faint">{label}</span>
       <FieldErrorContext.Provider value={{ id: errorId, invalid: !!error }}>
         {children}
       </FieldErrorContext.Provider>
       {error && (
-        <span id={errorId} className="text-xs font-medium text-red-600">
+        <span id={errorId} className="text-xs font-medium text-danger">
           {error}
         </span>
       )}

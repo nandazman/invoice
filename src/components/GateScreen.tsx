@@ -26,32 +26,32 @@ export function GateScreen({ email }: { email: string | null }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl p-6">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-surface-sunken">
+      <div className="w-full max-w-md bg-surface border border-line rounded-xl p-6">
         <div className="text-3xl mb-3">🔒</div>
         <h1 className="text-xl font-bold mb-2">Belum punya akses</h1>
 
         <div className="mb-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">
+          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
             Masuk sebagai
           </div>
           <div className="text-lg font-bold break-all">
-            {email || <span className="text-slate-400">—</span>}
+            {email || <span className="text-faint">—</span>}
           </div>
         </div>
 
-        <p className="text-sm text-slate-600 mb-2">
+        <p className="text-sm text-muted mb-2">
           Email ini sudah lolos Cloudflare Access, tetapi pemilik aplikasi belum
           memberinya akses ke data. Hubungi pemilik aplikasi dan minta email di
           atas didaftarkan.
         </p>
-        <p className="text-sm text-slate-600 mb-5">
+        <p className="text-sm text-muted mb-5">
           Setelah didaftarkan, muat ulang halaman ini — tidak ada kata sandi
           terpisah dan tidak perlu masuk ulang.
         </p>
 
-        <div className="border-t border-slate-200 pt-4">
-          <p className="text-sm text-slate-500 mb-2">
+        <div className="border-t border-line pt-4">
+          <p className="text-sm text-faint mb-2">
             Kalau perangkat ini pernah dipakai mencatat, datanya masih tersimpan
             di browser dan bisa Anda salin keluar sekarang.
           </p>

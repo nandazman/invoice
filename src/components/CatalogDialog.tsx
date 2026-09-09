@@ -54,7 +54,9 @@ function loadOptions(): SavedOptions {
 }
 
 const checkboxRow =
-  "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-100 cursor-pointer text-slate-700";
+  "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-surface-hover cursor-pointer text-body";
+const checkboxInput =
+  "accent-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 export function CatalogDialog({
   products,
@@ -146,11 +148,11 @@ export function CatalogDialog({
       <Modal
         onClose={onClose}
         closeOnOverlay={false}
-        className="bg-white rounded-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
+        className="bg-surface w-full max-w-6xl flex flex-col overflow-hidden"
       >
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-200">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-line">
           <h2 className="font-bold text-lg">Ekspor Katalog</h2>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-faint">
             {total} produk · {perTipe.length} kategori
           </span>
           <PrimaryButton
@@ -166,8 +168,8 @@ export function CatalogDialog({
         <div className="flex gap-4 p-5 overflow-auto">
           <div className="w-72 shrink-0 space-y-4">
             <section>
-              <h3 className="font-bold text-sm text-slate-700 mb-2">Ringkasan</h3>
-              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 text-sm">
+              <h3 className="font-bold text-sm text-body mb-2">Ringkasan</h3>
+              <div className="border border-line rounded-lg divide-y divide-line-soft text-sm">
                 <Summary label="Total produk" value={String(total)} />
                 <Summary label="Kategori" value={String(perTipe.length)} />
                 <Summary label="Total harga jual" value={formatRupiah(nilaiJual)} />
@@ -183,13 +185,13 @@ export function CatalogDialog({
             </section>
 
             <section>
-              <h3 className="font-bold text-sm text-slate-700 mb-1">Kategori</h3>
-              <div className="max-h-44 overflow-auto border border-slate-200 rounded-lg p-1">
+              <h3 className="font-bold text-sm text-body mb-1">Kategori</h3>
+              <div className="max-h-44 overflow-auto border border-line rounded-lg p-1">
                 {types.map((t) => (
                   <label key={t} className={checkboxRow}>
                     <input
                       type="checkbox"
-                      className="accent-blue-600"
+                      className={checkboxInput}
                       checked={selectedTipes.includes(t)}
                       onChange={() => toggleTipe(t)}
                     />
@@ -197,36 +199,36 @@ export function CatalogDialog({
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-faint mt-1">
                 Tanpa pilihan = semua kategori.
               </p>
               <label className={`${checkboxRow} mt-1`}>
                 <input
                   type="checkbox"
-                  className="accent-blue-600"
+                  className={checkboxInput}
                   checked={saved.showKategori}
                   onChange={() => patch({ showKategori: !saved.showKategori })}
                 />
                 Kelompokkan per kategori
               </label>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-faint">
                 Nonaktif: semua produk digabung jadi satu tabel, tanpa judul
                 kategori.
               </p>
             </section>
 
             <section>
-              <h3 className="font-bold text-sm text-slate-700 mb-1">Kolom</h3>
-              <div className="border border-slate-200 rounded-lg p-1">
+              <h3 className="font-bold text-sm text-body mb-1">Kolom</h3>
+              <div className="border border-line rounded-lg p-1">
                 <label className={`${checkboxRow} opacity-60`}>
-                  <input type="checkbox" checked disabled className="accent-blue-600" />
+                  <input type="checkbox" checked disabled className={checkboxInput} />
                   Nama Produk
                 </label>
                 {CATALOG_COLUMNS.map((c) => (
                   <label key={c.id} className={checkboxRow}>
                     <input
                       type="checkbox"
-                      className="accent-blue-600"
+                      className={checkboxInput}
                       checked={saved.columns.includes(c.id)}
                       onChange={() => toggleColumn(c.id)}
                     />
@@ -237,7 +239,7 @@ export function CatalogDialog({
             </section>
 
             <section className="space-y-2">
-              <h3 className="font-bold text-sm text-slate-700">Tampilan</h3>
+              <h3 className="font-bold text-sm text-body">Tampilan</h3>
               <Field label="Judul">
                 <Input
                   value={saved.judul}
@@ -293,19 +295,19 @@ export function CatalogDialog({
               {uploadError && (
                 <p
                   role="alert"
-                  className="text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-1.5"
+                  className="text-xs font-medium text-danger bg-danger-soft border border-danger-line rounded-md px-2 py-1.5"
                 >
                   {uploadError}
                 </p>
               )}
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-faint">
                 Logo unggahan hanya dipakai sekali. Untuk logo tetap, simpan di
                 halaman Desain Template.
               </p>
             </section>
           </div>
 
-          <div className="flex-1 min-w-0 bg-slate-100 rounded-xl p-4">
+          <div className="flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
             <CatalogPreview sections={sections} options={options} />
           </div>
         </div>
@@ -335,11 +337,11 @@ function Summary({
 }) {
   return (
     <div className="flex items-center justify-between px-3 py-1.5">
-      <span className={muted ? "text-slate-400 text-xs" : "text-slate-500"}>
+      <span className={`text-faint ${muted ? "text-xs" : ""}`}>
         {label}
       </span>
       <span
-        className={`font-semibold tabular-nums ${muted ? "text-slate-500 text-xs" : "text-slate-700"}`}
+        className={`font-semibold tabular-nums ${muted ? "text-faint text-xs" : "text-body"}`}
       >
         {value}
       </span>

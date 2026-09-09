@@ -52,12 +52,12 @@ export function UpdatePrompt() {
   return (
     <div
       role="status"
-      className="fixed bottom-4 left-4 z-50 max-w-xs rounded-xl border border-slate-200 bg-white p-4 shadow-lg"
+      className="fixed bottom-4 left-4 z-50 max-w-xs rounded-xl border border-line bg-surface p-4 shadow-lg"
     >
-      <p className="mb-1 text-sm font-semibold text-slate-800">
+      <p className="mb-1 text-sm font-semibold text-ink">
         Versi baru tersedia
       </p>
-      <p className="mb-3 text-sm text-slate-500">
+      <p className="mb-3 text-sm text-faint">
         Data Anda tidak terpengaruh — semuanya sudah tersimpan di perangkat ini.
         Muat ulang kalau sedang tidak mengisi form.
       </p>

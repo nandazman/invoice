@@ -8,12 +8,20 @@ import {
   type FilterableRow,
   type StatusFilter,
 } from "../lib/useOrderFilter";
-import { Button, PrimaryButton, DangerButton } from "../components/Button";
+import {
+  Button,
+  PrimaryButton,
+  DangerButton,
+  DangerGhostButton,
+} from "../components/Button";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { FilterBar } from "../components/FilterBar";
 import { CopyTextDialog } from "../components/CopyTextDialog";
+import { MobileList, MobileRow } from "../components/MobileList";
+import { thClass, tdClass } from "../components/DataTable";
+import { TrashIcon } from "../components/icons";
 
 type Source = "order" | "beli";
 
@@ -28,9 +36,6 @@ const SOURCE_LABELS: Record<
   beli: { title: "🧾 Beli Stock", sheetName: "Beli Stock", filename: "beli-stok" },
 };
 
-const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200";
-const tdClass = "px-2.5 py-2 text-sm border-b border-slate-100";
 
 export function ExcelPage() {
   const orders = useOrders();
@@ -127,7 +132,7 @@ export function ExcelPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Ekspor Excel</h1>
-      <p className="text-slate-500 mb-4">
+      <p className="text-faint mb-4">
         Pilih item ke area staging, lalu ekspor ke berkas{" "}
         <b>{labels.filename}.xlsx</b>.
       </p>
@@ -173,10 +178,10 @@ export function ExcelPage() {
               Total: {formatRupiah(grandTotal)}
             </span>
           )}
-          <span className="text-slate-400">· {staged.length} item</span>
+          <span className="text-faint">· {staged.length} item</span>
         </div>
         <div className="flex gap-3 flex-wrap items-center justify-end mb-3">
-          <label className="flex items-center gap-1.5 text-sm text-slate-600 select-none cursor-pointer mr-auto">
+          <label className="flex items-center gap-1.5 text-sm text-muted select-none cursor-pointer mr-auto">
             <input
               type="checkbox"
               checked={showPrice}
@@ -223,11 +228,84 @@ export function ExcelPage() {
         </div>
 
         {staged.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
+          <div className="text-center text-faint py-8">
             Belum ada data di staging. Gunakan filter lalu tambahkan.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* The phone layout. Seven-plus columns do not fit on 390px, so
+                below `md` the row collapses to what it IS on the left and what
+                it is WORTH on the right. Tanggal and the row's delete action
+                restack under the product; the per-row checkbox rides along
+                with the title since the header has no room for a select-all
+                on the phone. When Harga is hidden, Kuantitas takes over the
+                right side and its own arithmetic note is dropped since it
+                would just repeat the value already shown there. */}
+            <div className="md:hidden">
+              <MobileList
+                // Select-all is the difference between exporting a filtered
+                // set and ticking forty rows by hand, so it rides in the phone
+                // header rather than staying a desktop-only affordance.
+                left={
+                  <span className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={allChecked}
+                      onChange={toggleAll}
+                      aria-label="Pilih semua baris"
+                    />
+                    Nama Produk
+                  </span>
+                }
+                right={showPrice ? "Total" : "Kuantitas"}
+              >
+                {stagedSorted.map((it) => (
+                  <MobileRow
+                    key={it.id}
+                    title={
+                      <span className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(it.id)}
+                          onChange={() => toggleRow(it.id)}
+                        />
+                        <span className="truncate">{it.namaProduk}</span>
+                      </span>
+                    }
+                    meta={
+                      <>
+                        <span>{formatTanggalID(it.tanggal)}</span>
+                        {/* The trailing action column has nowhere else to go
+                            on a phone, so it rides along here. */}
+                        <DangerGhostButton
+                          size="sm"
+                          onClick={() => removeRow(it.id)}
+                          title="Hapus dari staging"
+                          aria-label="Hapus dari staging"
+                        >
+                          <TrashIcon />
+                        </DangerGhostButton>
+                      </>
+                    }
+                    value={
+                      showPrice
+                        ? formatRupiah(it.totalHarga)
+                        : formatAngka(it.kuantitas)
+                    }
+                    note={
+                      showPrice
+                        ? `${formatAngka(it.kuantitas)} × ${formatRupiah(
+                            it.hargaSatuan,
+                          )}`
+                        : undefined
+                    }
+                  />
+                ))}
+              </MobileList>
+            </div>
+
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -252,7 +330,7 @@ export function ExcelPage() {
               </thead>
               <tbody>
                 {stagedSorted.map((it) => (
-                  <tr key={it.id} className="hover:bg-slate-50">
+                  <tr key={it.id} className="hover:bg-surface-sunken">
                     <td className={tdClass}>
                       <input
                         type="checkbox"
@@ -276,19 +354,21 @@ export function ExcelPage() {
                       </>
                     )}
                     <td className={`${tdClass} text-right`}>
-                      <DangerButton
+                      <DangerGhostButton
                         size="sm"
                         onClick={() => removeRow(it.id)}
                         title="Hapus dari staging"
+                        aria-label="Hapus dari staging"
                       >
-                        ✕
-                      </DangerButton>
+                        <TrashIcon />
+                      </DangerGhostButton>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Panel>
 

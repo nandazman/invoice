@@ -38,11 +38,11 @@ export function LinkProductDialog({
         <h2 className="text-xl font-bold mb-2">Tautkan Produk</h2>
 
         <div className="mb-3">
-          <span className="inline-block rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 text-sm font-medium">
+          <span className="inline-block rounded-md bg-ok-soft text-ok-text border border-ok-line px-2 py-1 text-sm font-medium">
             {namaProduk}
           </span>
         </div>
-        <p className="text-slate-500 text-sm mb-3">
+        <p className="text-faint text-sm mb-3">
           Pilih produk yang benar — kuantitas dan harga pesanan tidak berubah.
         </p>
 
@@ -53,9 +53,9 @@ export function LinkProductDialog({
           autoFocus
         />
 
-        <div className="mt-3 divide-y divide-slate-100">
+        <div className="mt-3 divide-y divide-line-soft">
           {matches.length === 0 ? (
-            <p className="text-sm text-slate-400 py-6 text-center">
+            <p className="text-sm text-faint py-6 text-center">
               Tidak ada produk cocok.
             </p>
           ) : (
@@ -63,7 +63,7 @@ export function LinkProductDialog({
               <button
                 key={p.id}
                 type="button"
-                className="w-full text-left px-2 py-2 hover:bg-slate-50 flex items-center gap-2"
+                className="w-full text-left px-2 py-2 hover:bg-surface-sunken flex items-center gap-2"
                 onClick={() => onPick(p.id)}
               >
                 {/* Duplicate names are exactly why this dialog exists, so the
@@ -72,12 +72,12 @@ export function LinkProductDialog({
                   <span className="block text-sm font-medium truncate">
                     {p.namaProduk}
                   </span>
-                  <span className="block text-xs text-slate-400">
+                  <span className="block text-xs text-faint">
                     {[p.ukuran, p.satuan].filter(Boolean).join(" · ")}
                   </span>
                 </span>
-                <span className="text-xs text-slate-400">{p.tipe}</span>
-                <span className="text-sm tabular-nums text-slate-500">
+                <span className="text-xs text-faint">{p.tipe}</span>
+                <span className="text-sm tabular-nums text-faint">
                   {formatRupiah(p.hargaJual)}
                 </span>
               </button>
@@ -86,7 +86,7 @@ export function LinkProductDialog({
         </div>
 
         {total > LIMIT && (
-          <p className="text-xs text-slate-400 mt-2">
+          <p className="text-xs text-faint mt-2">
             Ada {total - LIMIT} produk lagi — ketik untuk mempersempit.
           </p>
         )}
