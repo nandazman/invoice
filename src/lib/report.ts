@@ -350,6 +350,53 @@ export function monthlyTrend(
     .sort((a, b) => a.bulan.localeCompare(b.bulan));
 }
 
+// What the trend chart is FOR. A picture of twelve months answers "which month
+// was biggest"; the question a shop owner actually has is "am I getting better
+// or worse", and that is a comparison, not a shape.
+export interface TrendInsight {
+  bulan: string; // the most recent month in view
+  margin: number | null; // its margin, null when it sold nothing
+  // The mean margin of the months before it, up to `BANDING_BULAN` of them.
+  // Null when there is no earlier month to compare against.
+  marginSebelumnya: number | null;
+  // margin − marginSebelumnya, in percentage POINTS (not percent-of-percent).
+  selisihPoin: number | null;
+  bulanRugi: number; // how many months in view lost money
+}
+
+// How far back "sebelumnya" reaches. One month is too noisy to call a direction
+// on — a single big order moves it — and the whole history drags a shop's early
+// months into a comparison with its current ones. Three is the shortest window
+// that survives one unusual month.
+const BANDING_BULAN = 3;
+
+export function trendInsight(rows: TrendRow[]): TrendInsight | null {
+  if (rows.length === 0) return null;
+  const last = rows[rows.length - 1];
+  const before = rows.slice(Math.max(0, rows.length - 1 - BANDING_BULAN), rows.length - 1);
+
+  // Weighted by revenue, not a mean of the monthly percentages: a month that
+  // sold Rp 50 rb should not pull the baseline as hard as one that sold Rp 50
+  // jt. Averaging the percentages themselves is the classic way to make a tiny
+  // month decide the story.
+  const penjualanBefore = sumRupiah(before.map((r) => r.penjualan));
+  const labaBefore = sumRupiah(before.map((r) => r.laba));
+  const marginSebelumnya =
+    before.length === 0 ? null : marginOf(labaBefore, penjualanBefore);
+  const margin = marginOf(last.laba, last.penjualan);
+
+  return {
+    bulan: last.bulan,
+    margin,
+    marginSebelumnya,
+    selisihPoin:
+      margin === null || marginSebelumnya === null
+        ? null
+        : margin - marginSebelumnya,
+    bulanRugi: rows.filter((r) => r.laba < 0).length,
+  };
+}
+
 // ---------- Breakdowns ----------
 
 // One row of a margin table. `key` is the grouping id (productId or buyerId);
@@ -456,6 +503,60 @@ export function byBuyer(
   );
 }
 
+// ---------- Concentration ----------
+
+export interface ParetoRow {
+  row: MarginRow;
+  share: number; // this row's share of the total profit earned, 0-100
+  kumulatif: number; // share of every row down to and including this one
+}
+
+export interface Pareto {
+  // Profit-making rows, largest first, each carrying its running share.
+  untung: ParetoRow[];
+  // Loss-making rows, worst first. Kept OUT of the ranking rather than at the
+  // bottom of it: a cumulative percentage only means anything over a set of
+  // numbers with the same sign, and "row 9 brings the total to 104%" is not a
+  // sentence anyone can act on.
+  rugi: MarginRow[];
+  totalUntung: number; // sum of the profit-making rows
+  totalRugi: number; // sum of the losses, negative
+  // How many of the top rows it takes to reach `AMBANG` of the profit. This is
+  // the number the chart exists to produce: "4 products earn 80% of it" tells
+  // the owner what to protect, which no ranking of bars does on its own.
+  inti: number;
+}
+
+// The Pareto threshold. 80 is the convention and it is arbitrary; what makes it
+// useful is that it is FIXED, so the count moves only when the business does.
+const AMBANG = 80;
+
+export function paretoProfit(rows: MarginRow[]): Pareto {
+  const untungRows = rows.filter((r) => r.laba > 0).sort((a, b) => b.laba - a.laba);
+  const rugi = rows.filter((r) => r.laba < 0).sort((a, b) => a.laba - b.laba);
+  const totalUntung = sumRupiah(untungRows.map((r) => r.laba));
+  const totalRugi = sumRupiah(rugi.map((r) => r.laba));
+
+  let jalan = 0;
+  let inti = 0;
+  const untung = untungRows.map((row, i) => {
+    jalan += row.laba;
+    // Guarded because every row can be laba 0 — filtered out above, but a
+    // totalUntung of 0 with an empty list still reaches the division below.
+    const kumulatif = totalUntung === 0 ? 0 : (jalan / totalUntung) * 100;
+    // The first row to cross the line is counted, so `inti` is "how many rows
+    // you need", not "how many fit under it".
+    if (inti === 0 && kumulatif >= AMBANG) inti = i + 1;
+    return {
+      row,
+      share: totalUntung === 0 ? 0 : (row.laba / totalUntung) * 100,
+      kumulatif,
+    };
+  });
+
+  return { untung, rugi, totalUntung, totalRugi, inti };
+}
+
 // ---------- Stock that left without a sale ----------
 
 export interface StockLoss {
@@ -550,12 +651,19 @@ function daysBetween(from: string, to: string): number | null {
 
 // Outstanding receivables, aged by order date.
 //
-// This deliberately reads EVERY pending order and ignores whatever period the
-// page is filtered to. `OrderStatus` is a flag with no payment date beside it,
-// so "unpaid" is a fact about now, not about a period: an order dated March and
-// paid in April is `paid` today, and nothing in the row remembers that it was
-// outstanding through March. A period-scoped receivable printed next to
-// period-scoped revenue would only invite subtracting one from the other.
+// Scope is the CALLER's decision, because "unpaid" has two honest readings and
+// only one of them is computable. `OrderStatus` is a flag with no payment date
+// beside it, so nothing in the data can answer "how much was outstanding at the
+// end of August" — an order dated March and paid in April reads `paid` today,
+// and the row does not remember it was outstanding through March. What IS
+// answerable is "orders PLACED in August that are still unpaid today", and that
+// is what passing a period-filtered list here means. Laporan shows both: the
+// filtered list as the headline, the whole list as the reconciliation beneath
+// it, each labelled with the period it covers.
+//
+// The buckets always age against `today` whichever list comes in, so a filtered
+// total and an unfiltered one are directly comparable — one is a subset of the
+// other, never a different clock.
 //
 // `today` is a parameter rather than a `todayISO()` call so the buckets are
 // testable; a function that reads the clock cannot be pinned.

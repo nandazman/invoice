@@ -10,6 +10,7 @@ import {
   formatRelatifID,
   formatDateTimeID,
   presetRange,
+  periodeLabel,
   nowISO,
 } from "./format";
 
@@ -295,5 +296,72 @@ describe("formatDateTimeID", () => {
     expect(formatDateTimeID("2026-06-27T08:30:00.000Z")).toMatch(
       /^27 Jun 2026, \d{2}\.\d{2}$/,
     );
+  });
+});
+
+describe("periodeLabel", () => {
+  const none = { exact: "", from: "", to: "" };
+
+  it("is empty when no date filter is set", () => {
+    // Empty, not "semua tanggal": callers put this mid-sentence, and the
+    // phrase belongs to the caller that wants it, not to every caller.
+    expect(periodeLabel(none)).toBe("");
+  });
+
+  it("names a single exact date", () => {
+    expect(periodeLabel({ ...none, exact: "2026-08-15" })).toBe(
+      "15 Agustus 2026",
+    );
+  });
+
+  it("collapses a whole calendar month to the month name", () => {
+    // What every preset produces, so it is the common case and has to read
+    // like one month rather than like two dates that happen to sit together.
+    expect(periodeLabel({ ...none, from: "2026-08-01", to: "2026-08-31" })).toBe(
+      "Agustus 2026",
+    );
+  });
+
+  it("collapses February in a leap year", () => {
+    // 29 days, and the last-day check is new Date(y, m, 0), so a hardcoded 28
+    // or 31 would break exactly here.
+    expect(periodeLabel({ ...none, from: "2024-02-01", to: "2024-02-29" })).toBe(
+      "Februari 2024",
+    );
+  });
+
+  it("does NOT collapse a range that stops short of the month end", () => {
+    expect(periodeLabel({ ...none, from: "2026-08-01", to: "2026-08-30" })).toBe(
+      "1 Agustus 2026 – 30 Agustus 2026",
+    );
+  });
+
+  it("does NOT collapse a range that starts after the first", () => {
+    expect(periodeLabel({ ...none, from: "2026-08-02", to: "2026-08-31" })).toBe(
+      "2 Agustus 2026 – 31 Agustus 2026",
+    );
+  });
+
+  it("spells out a range that crosses months", () => {
+    expect(periodeLabel({ ...none, from: "2026-07-15", to: "2026-09-15" })).toBe(
+      "15 Juli 2026 – 15 September 2026",
+    );
+  });
+
+  it("handles an open start and an open end", () => {
+    expect(periodeLabel({ ...none, from: "2026-08-01" })).toBe(
+      "sejak 1 Agustus 2026",
+    );
+    expect(periodeLabel({ ...none, to: "2026-08-31" })).toBe(
+      "sampai 31 Agustus 2026",
+    );
+  });
+
+  it("lets exact win over a leftover from/to", () => {
+    // The UI disables from/to while exact is set, but the values survive in
+    // state, and the label must follow what is actually filtering.
+    expect(
+      periodeLabel({ exact: "2026-08-15", from: "2026-01-01", to: "2026-12-31" }),
+    ).toBe("15 Agustus 2026");
   });
 });

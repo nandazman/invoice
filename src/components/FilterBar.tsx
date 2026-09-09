@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { Button } from "./Button";
+import { Chip } from "./Chip";
 import { Field } from "./Field";
 import { Input } from "./Input";
 import { Panel } from "./Panel";
 import { Select } from "./Select";
-import { PRESET_LABELS, type PresetKey } from "../lib/format";
+import { PRESET_LABELS, periodeLabel, type PresetKey } from "../lib/format";
 import { useBuyers, useTypes } from "../lib/store";
 import type { FilterableRow, OrderFilter } from "../lib/useOrderFilter";
 
@@ -32,6 +33,21 @@ export function FilterBar({
   const { values, set, preset, filtered, clear, hasFilter } = filter;
   const types = useTypes();
   const buyers = useBuyers();
+
+  // Built from `values`, not `applied`: these are labels for what the user has
+  // set, so they should appear the moment a control changes rather than waiting
+  // on the deferred product search that only exists to keep the LIST cheap.
+  const aktif: string[] = [];
+  const periode = periodeLabel(values);
+  if (periode) aktif.push(periode);
+  if (values.produk.trim()) aktif.push(`Produk: ${values.produk.trim()}`);
+  if (values.tipe) aktif.push(`Tipe: ${values.tipe}`);
+  if (values.pembeli) {
+    const nama = buyers.find((b) => b.id === values.pembeli)?.nama;
+    aktif.push(`Pembeli: ${nama ?? "tidak dikenal"}`);
+  }
+  if (values.status !== "semua")
+    aktif.push(values.status === "paid" ? "Sudah dibayar" : "Belum dibayar");
 
   return (
     <Panel>
@@ -117,6 +133,19 @@ export function FilterBar({
             </Button>
           )}
         </div>
+
+        {/* What is actually applied, spelled out. Six controls can hold a filter
+            and three of them are dropdowns whose value you cannot see without
+            opening them, so "1.204 cocok" was the only feedback that a filter
+            was on at all. Panels downstream repeat these same chips to say what
+            they cover, and that only works if the reader can see the original. */}
+        {aktif.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap items-center">
+            {aktif.map((label) => (
+              <Chip key={label}>{label}</Chip>
+            ))}
+          </div>
+        )}
       </div>
     </Panel>
   );

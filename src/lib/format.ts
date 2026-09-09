@@ -100,6 +100,41 @@ export function formatTanggalID(iso: string): string {
   return `${d} ${BULAN[m - 1]} ${y}`;
 }
 
+// The active date range, in words, for panels that have to say out loud which
+// period they cover. Every figure on Laporan is either a period flow or a
+// balance at a moment, and the only way to tell them apart on screen is for
+// each one to name its own scope — "Agustus 2026" against "posisi hari ini".
+//
+// A whole calendar month collapses to "Agustus 2026" rather than "1 Agustus
+// 2026 – 31 Agustus 2026": the presets produce exactly that range, so the long
+// form would be the common case and it reads like two dates that happen to sit
+// together rather than like one month.
+//
+// Returns "" for no date constraint. Callers treat that as "semua tanggal";
+// returning the phrase here would put it in the middle of sentences that read
+// better without it.
+export function periodeLabel(v: {
+  exact: string;
+  from: string;
+  to: string;
+}): string {
+  if (v.exact) return formatTanggalID(v.exact);
+  if (v.from && v.to) {
+    const [fy, fm, fd] = v.from.split("-").map(Number);
+    const [ty, tm, td] = v.to.split("-").map(Number);
+    if (fy && fm && fd === 1 && fy === ty && fm === tm) {
+      // new Date(y, m, 0) is day zero of the next month = the last day of this
+      // one, the same overflow trick presetRange uses to build the range.
+      const akhir = new Date(ty, tm, 0).getDate();
+      if (td === akhir) return `${BULAN[fm - 1]} ${fy}`;
+    }
+    return `${formatTanggalID(v.from)} – ${formatTanggalID(v.to)}`;
+  }
+  if (v.from) return `sejak ${formatTanggalID(v.from)}`;
+  if (v.to) return `sampai ${formatTanggalID(v.to)}`;
+  return "";
+}
+
 // "1 Juni 2026" -> "2026-06-01" (best effort, for importing legacy order.json)
 export function parseTanggalID(text: string): string {
   const m = text.trim().match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);

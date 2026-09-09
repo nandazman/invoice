@@ -18,7 +18,11 @@ import {
   stockLoss,
   estimateUnpriced,
   monthlyTrend,
+  trendInsight,
+  paretoProfit,
   type MarginRow,
+  type ProfitSummary,
+  type TrendInsight,
 } from "../lib/report";
 import {
   useOrderFilter,
@@ -32,16 +36,24 @@ import {
   formatAngka,
   formatPersen,
   formatBulanPendek,
+  periodeLabel,
   todayISO,
 } from "../lib/format";
 import { FilterBar } from "../components/FilterBar";
+import { Chip } from "../components/Chip";
 import { Field } from "../components/Field";
 import { Panel } from "../components/Panel";
 import { Select } from "../components/Select";
 import { Stat } from "../components/Stat";
 import { thClass, tdClass } from "../components/DataTable";
 import { MobileList, MobileRow } from "../components/MobileList";
-import { CompositionChart, ContributionChart } from "../components/Chart";
+import {
+  WaterfallChart,
+  TrendChart,
+  ParetoBars,
+  ChartNote,
+  type WaterfallStep,
+} from "../components/Chart";
 
 // How many rows the two charts draw. Past this a bar chart stops being a chart
 // and becomes a table with decoration: the bars get too short to compare and the
@@ -71,6 +83,12 @@ export function ReportPage() {
   const fifo = useMemo(() => buildFifoIndex(stock, products), [stock, products]);
   const costByOrder = useMemo(() => joinOrderCosts(stock, fifo), [stock, fifo]);
 
+  // Declared before the memos rather than beside the first one that needs it:
+  // four blocks below re-apply the filter to a list the hook does not own
+  // (purchases, and orders re-scoped for tren and piutang), and a `const` read
+  // above its declaration in this body is a TDZ crash, not a warning.
+  const tipeById = useMemo(() => buildTipeIndex(products), [products]);
+
   const summary = useMemo(
     () => summarize(filtered, costByOrder),
     [filtered, costByOrder],
@@ -83,10 +101,49 @@ export function ReportPage() {
     () => byBuyer(filtered, costByOrder, buyers),
     [filtered, costByOrder, buyers],
   );
-  const tren = useMemo(
-    () => monthlyTrend(filtered, costByOrder),
-    [filtered, costByOrder],
+  // The one panel that deliberately ignores the DATE filter, and says so in its
+  // chip. A trend is a comparison, and a comparison needs something to compare
+  // against: filtered to Agustus this drew a single column and captioned it
+  // against nothing. So the window stays twelve months wide and the filtered
+  // months are highlighted inside it. Every other filter still applies — narrow
+  // to one product and you get that product's trend, which is the useful case.
+  const trenScope = useMemo(
+    () => ({ ...filter.applied, exact: "", from: "", to: "" }),
+    [filter.applied],
   );
+  const tren = useMemo(
+    () => monthlyTrend(filterRows(orders, trenScope, tipeById), costByOrder),
+    [orders, trenScope, tipeById, costByOrder],
+  );
+  const trenTampil = useMemo(() => tren.slice(-CHART_MONTHS), [tren]);
+  // Which of the drawn months the date filter actually covers. Compared as
+  // yyyy-mm strings against the yyyy-mm-dd bounds: a month is in view if it
+  // overlaps the range at all, so a 15 Jul – 15 Sep filter lights up all three.
+  const fokusBulan = useMemo(() => {
+    const { exact, from, to } = filter.applied;
+    if (exact) return new Set([exact.slice(0, 7)]);
+    if (!from && !to) return null; // no date filter: every month is in focus
+    const set = new Set<string>();
+    for (const r of trenTampil) {
+      if (from && r.bulan < from.slice(0, 7)) continue;
+      if (to && r.bulan > to.slice(0, 7)) continue;
+      set.add(r.bulan);
+    }
+    return set;
+  }, [filter.applied, trenTampil]);
+  // The caption reads the prefix ENDING at the last focused month, not the last
+  // month drawn. Otherwise filtering to Agustus would light up August's column
+  // and then caption the chart about September, which is the same
+  // filter-says-one-thing-number-says-another problem this page had.
+  const insight = useMemo(() => {
+    if (!fokusBulan) return trendInsight(trenTampil);
+    let akhir = -1;
+    trenTampil.forEach((r, i) => {
+      if (fokusBulan.has(r.bulan)) akhir = i;
+    });
+    return akhir < 0 ? null : trendInsight(trenTampil.slice(0, akhir + 1));
+  }, [trenTampil, fokusBulan]);
+  const pareto = useMemo(() => paretoProfit(produkRows), [produkRows]);
   // Computed whether or not the toggle is on: the banner has to be able to say
   // how many of the excluded rows an estimate would actually reach before the
   // user decides to switch it on.
@@ -98,7 +155,6 @@ export function ReportPage() {
   // Purchases run through the SAME filter values, so "pembelian periode ini"
   // means the period the user actually picked. Purchases carry no status and no
   // buyerId, so those two filters pass them through untouched (filterRows).
-  const tipeById = useMemo(() => buildTipeIndex(products), [products]);
   const pembelian = useMemo(
     () => purchaseTotal(filterRows(purchases, filter.applied, tipeById)),
     [purchases, filter.applied, tipeById],
@@ -142,16 +198,49 @@ export function ReportPage() {
   const labaTermasukPerkiraan = labaAkhir + perkiraan.laba;
   const penjualanTermasukPerkiraan = summary.penjualan + perkiraan.penjualan;
 
-  // Both of these are balances at a moment, not flows across the period, so
-  // neither is filtered. See docs/2026-08-09/plan.md §6.
+  // A balance at a moment, not a flow across the period, and unlike piutang it
+  // cannot be scoped to one either: FIFO leaves exactly one stack per product,
+  // and "the stock on hand during August" is not a thing the replay produces.
+  // The Stat says so on its own line. See docs/2026-08-09/plan.md §6.
   const persediaan = fifo.inventoryValue;
+
   // `today` is read during render and passed in as a dependency. Calling
   // todayISO() *inside* the memo hid a second input from React: the result would
   // have kept yesterday's ages until `orders` happened to change, so a page left
   // open overnight aged nothing at midnight. This still needs a render to
   // refresh, but it no longer claims to depend only on `orders`.
   const today = todayISO();
-  const piutang = useMemo(() => receivables(orders, today), [orders, today]);
+
+  // Piutang follows every filter EXCEPT status. The panel is itself the pending
+  // filter, so layering "lunas" on top could only ever zero it out — the user
+  // would have picked a status and been shown an empty piutang block as if the
+  // money were collected. The note under the panel says the status filter is
+  // ignored here, the same way the belanja-stok note does.
+  const piutangScope = useMemo(
+    () => ({ ...filter.applied, status: "semua" as StatusFilter }),
+    [filter.applied],
+  );
+  const piutang = useMemo(
+    () => receivables(filterRows(orders, piutangScope, tipeById), today),
+    [orders, piutangScope, tipeById, today],
+  );
+  // The whole-history figure, kept so the filtered one can be reconciled against
+  // it rather than quietly replacing it. Without this line a period filter would
+  // hide money instead of scoping it: an order from another month that is still
+  // unpaid is exactly the kind of thing a report must not drop.
+  const piutangSemua = useMemo(() => receivables(orders, today), [orders, today]);
+  const piutangLuar = piutangSemua.total - piutang.total;
+
+  // Every panel in the top band prints one of these. `periode` is empty when no
+  // date filter is set, and a chip still has to say something — an absent chip
+  // would read as "this one is different" on exactly the panels that are not.
+  const periode = periodeLabel(filter.applied);
+  const periodeChip = periode || "Semua tanggal";
+  // Purchases carry no buyerId and no status, and stock movements carry neither
+  // either, so those two dropdowns cannot reach them. Stated on the chip rather
+  // than in a warning that only appears once the user has already been misled.
+  const sebagian =
+    filter.applied.pembeli !== "" || filter.applied.status !== "semua";
 
   // Nothing to report on. Returned instead of the blocks below, not alongside
   // them: rendering both put a full Rp 0 laba-rugi under the words "belum ada
@@ -180,11 +269,21 @@ export function ReportPage() {
         <StatusField filter={filter} />
       </FilterBar>
 
+      <Band
+        title="Selama periode"
+        sub={
+          periode
+            ? `Angka di bawah ini bergerak mengikuti filter: ${periode}.`
+            : "Angka di bawah ini bergerak mengikuti filter. Belum ada filter tanggal, jadi ini seluruh riwayat."
+        }
+      />
+
       {/* 1. Laba rugi.
           The block opens on TOTAL revenue and works down to the part that has a
           cost behind it, so the excluded rows are visible in the arithmetic
           rather than mentioned underneath it. */}
       <Panel>
+        <PanelHead title="Laba rugi" scope={<Chip>{periodeChip}</Chip>} />
         <div className="max-w-md">
           <Line
             label="Uang masuk dari penjualan"
@@ -377,123 +476,225 @@ export function ReportPage() {
         </p>
       </Panel>
 
-      {/* 2. The same laba-rugi, drawn. Charts come straight after the block
-          they picture, and every bar's value is printed beside it — see
-          Chart.tsx. */}
+      {/* 2. The laba-rugi block, drawn as the bridge it is. A waterfall is the
+          chart for "where did the money go": each bar starts where the last one
+          ended, so the drop from penjualan to laba is a distance you can see
+          rather than a subtraction you have to do. */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">Grafik penjualan per bulan</h2>
-        <p className="text-sm text-faint mb-3">
-          Panjang batang = besar penjualan. Bagian abu-abu adalah modal
-          barangnya, bagian hijau adalah laba. Batang merah berarti bulan itu
-          rugi — barangnya terjual lebih murah dari modalnya.
-        </p>
-        <CompositionChart
-          rows={tren.slice(-CHART_MONTHS).map((t) => ({
-            key: t.bulan,
-            label: formatBulanPendek(t.bulan),
-            penjualan: t.penjualan,
-            hpp: t.hpp,
-            laba: t.laba,
-            marginPct: t.penjualan === 0 ? null : (t.laba / t.penjualan) * 100,
-          }))}
-          empty={
-            <p className="text-sm text-faint py-4 text-center">
-              Belum ada pesanan yang modalnya diketahui di periode ini, jadi
-              belum ada yang bisa digambar.
-            </p>
-          }
+        <PanelHead
+          title="Ke mana uang penjualannya"
+          scope={<Chip>{periodeChip}</Chip>}
         />
+        <p className="text-sm text-faint mb-3">
+          Batang biru adalah semua uang yang masuk. Setiap batang merah
+          memotongnya, dan batang paling bawah adalah sisanya.
+        </p>
+        {summary.penjualanTotal > 0 && (
+          <ChartNote tone={labaAkhir < 0 ? "buruk" : "netral"}>
+            {komposisiPenjualan(summary, susut.nilai, labaAkhir)}
+          </ChartNote>
+        )}
+        <WaterfallChart steps={waterfallSteps(summary, susut.nilai, labaAkhir)} />
       </Panel>
 
+      {/* 3. Trend. Columns because time has an axis, plus the margin line on
+          top: a month can grow and get worse at once, and the two marks
+          together are the only way to see that. */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">
-          Produk penyumbang laba terbesar
-        </h2>
-        <p className="text-sm text-faint mb-3">
-          {CHART_ROWS} teratas dan, kalau ada, yang paling merugi. Daftar
-          lengkapnya ada di tabel “Margin per produk” di bawah.
-        </p>
-        <ContributionChart
-          rows={topContributors(produkRows).map((r) => ({
-            key: r.key,
-            label:
-              r.key === "" ? (
-                r.label
-              ) : (
-                <Link
-                  to="/produk/$id"
-                  params={{ id: r.key }}
-                  className="text-brand hover:underline font-medium"
-                >
-                  {r.label}
-                </Link>
-              ),
-            value: r.laba,
-          }))}
-          empty={
-            <p className="text-sm text-faint py-4 text-center">
-              Belum ada pesanan dengan catatan stok di periode ini.
-            </p>
+        <PanelHead
+          title="Naik atau turun tiap bulan"
+          scope={
+            <Chip tone={fokusBulan ? "partial" : "period"}>
+              {fokusBulan
+                ? `12 bulan terakhir · ${periode} disorot`
+                : "12 bulan terakhir"}
+            </Chip>
           }
         />
+        <p className="text-sm text-faint mb-3">
+          Batang biru penjualan, batang abu-abu modalnya. Kalau yang abu-abu
+          lebih tinggi, bulan itu rugi. Garis oranye margin, skalanya di sumbu
+          kanan. Batang bisa membesar sementara garisnya turun — jualan makin
+          banyak, tapi untung per rupiahnya makin tipis.
+        </p>
+        {/* The one place a filter is deliberately not obeyed, so it is said out
+            loud instead of left to the chip alone. Cutting the chart down to the
+            filtered months would leave a single column and a caption comparing
+            it to nothing, which is not a trend. */}
+        {fokusBulan && (
+          <p className="text-sm text-warn-text mb-3">
+            Filter tanggal sengaja tidak dipakai di sini — tren butuh bulan
+            pembanding. Bulan yang kamu filter dicetak tebal, sisanya dibuat
+            samar sebagai pembanding.
+          </p>
+        )}
+        {trenTampil.length === 0 ? (
+          <p className="text-sm text-faint py-4 text-center">
+            Belum ada pesanan yang modalnya diketahui, jadi belum ada yang bisa
+            digambar.
+          </p>
+        ) : (
+          <>
+            {insight && (
+              <ChartNote tone={trenTone(insight.selisihPoin)}>
+                {trenKalimat(insight, trenTampil.length)}
+              </ChartNote>
+            )}
+            <TrendChart
+              points={trenTampil.map((t) => ({
+                key: t.bulan,
+                label: formatBulanPendek(t.bulan),
+                penjualan: t.penjualan,
+                hpp: t.hpp,
+                laba: t.laba,
+                marginPct:
+                  t.penjualan === 0 ? null : (t.laba / t.penjualan) * 100,
+                dim: fokusBulan ? !fokusBulan.has(t.bulan) : false,
+              }))}
+            />
+          </>
+        )}
       </Panel>
 
-      {/* 3. Context figures, deliberately OUTSIDE the arithmetic above.
-          Pembelian is cash moving into persediaan, not an expense: its cost
-          only becomes HPP when FIFO releases it on a sale. Subtracting it here
-          would double-count the goods. */}
+      {/* 4. Pareto. The ranking is the leaderboard; the running percentage is
+          the answer — how few products the whole profit actually rests on. */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">Di luar perhitungan di atas</h2>
+        <PanelHead
+          title="Produk mana yang bawa labanya"
+          scope={<Chip>{periodeChip}</Chip>}
+        />
+        <p className="text-sm text-faint mb-3">
+          Urut dari penyumbang terbesar. Panjang blok biru = besar labanya
+          dibanding produk teratas.
+        </p>
+        {pareto.untung.length === 0 && pareto.rugi.length === 0 ? (
+          <p className="text-sm text-faint py-4 text-center">
+            Belum ada pesanan dengan catatan stok di periode ini.
+          </p>
+        ) : (
+          <>
+            {pareto.inti > 0 && (
+              <ChartNote>
+                {formatAngka(pareto.inti)} dari{" "}
+                {formatAngka(pareto.untung.length)} produk menghasilkan 80% laba
+                Anda. Kalau salah satunya berhenti laku atau harga belinya naik,
+                labanya langsung terasa.
+              </ChartNote>
+            )}
+            {pareto.untung.length > 0 && (
+              <ParetoBars
+                inti={pareto.inti}
+                bars={pareto.untung.slice(0, CHART_ROWS).map((p) => ({
+                  key: p.row.key,
+                  label: <RowLabel row={p.row} />,
+                  value: p.row.laba,
+                }))}
+              />
+            )}
+            {pareto.untung.length > CHART_ROWS && (
+              <p className="mt-2 text-sm text-faint">
+                Ditambah {formatAngka(pareto.untung.length - CHART_ROWS)} produk
+                lain senilai{" "}
+                {formatRupiah(
+                  pareto.totalUntung -
+                    pareto.untung
+                      .slice(0, CHART_ROWS)
+                      .reduce((n, p) => n + p.row.laba, 0),
+                )}
+                . Daftar lengkapnya ada di tabel “Margin per produk” di bawah.
+              </p>
+            )}
+
+            {/* Losses get their own list, not the bottom of the ranking: a
+                running percentage only means something over numbers with the
+                same sign, and a shop owner reads this list for a different
+                reason — these are the prices to fix. */}
+            {pareto.rugi.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-line">
+                <h3 className="font-semibold text-negative-text mb-1">
+                  Produk yang malah menggerus laba
+                </h3>
+                <p className="text-sm text-faint mb-3">
+                  Terjual lebih murah dari modalnya, total{" "}
+                  {formatRupiah(pareto.totalRugi)}. Biasanya harga belinya sudah
+                  naik tapi harga jualnya belum ikut.
+                </p>
+                <ParetoBars
+                  negatif
+                  bars={pareto.rugi.slice(0, CHART_ROWS).map((r) => ({
+                    key: r.key,
+                    label: <RowLabel row={r} />,
+                    value: r.laba,
+                  }))}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </Panel>
+
+      {/* 5. Belanja stok. Outside the laba-rugi arithmetic but inside the
+          period: cash moving into persediaan is not an expense, its cost only
+          becomes HPP when FIFO releases it on a sale, so subtracting it above
+          would double-count the goods. It still belongs in this band because it
+          IS a flow across the filtered period. */}
+      <Panel>
+        <PanelHead
+          title="Belanja stok"
+          scope={
+            <Chip tone={sebagian ? "partial" : "period"}>
+              {sebagian
+                ? `${periodeChip} · semua pembeli & status`
+                : periodeChip}
+            </Chip>
+          }
+        />
         <p className="text-sm text-faint mb-3">
           Belanja stok bukan biaya — uangnya berubah jadi barang di gudang, dan
-          baru dihitung sebagai modal waktu barangnya terjual. Nilai stok dan
-          uang yang belum dibayar adalah posisi hari ini, bukan angka periode,
-          jadi keduanya tidak ikut difilter.
+          baru dihitung sebagai modal waktu barangnya terjual. Jadi angka ini
+          sengaja tidak ikut dikurangkan dari laba di atas.
         </p>
         <div className="flex gap-6 flex-wrap">
           <Stat
-            label="Belanja stok periode ini"
+            label="Uang keluar untuk stok"
             value={formatRupiah(pembelian)}
-            className={filter.applied.pembeli ? "text-faint" : ""}
-          />
-          <Stat
-            label="Nilai stok yang masih ada"
-            value={formatRupiah(persediaan)}
-          />
-          <Stat
-            label="Belum dibayar pembeli"
-            value={formatRupiah(piutang.total)}
-            className={piutang.total > 0 ? "text-warn" : ""}
+            hint={periodeChip}
           />
         </div>
 
-        {/* Pembelian follows the tanggal, produk and tipe filters, but NOT
-            pembeli: Beli Stok records what we bought, and its counterpart is a
-            supplier, not a pembeli. Without this note the figure reads as
-            "what I bought for Bu Ani", which it is not. */}
-        {(filter.applied.pembeli !== "" ||
-          filter.applied.status !== "semua") && (
+        {/* The chip already carries this, but the chip is four words and this is
+            the trap that actually costs money: Beli Stok records what we bought,
+            and its counterpart is a supplier, not a pembeli. Without the long
+            form the figure reads as "what I bought for Bu Ani", which it is
+            not. Shown only once those filters are set, so it stays a correction
+            rather than noise. */}
+        {sebagian && (
           <p className="mt-3 text-sm text-warn-text">
             Filter pembeli dan status tidak berlaku untuk belanja stok — stok
             dibeli dari supplier, bukan per pembeli, dan barisnya tidak punya
-            status bayar. Angka belanja stok di atas masih untuk semuanya.
+            status bayar. Angka di atas masih untuk semuanya.
           </p>
         )}
       </Panel>
 
-      {/* 4. Piutang */}
+      {/* 6. Piutang, scoped to the period: orders PLACED in it that are still
+          unpaid today. The reconciliation strip underneath carries the rest, so
+          a filter narrows the question without hiding money. */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">
-          Uang yang belum dibayar pembeli
-        </h2>
+        <PanelHead
+          title="Uang yang belum dibayar pembeli"
+          scope={<Chip>{periodeChip}</Chip>}
+        />
         <p className="text-sm text-faint mb-3">
-          Semua pesanan yang belum lunas, berapa pun tanggalnya. Status bayar
-          tidak menyimpan tanggal pelunasan, jadi ini posisi hari ini. Makin ke
-          kanan kelompoknya, makin lama uangnya belum masuk.
+          Pesanan {periode ? `dari ${periode}` : "dari semua tanggal"} yang
+          sampai hari ini belum lunas. Umurnya dihitung dari tanggal pesanan,
+          jadi makin ke kanan kelompoknya, makin lama uangnya belum masuk.
         </p>
         {piutang.count === 0 ? (
           <p className="text-sm text-faint">
-            Semua pesanan sudah dibayar. 🎉
+            {periode
+              ? `Semua pesanan dari ${periode} sudah dibayar. 🎉`
+              : "Semua pesanan sudah dibayar. 🎉"}
           </p>
         ) : (
           <div className="flex gap-6 flex-wrap">
@@ -512,6 +713,25 @@ export function ReportPage() {
             />
           </div>
         )}
+
+        {/* The reconciliation. Shown whenever the filter is hiding unpaid money,
+            because "Rp 15.997.000" under a filter and "Rp 21.320.000" without
+            one is exactly the contradiction that made this page untrustworthy —
+            the difference has to be named on the same screen, not left for the
+            reader to find by clearing the filter. */}
+        {piutangLuar > 0 && (
+          <p className="mt-3 pt-3 border-t border-line text-sm text-muted">
+            Di luar {periode ?? "filter ini"} masih ada{" "}
+            <strong className="text-warn-text">
+              {formatRupiah(piutangLuar)}
+            </strong>{" "}
+            yang belum dibayar ({formatAngka(piutangSemua.count - piutang.count)}{" "}
+            pesanan). Semua periode:{" "}
+            <strong>{formatRupiah(piutangSemua.total)}</strong> ·{" "}
+            {formatAngka(piutangSemua.count)} pesanan — rinciannya di bawah.
+          </p>
+        )}
+
         {/* Aged into the oldest bucket rather than the newest: an unreadable
             date is a reason to chase the row, not to assume it is fresh. */}
         {piutang.tanggalTidakValid > 0 && (
@@ -523,9 +743,9 @@ export function ReportPage() {
         )}
       </Panel>
 
-      {/* 5. Margin per produk */}
+      {/* 7. Margin per produk */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">Margin per produk</h2>
+        <PanelHead title="Margin per produk" scope={<Chip>{periodeChip}</Chip>} />
         <p className="text-sm text-faint mb-3">
           Urut dari penyumbang laba terbesar; klik judul kolom untuk mengurutkan
           ulang. Baris merah berarti barangnya terjual lebih murah dari
@@ -539,9 +759,9 @@ export function ReportPage() {
         />
       </Panel>
 
-      {/* 6. Margin per pembeli */}
+      {/* 8. Margin per pembeli */}
       <Panel>
-        <h2 className="text-lg font-bold mb-1">Margin per pembeli</h2>
+        <PanelHead title="Margin per pembeli" scope={<Chip>{periodeChip}</Chip>} />
         <p className="text-sm text-faint mb-3">
           Pembeli mana yang paling menguntungkan. Klik judul kolom untuk
           mengurutkan ulang.
@@ -553,18 +773,186 @@ export function ReportPage() {
           tanpaStokCount={summary.tanpaStokCount}
         />
       </Panel>
+
+      {/* Second band: the figures the filter cannot reach. Kept on the page
+          because they are the two numbers a shop owner acts on — what is in the
+          gudang and who owes money — but fenced off below everything filtered so
+          the filter bar at the top can never be read as applying to them. */}
+      <Band
+        title="Sampai hari ini"
+        sub="Posisi saat ini, bukan angka periode. Tidak ikut filter apa pun di atas."
+      />
+
+      <Panel>
+        <PanelHead
+          title="Nilai stok yang masih ada"
+          scope={<Chip tone="static">Sampai hari ini</Chip>}
+        />
+        <p className="text-sm text-faint mb-3">
+          Modal yang masih berbentuk barang di gudang, dihitung dari harga beli
+          FIFO. Angka ini tidak bisa difilter per periode: yang direkam adalah
+          sisa stok sekarang, bukan sisa stok di akhir bulan tertentu.
+        </p>
+        <div className="flex gap-6 flex-wrap">
+          <Stat
+            label="Nilai stok"
+            value={formatRupiah(persediaan)}
+            hint="Sampai hari ini"
+          />
+        </div>
+      </Panel>
+
+      {/* The all-time aging, kept as its own panel rather than folded into the
+          filtered one. Both are true and they are different questions: "what
+          did Agustus leave unpaid" is a period question, "how old is the money
+          I am still owed" is not, and the buckets only mean something when they
+          cover every pending order. */}
+      <Panel>
+        <PanelHead
+          title="Semua uang yang belum dibayar"
+          scope={<Chip tone="static">Semua periode · sampai hari ini</Chip>}
+        />
+        <p className="text-sm text-faint mb-3">
+          Semua pesanan yang belum lunas, berapa pun tanggalnya. Status bayar
+          tidak menyimpan tanggal pelunasan, jadi ini selalu posisi hari ini —
+          bukan angka yang bisa dipotong per bulan.
+        </p>
+        {piutangSemua.count === 0 ? (
+          <p className="text-sm text-faint">Semua pesanan sudah dibayar. 🎉</p>
+        ) : (
+          <div className="flex gap-6 flex-wrap">
+            <Stat label="Total" value={formatRupiah(piutangSemua.total)} />
+            <Stat
+              label="Jumlah pesanan"
+              value={formatAngka(piutangSemua.count)}
+            />
+            <Stat label="0–30 hari" value={formatRupiah(piutangSemua.d0_30)} />
+            <Stat
+              label="31–60 hari"
+              value={formatRupiah(piutangSemua.d31_60)}
+              className={piutangSemua.d31_60 > 0 ? "text-warn" : ""}
+            />
+            <Stat
+              label="Lebih dari 60 hari"
+              value={formatRupiah(piutangSemua.d60plus)}
+              className={piutangSemua.d60plus > 0 ? "text-negative" : ""}
+            />
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }
 
-// The chart's rows: the best contributors, plus every loss-making row. A loss is
-// never truncated away — it is the row the owner most needs to see, and it sorts
-// to the bottom of a profit-descending list, which is exactly where a `slice`
-// would cut it off.
-function topContributors(rows: MarginRow[]): MarginRow[] {
-  const top = rows.slice(0, CHART_ROWS);
-  const losses = rows.filter((r) => r.laba < 0 && !top.includes(r));
-  return [...top, ...losses];
+// The laba-rugi block, restated as a bridge. Same four figures, same order, and
+// the same closing sum: penjualanTotal − tanpaStokNilai − hpp − susut = laba.
+// The two conditional deductions are omitted when they are zero rather than
+// drawn flat — a labelled bar with no length reads as a bug, not as "nothing
+// happened here". Modal always shows: it is the step the chart exists for.
+function waterfallSteps(
+  summary: ProfitSummary,
+  susutNilai: number,
+  labaAkhir: number,
+): WaterfallStep[] {
+  const steps: WaterfallStep[] = [
+    {
+      key: "masuk",
+      label: "Uang masuk dari penjualan",
+      delta: summary.penjualanTotal,
+      kind: "start",
+    },
+  ];
+  if (summary.tanpaStokNilai > 0)
+    steps.push({
+      key: "tanpa",
+      label: "Penjualan yang modalnya belum diketahui",
+      delta: -summary.tanpaStokNilai,
+      kind: "sub",
+      unknown: true,
+    });
+  steps.push({
+    key: "hpp",
+    label: "Modal barang yang terjual",
+    delta: -summary.hpp,
+    kind: "sub",
+  });
+  if (susutNilai > 0)
+    steps.push({
+      key: "susut",
+      label: "Stok hilang, rusak, atau dipakai sendiri",
+      delta: -susutNilai,
+      kind: "sub",
+    });
+  steps.push({ key: "laba", label: "Sisanya jadi laba", delta: labaAkhir, kind: "total" });
+  return steps;
+}
+
+// The waterfall's takeaway. This used to be scaled to "per Rp 1.000 that came
+// in", on the theory that a shop owner could check it against a single sale.
+// They can't: nobody makes a Rp 1.000 sale, so the reader had to hold a
+// made-up denominator in their head AND the real total at the same time, and
+// two sets of rupiah figures on one line just read as noise. Percentages of the
+// actual penjualan say the same thing with one unit and no invented scale.
+function komposisiPenjualan(
+  summary: ProfitSummary,
+  susutNilai: number,
+  labaAkhir: number,
+): string {
+  const pct = (n: number) => formatPersen((n / summary.penjualanTotal) * 100);
+  const bagian = [`${pct(summary.hpp)} modal barang`];
+  if (susutNilai > 0) bagian.push(`${pct(susutNilai)} hilang di stok`);
+  if (summary.tanpaStokNilai > 0)
+    bagian.push(`${pct(summary.tanpaStokNilai)} belum bisa dihitung modalnya`);
+  return `Dari ${formatRupiah(summary.penjualanTotal)} penjualan: ${bagian.join(
+    ", ",
+  )}, dan ${pct(labaAkhir)} jadi laba (${formatRupiah(labaAkhir)}).`;
+}
+
+// Two points of margin is the line between "moved" and "noise". Below it the
+// note stays neutral and says so, rather than colouring a rounding difference
+// green and telling the owner things are looking up.
+const AMBANG_POIN = 2;
+
+function trenTone(selisihPoin: number | null): "netral" | "baik" | "buruk" {
+  if (selisihPoin === null || Math.abs(selisihPoin) < AMBANG_POIN) return "netral";
+  return selisihPoin > 0 ? "baik" : "buruk";
+}
+
+function trenKalimat(insight: TrendInsight, bulanTampil: number): string {
+  const bulan = formatBulanPendek(insight.bulan);
+  const rugi =
+    insight.bulanRugi > 0
+      ? ` ${formatAngka(insight.bulanRugi)} dari ${formatAngka(bulanTampil)} bulan di grafik ini rugi.`
+      : "";
+
+  if (insight.margin === null)
+    return `Bulan ${bulan} belum ada penjualan yang bisa dihitung marginnya.${rugi}`;
+  if (insight.selisihPoin === null || insight.marginSebelumnya === null)
+    return `Margin bulan ${bulan} ${formatPersen(insight.margin)}. Baru satu bulan, belum ada pembandingnya.${rugi}`;
+
+  const poin = Math.abs(insight.selisihPoin).toFixed(1).replace(".", ",");
+  const arah =
+    Math.abs(insight.selisihPoin) < AMBANG_POIN
+      ? "hampir sama dengan"
+      : insight.selisihPoin > 0
+        ? `naik ${poin} poin dari`
+        : `turun ${poin} poin dari`;
+  return `Margin bulan ${bulan} ${formatPersen(insight.margin)}, ${arah} rata-rata bulan-bulan sebelumnya (${formatPersen(insight.marginSebelumnya)}).${rugi}`;
+}
+
+// A product row's name, linked when the row is a real product. "Produk dihapus"
+// and "Tanpa pembeli" carry an empty key and have nowhere to go.
+function RowLabel({ row }: { row: MarginRow }) {
+  if (row.key === "") return <>{row.label}</>;
+  return (
+    <Link
+      to="/produk/$id"
+      params={{ id: row.key }}
+      className="text-brand hover:underline font-medium"
+    >
+      {row.label}
+    </Link>
+  );
 }
 
 function Header() {
@@ -578,6 +966,45 @@ function Header() {
         (FIFO).
       </p>
     </>
+  );
+}
+
+// The rule for reading this page, made structural: everything between the
+// filter bar and the second band answers the filter, and everything after it
+// answers "right now". A caption on each panel could not do this job — the
+// reader has to know which zone a number is in BEFORE reading it, otherwise the
+// filter bar at the top silently claims every figure on the page, which is
+// exactly how 57 pesanan got read as an August number.
+// Title and scope on one line, so the scope is read WITH the heading rather
+// than found afterwards in a paragraph. The chip wraps to its own line on a
+// phone instead of squeezing the title, because a truncated scope is worse than
+// a scope on the next line.
+function PanelHead({
+  title,
+  scope,
+}: {
+  title: string;
+  scope: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
+      <h2 className="text-lg font-bold">{title}</h2>
+      <div className="flex flex-wrap gap-1.5">{scope}</div>
+    </div>
+  );
+}
+
+function Band({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div className="flex items-center gap-3 mt-6 mb-3">
+      <div className="shrink-0">
+        <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+          {title}
+        </div>
+        <div className="text-sm text-faint">{sub}</div>
+      </div>
+      <div className="flex-1 border-t border-line" />
+    </div>
   );
 }
 

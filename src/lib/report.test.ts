@@ -10,6 +10,10 @@ import {
   stockLoss,
   estimateUnpriced,
   monthlyTrend,
+  trendInsight,
+  paretoProfit,
+  type MarginRow,
+  type TrendRow,
 } from "./report";
 
 const product: Product = {
@@ -867,5 +871,114 @@ describe("stock sold before it was bought", () => {
     // 4 + 4 settle the first 8; in3 covers the last 2 and shelves 2 at 1000.
     const index = buildFifoIndex(stock, [product]);
     expect(index.inventoryValue).toBe(2000);
+  });
+});
+
+describe("trendInsight", () => {
+  const bulan = (b: string, penjualan: number, hpp: number): TrendRow => ({
+    bulan: b,
+    penjualan,
+    hpp,
+    laba: penjualan - hpp,
+  });
+
+  it("returns null with nothing to compare", () => {
+    expect(trendInsight([])).toBe(null);
+  });
+
+  it("has no baseline on a single month", () => {
+    const i = trendInsight([bulan("2026-07", 1000, 800)]);
+    expect(i?.margin).toBeCloseTo(20);
+    expect(i?.marginSebelumnya).toBe(null);
+    expect(i?.selisihPoin).toBe(null);
+  });
+
+  it("compares the last month against the three before it", () => {
+    const i = trendInsight([
+      bulan("2026-04", 1000, 500), // dropped: only three months look back
+      bulan("2026-05", 1000, 600),
+      bulan("2026-06", 1000, 600),
+      bulan("2026-07", 1000, 600),
+      bulan("2026-08", 1000, 800),
+    ]);
+    expect(i?.bulan).toBe("2026-08");
+    expect(i?.margin).toBeCloseTo(20);
+    expect(i?.marginSebelumnya).toBeCloseTo(40);
+    expect(i?.selisihPoin).toBeCloseTo(-20);
+  });
+
+  it("weights the baseline by revenue, so a tiny month cannot decide the story", () => {
+    // A Rp 100 month at 90% margin beside a Rp 100.000 month at 10%. A mean of
+    // the two percentages would say 50%; the money says just over 10%.
+    const i = trendInsight([
+      bulan("2026-06", 100, 10),
+      bulan("2026-07", 100000, 90000),
+      bulan("2026-08", 1000, 900),
+    ]);
+    expect(i?.marginSebelumnya).toBeCloseTo(10.09, 1);
+  });
+
+  it("counts the losing months in view", () => {
+    const i = trendInsight([
+      bulan("2026-06", 1000, 1400),
+      bulan("2026-07", 1000, 600),
+      bulan("2026-08", 1000, 1100),
+    ]);
+    expect(i?.bulanRugi).toBe(2);
+  });
+
+  it("reports a null margin rather than 0% for a month that sold nothing", () => {
+    const i = trendInsight([bulan("2026-07", 1000, 600), bulan("2026-08", 0, 0)]);
+    expect(i?.margin).toBe(null);
+    expect(i?.selisihPoin).toBe(null);
+  });
+});
+
+describe("paretoProfit", () => {
+  const row = (key: string, laba: number): MarginRow => ({
+    key,
+    label: key,
+    qty: 1,
+    penjualan: Math.abs(laba) * 2,
+    hpp: Math.abs(laba) * 2 - laba,
+    laba,
+    marginPct: 50,
+  });
+
+  it("ranks the earners and accumulates their share", () => {
+    const p = paretoProfit([row("a", 200), row("c", 100), row("b", 700)]);
+    expect(p.untung.map((u) => u.row.key)).toEqual(["b", "a", "c"]);
+    expect(p.totalUntung).toBe(1000);
+    expect(p.untung.map((u) => Math.round(u.kumulatif))).toEqual([70, 90, 100]);
+  });
+
+  it("counts the rows it takes to reach 80% of the profit", () => {
+    const p = paretoProfit([row("b", 700), row("a", 200), row("c", 100)]);
+    expect(p.inti).toBe(2); // 70% then 90% — the second row is the one that crosses
+  });
+
+  it("counts every row when the profit is spread evenly", () => {
+    const p = paretoProfit([row("a", 100), row("b", 100), row("c", 100), row("d", 100), row("e", 100)]);
+    expect(p.inti).toBe(4); // 20/40/60/80 — four rows to reach the line
+  });
+
+  it("keeps losses out of the ranking and lists them worst first", () => {
+    const p = paretoProfit([row("a", 500), row("bad", -300), row("worse", -900)]);
+    expect(p.untung.map((u) => u.row.key)).toEqual(["a"]);
+    expect(p.rugi.map((r) => r.key)).toEqual(["worse", "bad"]);
+    expect(p.totalRugi).toBe(-1200);
+    // The cumulative share stays over the earners alone, so it still ends at 100.
+    expect(p.untung[0].kumulatif).toBe(100);
+  });
+
+  it("drops break-even rows from both lists", () => {
+    const p = paretoProfit([row("a", 500), { ...row("z", 0), laba: 0 }]);
+    expect(p.untung).toHaveLength(1);
+    expect(p.rugi).toHaveLength(0);
+  });
+
+  it("survives having nothing to rank", () => {
+    const p = paretoProfit([]);
+    expect(p).toMatchObject({ untung: [], rugi: [], totalUntung: 0, inti: 0 });
   });
 });
