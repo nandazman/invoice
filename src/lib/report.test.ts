@@ -8,6 +8,8 @@ import {
   byBuyer,
   receivables,
   stockLoss,
+  estimateUnpriced,
+  monthlyTrend,
 } from "./report";
 
 const product: Product = {
@@ -631,6 +633,93 @@ describe("deleted products", () => {
   });
 });
 
+// The rows `summarize` had to exclude, given a price at last. Everything here is
+// an ASSUMPTION, and the tests exist mostly to pin where it refuses to make one.
+describe("estimateUnpriced", () => {
+  const noCosts = new Map<string, ReturnType<typeof cost>>();
+
+  it("prices an order with no stock record at Harga Dasar", () => {
+    const o = order({ affectsStock: false, kuantitas: 5, totalHarga: 25000 });
+    const e = estimateUnpriced([o], noCosts, [product]);
+    expect(e.count).toBe(1);
+    expect(e.penjualan).toBe(25000);
+    expect(e.hpp).toBe(10000); // 5 pcs × Harga Dasar 2000
+    expect(e.laba).toBe(15000);
+  });
+
+  it("converts the unit, so a box is not estimated as one piece", () => {
+    const o = order({ satuan: "box", kuantitas: 2, totalHarga: 108000 });
+    const e = estimateUnpriced([o], noCosts, [product]);
+    expect(e.hpp).toBe(48000); // 2 box × 12 pcs × 2000
+  });
+
+  it("leaves priced orders alone — those are facts, not estimates", () => {
+    const o = order();
+    const e = estimateUnpriced([o], new Map([["o1", cost(9000)]]), [product]);
+    expect(e).toMatchObject({ count: 0, penjualan: 0, hpp: 0 });
+  });
+
+  it("estimates a PARTIALLY covered order whole, never half-and-half", () => {
+    const o = order();
+    const e = estimateUnpriced(
+      [o],
+      new Map([["o1", cost(3600, { complete: false })]]),
+      [product],
+    );
+    expect(e.count).toBe(1);
+    expect(e.hpp).toBe(10000); // the full 5 × 2000, not 3600 + a top-up
+  });
+
+  it("refuses when Harga Dasar is 0 — that is an empty price list, not free goods", () => {
+    const o = order({ totalHarga: 25000 });
+    const e = estimateUnpriced([o], noCosts, [{ ...product, hargaDasar: 0 }]);
+    expect(e).toMatchObject({ count: 0, sisaCount: 1, sisaNilai: 25000 });
+  });
+
+  it("refuses when the product is gone", () => {
+    const o = order({ productId: "p9", namaProduk: "Sudah dihapus" });
+    const e = estimateUnpriced([o], noCosts, [product]);
+    expect(e).toMatchObject({ count: 0, sisaCount: 1 });
+  });
+
+  it("still finds a legacy row by name when it carries no productId", () => {
+    const o = order({ productId: "" });
+    const e = estimateUnpriced([o], noCosts, [product]);
+    expect(e).toMatchObject({ count: 1, hpp: 10000 });
+  });
+});
+
+describe("monthlyTrend", () => {
+  const stock = [
+    lot("in1", "2026-06-01", 100, 2000),
+    movement({ id: "s1", tanggal: "2026-07-15", qty: -5, orderId: "o1" }),
+    movement({ id: "s2", tanggal: "2026-08-15", qty: -5, orderId: "o2" }),
+  ];
+
+  it("buckets by calendar month, oldest first", () => {
+    const costs = run(stock);
+    const rows = monthlyTrend(
+      [order(), order({ id: "o2", tanggal: "2026-08-15" })],
+      costs,
+    );
+    expect(rows.map((r) => r.bulan)).toEqual(["2026-07", "2026-08"]);
+    expect(rows[0]).toMatchObject({ penjualan: 25000, hpp: 10000, laba: 15000 });
+  });
+
+  it("leaves out orders with no cost basis, so no bar is pure profit", () => {
+    const rows = monthlyTrend([order({ affectsStock: false })], new Map());
+    expect(rows).toEqual([]);
+  });
+
+  it("skips a tanggal that is not a date rather than inventing a month", () => {
+    const rows = monthlyTrend(
+      [order({ tanggal: "15 Juli" })],
+      new Map([["o1", cost(10000)]]),
+    );
+    expect(rows).toEqual([]);
+  });
+});
+
 describe("stockLoss", () => {
   const all = () => true;
 
@@ -668,8 +757,39 @@ describe("stockLoss", () => {
     ];
     const index = buildFifoIndex(stock, [product]);
     const july = (m: StockMovement) => m.tanggal < "2026-08-01";
-    expect(stockLoss(stock, index, july)).toEqual({ nilai: 2000, count: 1 });
-    expect(stockLoss(stock, index, all)).toEqual({ nilai: 5000, count: 2 });
+    expect(stockLoss(stock, index, july)).toEqual({
+      nilai: 2000,
+      count: 1,
+      tanpaModal: 0,
+    });
+    expect(stockLoss(stock, index, all)).toEqual({
+      nilai: 5000,
+      count: 2,
+      tanpaModal: 0,
+    });
+  });
+
+  // The bug this was written for: an adjustment FIFO could not source came out
+  // of `movementValue` as 0, which is indistinguishable from "these goods were
+  // free". The panel then read "Susut (1) — Rp 0" and the bottom line was
+  // overstated by exactly the value nobody could put on the missing goods.
+  it("quarantines a loss with no lot behind it instead of pricing it at 0", () => {
+    const stock = [
+      movement({ id: "adj", qty: -10, reason: "adjustment", orderId: null }),
+    ];
+    const loss = stockLoss(stock, buildFifoIndex(stock, [product]), all);
+    expect(loss).toEqual({ nilai: 0, count: 0, tanpaModal: 1 });
+  });
+
+  it("quarantines a PARTIALLY covered loss too", () => {
+    const stock = [
+      lot("in1", "2026-07-01", 4, 1800),
+      movement({ id: "adj", qty: -10, reason: "adjustment", orderId: null }),
+    ];
+    const loss = stockLoss(stock, buildFifoIndex(stock, [product]), all);
+    // Not 7.200: six of the ten units have no cost anyone can state, and
+    // reporting the four that do understates the loss.
+    expect(loss).toEqual({ nilai: 0, count: 0, tanpaModal: 1 });
   });
 
   // The whole point of the line: without it, losing stock improved the margin.

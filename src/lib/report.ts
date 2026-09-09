@@ -6,7 +6,7 @@ import type {
   StockMovement,
 } from "./types";
 import { computeFifo } from "./stock";
-import { baseUnitsFor } from "./purchaseFromOrder";
+import { baseUnitsFor, modalCostFor } from "./purchaseFromOrder";
 import { roundRupiah, sumRupiah } from "./format";
 
 // Laba rugi and its breakdowns, derived from rows that already exist. Nothing
@@ -223,6 +223,133 @@ export function summarize(
   };
 }
 
+// ---------- Estimated cost basis ----------
+
+// The quarantined rows, priced at Harga Dasar instead of left out.
+//
+// Everything above this line is FACT: a cost the stock ledger can point at. This
+// is the opposite — an assumption, and it is kept in its own shape so the page
+// can never print it as though it were measured. `hasCostBasis` still decides
+// which rows land here; this only offers a number for the ones it rejected.
+export interface ProfitEstimate {
+  count: number; // quarantined orders we could put a price on
+  penjualan: number; // their revenue
+  hpp: number; // their assumed modal, from Harga Dasar
+  laba: number; // penjualan − hpp
+  // Orders even the assumption cannot reach: the product is gone, or its Harga
+  // Dasar is 0, so any figure would be invented rather than estimated. They stay
+  // out of every total, and the page says how many are left.
+  sisaCount: number;
+  sisaNilai: number;
+}
+
+// The product an order refers to. Mirrors `addOrder` (store.ts): id first, then
+// name for legacy rows that never carried one.
+function productForOrder(
+  o: OrderItem,
+  byId: Map<string, Product>,
+  byName: Map<string, Product>,
+): Product | undefined {
+  return byId.get(o.productId) ?? byName.get(o.namaProduk);
+}
+
+// Assume a modal for the orders `summarize` had to exclude.
+//
+// The basis is `modalCostFor` — Harga Dasar × base units — which is exactly what
+// "Beli stok dari pesanan" fills in when it turns an order into a purchase. So
+// the estimate is the same number the user would have recorded had they bought
+// the stock through the app, which makes it explainable rather than magic.
+//
+// A partially-covered order is estimated WHOLE rather than topped up: half a
+// measured cost plus half an assumed one is a figure nobody can check, and the
+// mixed row would be the one that gets quoted as fact.
+export function estimateUnpriced(
+  orders: OrderItem[],
+  costByOrder: Map<string, OrderCost>,
+  products: Product[],
+): ProfitEstimate {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const byName = new Map(products.map((p) => [p.namaProduk, p]));
+
+  const priced: { revenue: number; modal: number }[] = [];
+  let sisaCount = 0;
+  let sisaNilai = 0;
+  for (const o of orders) {
+    if (hasCostBasis(costByOrder.get(o.id))) continue;
+    const product = productForOrder(o, byId, byName);
+    // Harga Dasar 0 is not a cost of zero — it is a price list nobody has filled
+    // in. Estimating from it would hand back the 100% margin the quarantine
+    // exists to prevent.
+    if (!product || product.hargaDasar <= 0) {
+      sisaCount += 1;
+      sisaNilai += roundRupiah(o.totalHarga);
+      continue;
+    }
+    priced.push({
+      revenue: o.totalHarga,
+      modal: o.kuantitas * modalCostFor(product, o.satuan),
+    });
+  }
+
+  const penjualan = sumRupiah(priced.map((r) => r.revenue));
+  const hpp = sumRupiah(priced.map((r) => r.modal));
+  return {
+    count: priced.length,
+    penjualan,
+    hpp,
+    laba: penjualan - hpp,
+    sisaCount,
+    sisaNilai,
+  };
+}
+
+// ---------- Trend ----------
+
+// One month of the laba-rugi block, for the chart.
+export interface TrendRow {
+  bulan: string; // "2026-07"
+  penjualan: number;
+  hpp: number;
+  laba: number;
+}
+
+const ISO_MONTH = /^\d{4}-\d{2}/;
+
+// Revenue, cost and profit per calendar month, oldest first.
+//
+// Built from PRICED orders only, for the same reason the breakdown tables are:
+// a month whose orders have no cost basis would draw a bar of pure profit, and a
+// chart is read faster and questioned less than a table. Months with no priced
+// order are absent rather than zero — an empty bar reads as "we sold nothing",
+// which is a different claim from "nothing here could be costed".
+export function monthlyTrend(
+  orders: OrderItem[],
+  costByOrder: Map<string, OrderCost>,
+): TrendRow[] {
+  const byMonth = new Map<string, { penjualan: number[]; hpp: number[] }>();
+  for (const o of orders) {
+    const entry = costByOrder.get(o.id);
+    if (!hasCostBasis(entry)) continue;
+    // The ISO prefix is the month. A `tanggal` that is not ISO (imported free
+    // text) has no month to sit in and is left out; `receivables` already tells
+    // the user those rows exist.
+    if (!ISO_MONTH.test(o.tanggal)) continue;
+    const key = o.tanggal.slice(0, 7);
+    const bucket = byMonth.get(key) ?? { penjualan: [], hpp: [] };
+    bucket.penjualan.push(o.totalHarga);
+    bucket.hpp.push(entry.hpp);
+    byMonth.set(key, bucket);
+  }
+
+  return [...byMonth.entries()]
+    .map(([bulan, b]) => {
+      const penjualan = sumRupiah(b.penjualan);
+      const hpp = sumRupiah(b.hpp);
+      return { bulan, penjualan, hpp, laba: penjualan - hpp };
+    })
+    .sort((a, b) => a.bulan.localeCompare(b.bulan));
+}
+
 // ---------- Breakdowns ----------
 
 // One row of a margin table. `key` is the grouping id (productId or buyerId);
@@ -333,7 +460,13 @@ export function byBuyer(
 
 export interface StockLoss {
   nilai: number; // FIFO cost of the goods that left, positive
-  count: number; // how many movements
+  count: number; // how many movements, counting only the priced ones
+  // Movements FIFO could not source from any lot. Their cost is unknown, not
+  // zero, so they are left out of `nilai` and `count` and reported here — the
+  // same quarantine rule `hasCostBasis` applies to sales. Counting them at 0
+  // printed "Susut (3) — Rp 0" and left the bottom line overstated by exactly
+  // the value of goods nobody could price.
+  tanpaModal: number;
 }
 
 // Stock that went OUT of the ledger without an order behind it: susut, rusak,
@@ -358,6 +491,7 @@ export function stockLoss(
 ): StockLoss {
   let nilai = 0;
   let count = 0;
+  let tanpaModal = 0;
   for (const m of stock) {
     // `orderId === null` is the test, not `reason`: an adjustment is the usual
     // way this happens, but a `sale` movement entered by hand on the Stok page
@@ -366,10 +500,17 @@ export function stockLoss(
     if (!inScope(m)) continue;
     const value = index.cost.get(m.id);
     if (value === undefined) continue;
+    // Partially covered counts as uncovered, exactly as it does for a sale:
+    // the movement's value then holds the cost of only some of the units, and
+    // reporting that as the loss understates it.
+    if (index.uncovered.has(m.id)) {
+      tanpaModal += 1;
+      continue;
+    }
     nilai += roundRupiah(-value);
     count += 1;
   }
-  return { nilai, count };
+  return { nilai, count, tanpaModal };
 }
 
 // ---------- Piutang ----------

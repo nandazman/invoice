@@ -9,14 +9,35 @@ const rupiah = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-// Anything that rounds to zero prints as "Rp 0", never "-Rp 0". Intl keeps the
-// sign of -0 and of any small negative, so a float residue left by a division —
-// or a subtraction of two equal amounts — surfaced as a minus sign on a zero,
-// which reads as a loss that is not there.
-export function formatRupiah(n: number): string {
-  return rupiah.format(Math.round(n) === 0 ? 0 : n);
+// The symbol-less twin of `rupiah`: same whole-rupiah rounding, no "Rp". Kept
+// as a sibling Intl instance (not derived from `rupiah`) so both share the
+// `maximumFractionDigits: 0` option by construction rather than by a caller
+// remembering to pass it.
+const angkaUang = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
+
+// Anything that rounds to zero prints as "0", never "-0". Intl keeps the sign
+// of -0 and of any small negative, so a float residue left by a division — or
+// a subtraction of two equal amounts, like the Laba column's hargaJual minus
+// hargaDasar — surfaced as a minus sign on a zero, which reads as a loss that
+// is not there. Both money formatters below apply this before formatting, so
+// they can't drift apart on it.
+function zeroGuard(n: number): number {
+  return Math.round(n) === 0 ? 0 : n;
 }
 
+export function formatRupiah(n: number): string {
+  return rupiah.format(zeroGuard(n));
+}
+
+// Whole-rupiah amount without the currency symbol, for a column (like Prices'
+// "Rp" header) that states the currency once instead of on every row.
+export function formatUang(n: number): string {
+  return angkaUang.format(zeroGuard(n));
+}
+
+// Plain thousands-grouped number, no currency semantics: no fraction
+// rounding, no -0 guard. Used for byte counts, quantities, and the like —
+// values that were never money and don't need money's rules.
 export function formatAngka(n: number): string {
   return new Intl.NumberFormat("id-ID").format(n);
 }
@@ -44,6 +65,32 @@ export function roundRupiah(n: number): number {
 // so a printed total always equals the sum of the printed per-line amounts.
 export function sumRupiah(nums: number[]): number {
   return nums.reduce((s, n) => s + roundRupiah(n), 0);
+}
+
+// "2026-06" (or a full ISO date) -> "Jun 2026". The chart's x-axis: the full
+// month name does not fit under a bar on a phone, and the year has to stay —
+// two Julis from different years side by side is the one label that misleads.
+export function formatBulanPendek(iso: string): string {
+  const [y, m] = iso.split("-").map(Number);
+  if (!y || !m || m < 1 || m > 12) return iso;
+  return `${BULAN[m - 1].slice(0, 3)} ${y}`;
+}
+
+// Money shortened to fit a chart label: "Rp 1,2 jt", "Rp 950 rb". Only ever for
+// a bar's caption, never for a figure the user might copy into a total — the
+// rounding here is deliberately lossy, and every real amount on Laporan still
+// prints through `formatRupiah`.
+export function formatRupiahRingkas(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  const short = (v: number, suffix: string) =>
+    `${sign}Rp ${new Intl.NumberFormat("id-ID", {
+      maximumFractionDigits: v < 10 ? 1 : 0,
+    }).format(v)} ${suffix}`;
+  if (abs >= 1_000_000_000) return short(abs / 1_000_000_000, "M");
+  if (abs >= 1_000_000) return short(abs / 1_000_000, "jt");
+  if (abs >= 1_000) return short(abs / 1_000, "rb");
+  return formatRupiah(n);
 }
 
 // "2026-06-01" -> "1 Juni 2026"

@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { roundRupiah, sumRupiah, formatRupiah, presetRange, nowISO } from "./format";
+import {
+  roundRupiah,
+  sumRupiah,
+  formatRupiah,
+  formatUang,
+  formatBulanPendek,
+  formatRupiahRingkas,
+  formatBytes,
+  formatRelatifID,
+  formatDateTimeID,
+  presetRange,
+  nowISO,
+} from "./format";
 
 describe("nowISO — the sync cursor invariant", () => {
   afterEach(() => {
@@ -157,5 +169,131 @@ describe("presetRange", () => {
     const [from, to] = presetRange("hari-ini");
     expect(from).toBe(to);
     expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+// The two chart labels. Both are display-only — see the notes on them in
+// format.ts — so what is pinned here is the SHAPE, not an accounting rule.
+describe("formatBulanPendek", () => {
+  it("shortens a month key, keeping the year", () => {
+    expect(formatBulanPendek("2026-07")).toBe("Jul 2026");
+  });
+
+  it("accepts a full ISO date too", () => {
+    expect(formatBulanPendek("2026-01-31")).toBe("Jan 2026");
+  });
+
+  it("hands back anything it cannot read, rather than a wrong month", () => {
+    expect(formatBulanPendek("15 Juli")).toBe("15 Juli");
+    expect(formatBulanPendek("2026-13")).toBe("2026-13");
+  });
+});
+
+describe("formatRupiahRingkas", () => {
+  it("shortens millions and thousands", () => {
+    expect(formatRupiahRingkas(1_250_000)).toBe("Rp 1,3 jt");
+    expect(formatRupiahRingkas(950_000)).toBe("Rp 950 rb");
+    expect(formatRupiahRingkas(2_400_000_000)).toBe("Rp 2,4 M");
+  });
+
+  it("keeps small amounts exact — there is nothing to shorten", () => {
+    expect(formatRupiahRingkas(750)).toBe(formatRupiah(750));
+  });
+
+  it("keeps the sign on a loss", () => {
+    expect(formatRupiahRingkas(-1_200_000)).toBe("-Rp 1,2 jt");
+  });
+});
+
+// formatUang shares formatRupiah's zero-guard and rounding but drops the "Rp"
+// symbol, for a column that states the currency once in its header.
+describe("formatUang", () => {
+  it("formats without the currency symbol", () => {
+    expect(formatUang(54000)).toBe("54.000");
+  });
+
+  it("applies the same -0 guard as formatRupiah", () => {
+    expect(formatUang(-0.2)).toBe("0");
+  });
+});
+
+// Untested prior to this diff: byte counts for the Admin storage panel. Decimal
+// units (1000, not 1024) because that is what Cloudflare's own D1 numbers use.
+describe("formatBytes", () => {
+  it("shows a null size as an em dash", () => {
+    expect(formatBytes(null)).toBe("—");
+  });
+
+  it("prints small counts in bytes, no decimal", () => {
+    expect(formatBytes(812)).toBe("812 B");
+  });
+
+  it("steps up to KB once the count reaches 1000", () => {
+    expect(formatBytes(1000)).toBe("1 KB");
+    expect(formatBytes(41_200)).toBe("41,2 KB");
+  });
+
+  it("steps up through MB and GB for larger sizes", () => {
+    expect(formatBytes(3_700_000)).toBe("3,7 MB");
+    expect(formatBytes(2_100_000_000)).toBe("2,1 GB");
+  });
+
+  it("stops at GB rather than inventing a TB unit", () => {
+    // units = ["KB", "MB", "GB"]; the loop guard (unit < units.length - 1)
+    // must stop advancing once GB is reached, however large the count.
+    expect(formatBytes(5_000_000_000_000)).toBe("5.000 GB");
+  });
+});
+
+// "is sync alive?" — coarse buckets, deliberately. Untested prior to this diff.
+describe("formatRelatifID", () => {
+  it("shows a null timestamp as an em dash", () => {
+    expect(formatRelatifID(null)).toBe("—");
+  });
+
+  it("hands back the raw string for an unparseable timestamp", () => {
+    expect(formatRelatifID("not-a-date")).toBe("not-a-date");
+  });
+
+  it("reads under a minute as 'baru saja'", () => {
+    expect(formatRelatifID(new Date(Date.now() - 30_000).toISOString())).toBe(
+      "baru saja",
+    );
+  });
+
+  it("reads minutes, then hours, then days, once each threshold is crossed", () => {
+    expect(
+      formatRelatifID(new Date(Date.now() - 5 * 60_000).toISOString()),
+    ).toBe("5 menit lalu");
+    expect(
+      formatRelatifID(new Date(Date.now() - 3 * 3_600_000).toISOString()),
+    ).toBe("3 jam lalu");
+    expect(
+      formatRelatifID(new Date(Date.now() - 2 * 86_400_000).toISOString()),
+    ).toBe("2 hari lalu");
+  });
+
+  it("reads a clock-skewed future timestamp as 'baru saja', not a negative age", () => {
+    expect(
+      formatRelatifID(new Date(Date.now() + 60_000).toISOString()),
+    ).toBe("baru saja");
+  });
+});
+
+// "2026-06-27T08:30:00.000Z" -> "27 Jun 2026, HH.MM" local time. Untested prior
+// to this diff.
+describe("formatDateTimeID", () => {
+  it("shows an empty string as an em dash", () => {
+    expect(formatDateTimeID("")).toBe("—");
+  });
+
+  it("hands back the raw string for an unparseable ISO value", () => {
+    expect(formatDateTimeID("not-a-date")).toBe("not-a-date");
+  });
+
+  it("formats a real timestamp with a short month name", () => {
+    expect(formatDateTimeID("2026-06-27T08:30:00.000Z")).toMatch(
+      /^27 Jun 2026, \d{2}\.\d{2}$/,
+    );
   });
 });
