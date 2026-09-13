@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { thClass, tdClass } from "./DataTable";
+import { formatAngka, formatRupiah } from "../lib/format";
 
 // The phone layout every wide table falls back to below `md`.
 //
@@ -33,6 +34,41 @@ export function MobileList({
       <tbody>{children}</tbody>
     </table>
   );
+}
+
+// One toggleable column restacked into a MobileRow's meta line, labelled because
+// out of its column a bare value ("12", an email, a date) no longer says what it
+// is. Pages render one per column the user has switched on, so the phone layout
+// honours the same column toggle as the wide table.
+export function MobileField({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1 min-w-0 break-words">
+      <span className="text-faint">{label}:</span>
+      <span className="text-body">{children}</span>
+    </span>
+  );
+}
+
+// The "qty × harga" line under a phone row's total, built from whichever of the
+// two columns are switched on — hiding Harga Satuan on the wide table and still
+// seeing it here would make the toggle mean nothing on a phone.
+export function qtyTimesHarga(
+  visible: Record<string, boolean>,
+  kuantitas: number,
+  hargaSatuan: number,
+): string | undefined {
+  const q = visible.kuantitas !== false;
+  const h = visible.hargaSatuan !== false;
+  if (q && h) return `${formatAngka(kuantitas)} × ${formatRupiah(hargaSatuan)}`;
+  if (q) return `Qty ${formatAngka(kuantitas)}`;
+  if (h) return `@ ${formatRupiah(hargaSatuan)}`;
+  return undefined;
 }
 
 // The row's own cell padding. `tdClass` pays for a desktop table, where a cell

@@ -132,6 +132,7 @@ export const TABLES: TableSpec[] = [
       "kuantitas",
       "hargaSatuan",
       "totalHarga",
+      "modalSatuan",
       "status",
       "affectsStock",
       "createdAt",

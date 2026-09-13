@@ -28,7 +28,8 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCell } from "../components/Attribution";
+import { ByCell, MobileBy } from "../components/Attribution";
+import { MobileField } from "../components/MobileList";
 import { ProductDialog } from "../components/ProductDialog";
 import { CatalogDialog } from "../components/CatalogDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -41,7 +42,12 @@ import {
 } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
-import { DataTable, SortHeader, tdClass } from "../components/DataTable";
+import {
+  DataTable,
+  SortHeader,
+  tdClass,
+  thClass,
+} from "../components/DataTable";
 import { Field } from "../components/Field";
 import { Toolbar } from "../components/Toolbar";
 import { typeBadgeClass } from "../lib/typeColor";
@@ -81,10 +87,22 @@ const badgeClass = "inline-block rounded-md px-2 py-0.5 text-xs font-semibold";
 // beneath it. Editing happens on the product's detail page, which the name
 // already links to, so there is no action column to squeeze in.
 //
+// The Kolom toggle applies here as on the wide table: every other column the
+// user has switched on restacks, labelled, under the name, and a column
+// switched off leaves the phone row too. The name stays regardless — it is the
+// link, so it is the row.
+//
 // This is the swap point: replacing rows with cards means rewriting this
 // component and nothing else.
-function MobilePriceRow({ row }: { row: Row<Product> }) {
+function MobilePriceRow({
+  row,
+  visible,
+}: {
+  row: Row<Product>;
+  visible: Record<string, boolean>;
+}) {
   const p = row.original;
+  const on = (id: string) => visible[id] !== false;
   const laba = p.hargaJual - p.hargaDasar;
   const ukuran = `${p.ukuran ?? ""} ${p.satuan ?? ""}`.trim();
   return (
@@ -97,46 +115,91 @@ function MobilePriceRow({ row }: { row: Row<Product> }) {
         >
           {p.namaProduk}
         </Link>
-        <div className="flex flex-wrap items-center gap-1.5 pb-1">
-          <span className={`${badgeClass} ${typeBadgeClass(p.tipe)}`}>
-            {p.tipe}
-          </span>
-          {ukuran && <span className="text-xs text-faint">{ukuran}</span>}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pb-1 text-xs text-faint min-w-0">
+          {on("tipe") && (
+            <span className={`${badgeClass} ${typeBadgeClass(p.tipe)}`}>
+              {p.tipe}
+            </span>
+          )}
+          {on("ukuran") && ukuran && <span>{ukuran}</span>}
+          {on("hargaDasar") && (
+            <MobileField label="Dasar">
+              <span className="tabular-nums">{formatUang(p.hargaDasar)}</span>
+            </MobileField>
+          )}
+          {on("konversi") &&
+            p.konversi.map((kv, i) => (
+              <span
+                key={i}
+                className="inline-block bg-brand-soft text-brand-text rounded-md px-2 py-0.5 font-semibold"
+              >
+                1 {kv.nama} = {formatAngka(kv.jumlah)} ·{" "}
+                {formatRupiah(kv.harga)}
+              </span>
+            ))}
+          {on("createdAt") && (
+            <MobileField label="Dibuat">
+              {formatDateTimeID(p.createdAt)}
+            </MobileField>
+          )}
+          {on("updatedAt") && (
+            <MobileField label="Diperbarui">
+              {formatDateTimeID(p.updatedAt)}
+            </MobileField>
+          )}
+          <MobileBy
+            show={{ created: on("createdBy"), updated: on("updatedBy") }}
+            row={p}
+          />
         </div>
       </td>
       <td
         className={`${tdClass} align-top text-right tabular-nums whitespace-nowrap`}
       >
         <div className="flex items-center justify-end min-h-11 font-medium">
-          {formatUang(p.hargaJual)}
+          {on("hargaJual") && formatUang(p.hargaJual)}
         </div>
-        <div
-          className={`text-xs pb-1 ${laba < 0 ? "text-danger" : "text-ok"}`}
-        >
-          {formatUang(laba)}
-        </div>
+        {on("laba") && (
+          <div
+            className={`text-xs pb-1 ${laba < 0 ? "text-danger" : "text-ok"}`}
+          >
+            {on("hargaJual") ? formatUang(laba) : `Laba ${formatUang(laba)}`}
+          </div>
+        )}
       </td>
     </tr>
   );
 }
 
-function MobilePriceTable({ table }: { table: Table<Product> }) {
+function MobilePriceTable({
+  table,
+  visible,
+}: {
+  table: Table<Product>;
+  visible: Record<string, boolean>;
+}) {
   // Sorting stays reachable on a phone: the two headers drive the same
   // TanStack columns the desktop table sorts by, so the order matches across
-  // both layouts.
+  // both layouts. Hiding a column in TanStack does not remove it from
+  // getColumn, so the price header checks the toggle itself.
   const nama = table.getColumn("namaProduk");
   const harga = table.getColumn("hargaJual");
+  const hargaOn = visible.hargaJual !== false;
   return (
     <table className="w-full border-collapse">
       <thead>
         <tr>
           {nama && <SortHeader column={nama} label="Produk" />}
-          {harga && <SortHeader column={harga} label="Harga Satuan (Rp)" num />}
+          {harga && hargaOn ? (
+            <SortHeader column={harga} label="Harga Satuan (Rp)" num />
+          ) : (
+            <th className={thClass} />
+          )}
         </tr>
       </thead>
       <tbody>
         {table.getRowModel().rows.map((row) => (
-          <MobilePriceRow key={row.id} row={row} />
+          <MobilePriceRow key={row.id} row={row} visible={visible} />
         ))}
       </tbody>
     </table>
@@ -383,7 +446,7 @@ export function PricesPage() {
 
         <DataTable
           table={table}
-          mobile={<MobilePriceTable table={table} />}
+          mobile={<MobilePriceTable table={table} visible={visible} />}
           empty={
             // Two different situations wearing one message until now. "Belum
             // ada produk" is a setup problem and wants the add button; a search

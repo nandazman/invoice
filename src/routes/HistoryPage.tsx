@@ -5,6 +5,7 @@ import { formatDateTimeID } from "../lib/format";
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
+  MobileBy,
   ByCells,
   ByHeaders,
   bothBy,
@@ -200,8 +201,7 @@ export function HistoryPage() {
                 390px, so below `md` the row collapses to what it IS on the
                 left (Keterangan, with the entitas/aksi badges and the
                 per-change chips restacked under it) and what it is WORTH on
-                the right (Waktu). Attribution is a desktop-only affordance
-                here, same as elsewhere. */}
+                the right (Waktu). The attribution toggle restacks there too. */}
             <div className="md:hidden">
               <MobileList left="Keterangan" right="Waktu">
                 {filtered.map((e) => (
@@ -235,6 +235,7 @@ export function HistoryPage() {
                               {formatValue(c.from)} → {formatValue(c.to)}
                             </span>
                           ))}
+                        <MobileBy show={bothBy(showBy)} row={e} />
                       </>
                     }
                     value={splitWaktu(e.timestamp).tanggal}

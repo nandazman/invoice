@@ -157,6 +157,7 @@ interface OrderItem {
   kuantitas: number;
   hargaSatuan: number;        // snapshot harga unit terpilih
   totalHarga: number;
+  modalSatuan?: number | null; // modal per unit terpilih, dibekukan saat pesanan dibuat
   status: "pending" | "paid";
   affectsStock: boolean;      // jika true, mengurangi stok (pergerakan "sale")
 }

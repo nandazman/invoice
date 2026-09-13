@@ -7,7 +7,14 @@ import {
   useState,
 } from "react";
 import { Link } from "@tanstack/react-router";
-import type { Buyer, OrderItem, OrderStatus, PurchaseItem } from "../lib/types";
+import type {
+  Buyer,
+  OrderItem,
+  OrderStatus,
+  Product,
+  PurchaseItem,
+} from "../lib/types";
+import { modalCostFor } from "../lib/purchaseFromOrder";
 import {
   useProducts,
   useOrders,
@@ -39,7 +46,7 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCells, ByHeaders } from "../components/Attribution";
+import { ByCells, ByHeaders, MobileBy } from "../components/Attribution";
 import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
 import { AddItemForm } from "../components/AddItemForm";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
@@ -52,7 +59,12 @@ import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
-import { MobileList, MobileRow } from "../components/MobileList";
+import {
+  MobileField,
+  MobileList,
+  MobileRow,
+  qtyTimesHarga,
+} from "../components/MobileList";
 import { thClass, tdClass } from "../components/DataTable";
 import {
   TrashIcon,
@@ -88,6 +100,7 @@ const COLS_BEFORE_TOTAL = [
   "satuan",
   "kuantitas",
   "hargaSatuan",
+  "modalSatuan",
 ] as const;
 // Columns shown right of the "Total" column, in display order. Every new column
 // has to be listed here (or above) or the date-group subtotal stops lining up
@@ -105,6 +118,7 @@ const COLUMNS = [
   { id: "satuan", label: "Satuan" },
   { id: "kuantitas", label: "Qty" },
   { id: "hargaSatuan", label: "Harga Satuan" },
+  { id: "modalSatuan", label: "Harga Dasar" },
   { id: "totalHarga", label: "Total" },
   { id: "status", label: "Status" },
   { id: "buyer", label: "Pembeli" },
@@ -224,6 +238,42 @@ function newBuyer(nama: string): Buyer {
   };
 }
 
+// The Harga Dasar shown for one order line, per its chosen unit. The snapshot
+// taken when the order was added wins; a row that predates the snapshot (or
+// whose product had no Harga Dasar then) falls back to today's price list and is
+// flagged as an estimate, so an old line never passes today's cost off as what
+// it cost at the time. null when neither exists.
+function orderModal(
+  it: OrderItem,
+  productById: Map<string, Product>,
+  productByName: Map<string, Product>,
+): { value: number; estimate: boolean } | null {
+  if (it.modalSatuan != null && it.modalSatuan > 0)
+    return { value: it.modalSatuan, estimate: false };
+  const product =
+    productById.get(it.productId ?? "") ?? productByName.get(it.namaProduk);
+  if (product && product.hargaDasar > 0)
+    return { value: modalCostFor(product, it.satuan), estimate: true };
+  return null;
+}
+
+function ModalValue({
+  modal,
+}: {
+  modal: { value: number; estimate: boolean } | null;
+}) {
+  if (!modal) return <span className="text-faint">—</span>;
+  if (!modal.estimate) return <>{formatRupiah(modal.value)}</>;
+  return (
+    <span
+      className="text-faint"
+      title="Perkiraan dari Harga Dasar saat ini — pesanan ini dibuat sebelum harga dasar dicatat per pesanan"
+    >
+      ≈ {formatRupiah(modal.value)}
+    </span>
+  );
+}
+
 // Colored badge feel for the inline status dropdown.
 function statusSelectClass(status: OrderStatus): string {
   return status === "paid"
@@ -335,6 +385,17 @@ export function OrdersPage() {
   const buyerById = useMemo(
     () => new Map(buyers.map((b) => [b.id, b] as const)),
     [buyers],
+  );
+
+  // For the Harga Dasar column's fallback on rows without a snapshot. Same
+  // id-then-name resolution addOrder uses when it takes the snapshot.
+  const productById = useMemo(
+    () => new Map(products.map((p) => [p.id, p] as const)),
+    [products],
+  );
+  const productByName = useMemo(
+    () => new Map(products.map((p) => [p.namaProduk, p] as const)),
+    [products],
   );
 
   function createBuyerFor(orderId: string, nama: string) {
@@ -505,9 +566,16 @@ export function OrdersPage() {
                 pembeli stay their full interactive selves (the badge-styled
                 dropdown and the buyer picker) rather than flattening to
                 plain text, since neither the phone layout nor the desktop
-                one should be able to do something the other can't. */}
+                one should be able to do something the other can't. The Kolom
+                toggle applies here as on the wide table: each column switched
+                on restacks into the row, each switched off leaves it. Only the
+                product name stays regardless — it holds the checkbox and the
+                link, so it is the row. */}
             <div className="md:hidden">
-              <MobileList left="Produk" right="Total">
+              <MobileList
+                left="Produk"
+                right={visible.totalHarga !== false ? "Total" : ""}
+              >
                 {sections.map((s) => (
                   <Fragment key={s.key}>
                     {s.label !== null && (
@@ -618,20 +686,25 @@ export function OrdersPage() {
                             }
                             meta={
                               <>
-                                <span>{it.satuan}</span>
-                                <Select
-                                  className={`w-auto py-0.5 text-xs ${statusSelectClass(it.status)}`}
-                                  value={it.status}
-                                  onChange={(e) =>
-                                    setOrderStatus(
-                                      it.id,
-                                      e.target.value as OrderStatus,
-                                    )
-                                  }
-                                >
-                                  <option value="pending">Pending</option>
-                                  <option value="paid">Paid</option>
-                                </Select>
+                                {visible.satuan !== false && (
+                                  <span>{it.satuan}</span>
+                                )}
+                                {visible.status !== false && (
+                                  <Select
+                                    className={`w-auto py-0.5 text-xs ${statusSelectClass(it.status)}`}
+                                    value={it.status}
+                                    onChange={(e) =>
+                                      setOrderStatus(
+                                        it.id,
+                                        e.target.value as OrderStatus,
+                                      )
+                                    }
+                                  >
+                                    <option value="pending">Pending</option>
+                                    <option value="paid">Paid</option>
+                                  </Select>
+                                )}
+                                {visible.buyer !== false && (
                                 <BuyerCell
                                   item={it}
                                   buyers={buyers}
@@ -647,7 +720,29 @@ export function OrdersPage() {
                                   }
                                   onCancel={() => setAssigning(null)}
                                 />
-                                <span>{formatDateTimeID(it.createdAt)}</span>
+                                )}
+                                {visible.modalSatuan !== false && (
+                                  <MobileField label="Dasar">
+                                    <ModalValue
+                                      modal={orderModal(
+                                        it,
+                                        productById,
+                                        productByName,
+                                      )}
+                                    />
+                                  </MobileField>
+                                )}
+                                {visible.createdAt !== false && (
+                                  <MobileField label="Dibuat">
+                                    {formatDateTimeID(it.createdAt)}
+                                  </MobileField>
+                                )}
+                                {visible.updatedAt !== false && (
+                                  <MobileField label="Diperbarui">
+                                    {formatDateTimeID(it.updatedAt)}
+                                  </MobileField>
+                                )}
+                                <MobileBy show={byVisible} row={it} />
                                 {/* No `w-full` wrapper: forcing the two row
                                     actions onto a line of their own cost a
                                     full 44px band of empty space under every
@@ -686,10 +781,16 @@ export function OrdersPage() {
                                 </span>
                               </>
                             }
-                            value={formatRupiah(it.totalHarga)}
-                            note={`${formatAngka(it.kuantitas)} × ${formatRupiah(
+                            value={
+                              visible.totalHarga !== false
+                                ? formatRupiah(it.totalHarga)
+                                : null
+                            }
+                            note={qtyTimesHarga(
+                              visible,
+                              it.kuantitas,
                               it.hargaSatuan,
-                            )}`}
+                            )}
                           />
                         ))}
                       </Fragment>
@@ -722,6 +823,9 @@ export function OrdersPage() {
                     )}
                     {visible.hargaSatuan !== false && (
                       <th className={`${thClass} text-right`}>Harga Satuan</th>
+                    )}
+                    {visible.modalSatuan !== false && (
+                      <th className={`${thClass} text-right`}>Harga Dasar</th>
                     )}
                     {visible.totalHarga !== false && (
                       <th className={`${thClass} text-right`}>Total</th>
@@ -793,6 +897,8 @@ export function OrdersPage() {
                             })
                           }
                           onLink={setLinking}
+                          productById={productById}
+                          productByName={productByName}
                           buyers={buyers}
                           buyerById={buyerById}
                           assigning={assigning}
@@ -858,6 +964,8 @@ function GroupRows({
   onSetStatus,
   onBuy,
   onLink,
+  productById,
+  productByName,
   buyers,
   buyerById,
   assigning,
@@ -876,6 +984,8 @@ function GroupRows({
   onSetStatus: (id: string, status: OrderStatus) => void;
   onBuy: () => void;
   onLink: (item: OrderItem) => void;
+  productById: Map<string, Product>;
+  productByName: Map<string, Product>;
   buyers: Buyer[];
   buyerById: Map<string, Buyer>;
   assigning: string | null;
@@ -974,6 +1084,13 @@ function GroupRows({
           {visible.hargaSatuan !== false && (
             <td className={`${tdClass} text-right tabular-nums`}>
               {formatRupiah(it.hargaSatuan)}
+            </td>
+          )}
+          {visible.modalSatuan !== false && (
+            <td className={`${tdClass} text-right tabular-nums whitespace-nowrap`}>
+              <ModalValue
+                modal={orderModal(it, productById, productByName)}
+              />
             </td>
           )}
           {visible.totalHarga !== false && (

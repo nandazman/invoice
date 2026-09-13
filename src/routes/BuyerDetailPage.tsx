@@ -12,6 +12,7 @@ import {
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
+  MobileBy,
   ByCells,
   ByHeaders,
   bothBy,
@@ -186,6 +187,7 @@ export function BuyerDetailPage() {
                       {o.updatedAt !== o.createdAt && (
                         <span>Diubah {formatDateTimeID(o.updatedAt)}</span>
                       )}
+                      <MobileBy show={bothBy(showBy)} row={o} />
                     </>
                   }
                   value={formatRupiah(o.totalHarga)}

@@ -6,6 +6,7 @@ import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
+  MobileBy,
   ByCells,
   ByHeaders,
   bothBy,
@@ -134,6 +135,7 @@ export function BuyersPage() {
                       <>
                         <span>{b.telepon || "—"}</span>
                         <span>{b.email || "—"}</span>
+                        <MobileBy show={bothBy(showBy)} row={b} />
                         <span className="flex gap-1 w-full">
                           <GhostButton
                             size="sm"

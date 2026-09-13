@@ -11,6 +11,7 @@ import { formatRupiah, formatAngka } from "../lib/format";
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
+  MobileBy,
   ByCells,
   ByHeaders,
   bothBy,
@@ -122,8 +123,7 @@ export function StockPage() {
                 collapses to what the product IS on the left and what its stock
                 is WORTH on the right. Stok, min, and satuan restack under the
                 name; modal/satuan sits under the value. The attribution
-                columns stay a desktop affordance — the toggle above still
-                drives the wide table. */}
+                toggle above restacks under the name too. */}
             <div className="md:hidden">
               <MobileList left="Produk" right="Nilai">
                 {rows.map((r) => {
@@ -163,6 +163,7 @@ export function StockPage() {
                               ⚠ menipis
                             </span>
                           )}
+                          <MobileBy show={bothBy(showBy)} row={r.product} />
                         </>
                       }
                       value={formatRupiah(r.value)}

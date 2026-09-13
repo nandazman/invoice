@@ -20,7 +20,7 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCells, ByHeaders } from "../components/Attribution";
+import { ByCells, ByHeaders, MobileBy } from "../components/Attribution";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
 import { DangerGhostButton } from "../components/Button";
@@ -28,7 +28,12 @@ import { Panel } from "../components/Panel";
 import { FilterBar } from "../components/FilterBar";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { LinkProductDialog } from "../components/LinkProductDialog";
-import { MobileList, MobileRow } from "../components/MobileList";
+import {
+  MobileField,
+  MobileList,
+  MobileRow,
+  qtyTimesHarga,
+} from "../components/MobileList";
 import { thClass, tdClass } from "../components/DataTable";
 import { TrashIcon } from "../components/icons";
 
@@ -155,11 +160,15 @@ export function BeliStockPage() {
                 `md` the row collapses to what it IS on the left and what it is
                 WORTH on the right: satuan, the Dibuat stamp and the delete
                 action restack under the product; the arithmetic behind the
-                money restacks under the total. Column toggles are a desktop
-                affordance and are deliberately not applied here — the phone
-                shape is fixed, the same way Harga's is. */}
+                money restacks under the total. The Kolom toggle applies here
+                too: every column switched on restacks into the row, every
+                column switched off leaves it. The product name stays as the
+                row's anchor (it carries the link) whatever the toggle says. */}
             <div className="md:hidden">
-              <MobileList left="Produk" right="Total">
+              <MobileList
+                left="Produk"
+                right={visible.totalHarga !== false ? "Total" : ""}
+              >
                 {groups.map((g) => (
                   <Fragment key={g.tanggal}>
                     <tr className="bg-surface-hover font-bold">
@@ -197,8 +206,26 @@ export function BeliStockPage() {
                         }
                         meta={
                           <>
-                            <span>{it.satuan}</span>
-                            <span>{formatDateTimeID(it.createdAt)}</span>
+                            {visible.satuan !== false && (
+                              <span>{it.satuan}</span>
+                            )}
+                            {visible.createdAt !== false && (
+                              <MobileField label="Dibuat">
+                                {formatDateTimeID(it.createdAt)}
+                              </MobileField>
+                            )}
+                            {visible.updatedAt !== false && (
+                              <MobileField label="Diperbarui">
+                                {formatDateTimeID(it.updatedAt)}
+                              </MobileField>
+                            )}
+                            <MobileBy
+                              show={{
+                                created: visible.createdBy !== false,
+                                updated: visible.updatedBy !== false,
+                              }}
+                              row={it}
+                            />
                             {/* The trailing action column has nowhere else to
                                 go on a phone, so it rides along here. */}
                             <DangerGhostButton
@@ -211,10 +238,16 @@ export function BeliStockPage() {
                             </DangerGhostButton>
                           </>
                         }
-                        value={formatRupiah(it.totalHarga)}
-                        note={`${formatAngka(it.kuantitas)} × ${formatRupiah(
+                        value={
+                          visible.totalHarga !== false
+                            ? formatRupiah(it.totalHarga)
+                            : null
+                        }
+                        note={qtyTimesHarga(
+                          visible,
+                          it.kuantitas,
                           it.hargaSatuan,
-                        )}`}
+                        )}
                       />
                     ))}
                   </Fragment>

@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { nowISO, uid } from "./format";
 import { logAudit, diff, auditRow } from "./audit";
+import { modalCostFor } from "./purchaseFromOrder";
 import { db, persist, touch, fresh, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
 
 // In-memory mirror of the LIVE rows (deletedAt === null). Filled once by
@@ -388,8 +389,18 @@ function baseUnitsFor(product: Product, satuan: string): number {
 // left an order with no movement, silently.
 export function addOrder(item: OrderItem): void {
   const now = nowISO();
+  // Resolve by productId first; fall back to name for legacy rows.
+  const product =
+    products.find((p) => p.id === item.productId) ??
+    products.find((p) => p.namaProduk === item.namaProduk);
   const filled: OrderItem = fresh({
     ...item,
+    // Harga Dasar 0 means "not filled in", not "free" — snapshotting it would
+    // freeze a 100% margin onto the row, so it stays null and the report falls
+    // back to whatever the price list says later.
+    modalSatuan:
+      item.modalSatuan ??
+      (product && product.hargaDasar > 0 ? modalCostFor(product, item.satuan) : null),
     status: item.status ?? "pending",
     affectsStock: item.affectsStock ?? false,
     createdAt: item.createdAt ?? now,
@@ -409,10 +420,6 @@ export function addOrder(item: OrderItem): void {
 
   let movement: StockMovement | null = null;
   if (filled.affectsStock) {
-    // Resolve by productId first; fall back to name for legacy rows.
-    const product =
-      products.find((p) => p.id === filled.productId) ??
-      products.find((p) => p.namaProduk === filled.namaProduk);
     if (product) {
       const baseQty = filled.kuantitas * baseUnitsFor(product, filled.satuan);
       movement = {

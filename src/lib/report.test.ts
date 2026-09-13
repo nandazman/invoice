@@ -680,6 +680,18 @@ describe("estimateUnpriced", () => {
     expect(e).toMatchObject({ count: 0, sisaCount: 1, sisaNilai: 25000 });
   });
 
+  it("prefers the modal snapshotted on the order over today's Harga Dasar", () => {
+    const o = order({ kuantitas: 5, totalHarga: 25000, modalSatuan: 1500 });
+    const e = estimateUnpriced([o], noCosts, [{ ...product, hargaDasar: 9999 }]);
+    expect(e.hpp).toBe(7500); // 5 × the 1500 it cost at the time
+  });
+
+  it("uses the snapshot even when the product has since been deleted", () => {
+    const o = order({ productId: "p9", namaProduk: "Sudah dihapus", modalSatuan: 1500 });
+    const e = estimateUnpriced([o], noCosts, [product]);
+    expect(e).toMatchObject({ count: 1, sisaCount: 0, hpp: 7500 });
+  });
+
   it("refuses when the product is gone", () => {
     const o = order({ productId: "p9", namaProduk: "Sudah dihapus" });
     const e = estimateUnpriced([o], noCosts, [product]);

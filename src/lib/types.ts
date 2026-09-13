@@ -69,6 +69,11 @@ export interface OrderItem extends Attribution {
   kuantitas: number;
   hargaSatuan: number; // price of the chosen unit
   totalHarga: number; // kuantitas x hargaSatuan
+  // Modal (cost) per chosen unit, snapshot of Harga Dasar × base units when the
+  // order was added, so editing the price list later cannot rewrite what a past
+  // sale cost. Optional and null on rows that predate it, and null when the
+  // product had no Harga Dasar filled in — readers fall back to the product.
+  modalSatuan?: number | null;
   status: OrderStatus; // payment status
   affectsStock: boolean; // if true, adding this item deducts stock (a "sale" movement)
   createdAt: string; // ISO datetime

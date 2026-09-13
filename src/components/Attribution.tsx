@@ -1,5 +1,6 @@
 import type { Attribution } from "../lib/types";
 import { ATTRIBUTION_COLUMNS } from "../lib/columns";
+import { MobileField } from "./MobileList";
 
 // The rendering half of the attribution columns. See lib/columns.ts for the
 // labels and lib/sync/tables.ts for where the values come from.
@@ -68,6 +69,26 @@ export function ByCells({
         <td className={`${className} whitespace-nowrap`}>
           <ByCell email={row.updatedBy} />
         </td>
+      )}
+    </>
+  );
+}
+
+// The phone-layout counterpart of ByCells: the same two toggles, restacked as
+// labelled fragments in a MobileRow's meta line. Without it a toggle switched
+// on showed its columns on a wide screen and silently nothing on a phone.
+export function MobileBy({ show, row }: { show: ByVisibility; row: Attribution }) {
+  return (
+    <>
+      {show.created && (
+        <MobileField label={ATTRIBUTION_COLUMNS[0].label}>
+          <ByCell email={row.createdBy} />
+        </MobileField>
+      )}
+      {show.updated && (
+        <MobileField label={ATTRIBUTION_COLUMNS[1].label}>
+          <ByCell email={row.updatedBy} />
+        </MobileField>
       )}
     </>
   );

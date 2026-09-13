@@ -267,6 +267,30 @@ describe("soft delete", () => {
   });
 });
 
+describe("addOrder modal snapshot", () => {
+  it("stamps Harga Dasar × base units for the chosen unit", async () => {
+    await reset({ products: [product] });
+    addOrder(order({ satuan: "box", kuantitas: 1 }));
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.modalSatuan).toBe(24000); // 12 × 2000
+  });
+
+  it("keeps the snapshot when Harga Dasar changes afterwards", async () => {
+    await reset({ products: [product] });
+    addOrder(order());
+    upsertProduct({ ...product, hargaDasar: 3000 });
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.modalSatuan).toBe(2000);
+  });
+
+  it("leaves it null when Harga Dasar is not filled in", async () => {
+    await reset({ products: [{ ...product, hargaDasar: 0 }] });
+    addOrder(order());
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.modalSatuan).toBeNull();
+  });
+});
+
 describe("cascades", () => {
   it("deleting an order tombstones its generated stock movement", async () => {
     await reset({ products: [product] });

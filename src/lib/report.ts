@@ -276,6 +276,13 @@ export function estimateUnpriced(
   let sisaNilai = 0;
   for (const o of orders) {
     if (hasCostBasis(costByOrder.get(o.id))) continue;
+    // The modal snapshotted when the order was added wins: it is what the price
+    // list said at the time of the sale, and a later Harga Dasar edit must not
+    // move a finished period. Only rows without one fall back to the product.
+    if (o.modalSatuan != null && o.modalSatuan > 0) {
+      priced.push({ revenue: o.totalHarga, modal: o.kuantitas * o.modalSatuan });
+      continue;
+    }
     const product = productForOrder(o, byId, byName);
     // Harga Dasar 0 is not a cost of zero — it is a price list nobody has filled
     // in. Estimating from it would hand back the 100% margin the quarantine
