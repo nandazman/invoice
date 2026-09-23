@@ -368,10 +368,15 @@ function SyncPanel({
           onConfirm={confirmed}
           onClose={() => setConfirming(null)}
         >
+          {/* The order here is the order `syncNow` actually runs in: pull
+              first, then push. It matters to someone deciding whether to press
+              this — a pull that arrives first is the half that could surprise
+              them, and describing it backwards made this dialog a worse
+              promise than the code keeps. */}
           <p>
             {localOnly
               ? "Data terbaru dari cloud diambil ke perangkat ini. Tidak ada yang dikirim ke arah sebaliknya — akun ini disetel menyimpan di perangkat sendiri saja."
-              : "Perubahan yang tersimpan di perangkat ini dikirim ke cloud, lalu data terbaru dari cloud diambil ke perangkat ini. Ini persis sinkronisasi yang biasanya jalan sendiri — tombolnya hanya mempercepat."}
+              : "Data terbaru dari cloud diambil ke perangkat ini, lalu perubahan yang tersimpan di sini dikirim ke cloud. Ini persis sinkronisasi yang biasanya jalan sendiri — tombolnya hanya mempercepat."}
           </p>
           <p>
             Tidak ada yang dihapus, dan baris yang Anda ubah di sini tidak
