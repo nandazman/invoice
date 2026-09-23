@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 // Mount order of every open overlay, innermost last. Modals nest, and the
 // mobile nav drawer can sit under one of them, so a single Escape must reach
@@ -57,7 +58,7 @@ export function Modal({
   // the topmost overlay reacts to Escape.
   useEscapeToClose(onClose);
 
-  return (
+  const overlay = (
     <div
       className={`fixed inset-0 bg-black/40 flex items-end md:items-center justify-center p-4 ${overlayClassName}`}
       onClick={closeOnOverlay ? onClose : undefined}
@@ -70,4 +71,20 @@ export function Modal({
       </div>
     </div>
   );
+
+  // Portalled to <body>, and this is load-bearing rather than tidiness. A CSS
+  // transform on ANY ancestor makes that element the containing block for
+  // `position: fixed` descendants, so `inset-0` stops meaning "the viewport"
+  // and starts meaning "that ancestor". The sidebar in RootLayout carries
+  // `translate-x-0`/`-translate-x-full` for its mobile slide-in and keeps
+  // `md:translate-x-0` on desktop, so every dialog opened from inside it — the
+  // sync panel above all — rendered squeezed into a 224px column with no
+  // backdrop over the page. Escaping to <body> fixes it for every caller at
+  // once, and keeps working if another transformed ancestor shows up later.
+  //
+  // Falls back to rendering in place where there is no document.body: the node
+  // test environment stubs `document` without one (test-setup.ts).
+  return typeof document !== "undefined" && document.body
+    ? createPortal(overlay, document.body)
+    : overlay;
 }
