@@ -201,17 +201,24 @@ function SyncPanel({
   const localOnly = !status.canPush;
 
   return (
+    // Three bands, not one scrolling column: the title and the two actions stay
+    // put while only the detail between them scrolls. On a narrow window the
+    // old single column pushed "Sinkronkan sekarang" and Lanjutan below the
+    // fold, which hid the two things the panel exists to offer.
     <Modal
       onClose={onClose}
-      className="bg-surface rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-auto border border-line"
+      className="bg-surface rounded-xl w-full max-w-lg border border-line flex flex-col overflow-hidden"
     >
-      <h2 className="text-lg font-bold mb-1">Sinkronisasi</h2>
-      <p className="text-sm text-faint mb-4">
-        {localOnly
-          ? "Akun ini disetel menyimpan di perangkat sendiri saja. Data terbaru dari cloud tetap masuk seperti biasa, tapi apa pun yang Anda catat di sini tidak dikirim ke sana dan tidak terlihat oleh orang lain."
-          : "Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya — dan memaksanya kalau sedang buru-buru."}
-      </p>
+      <div className="shrink-0 px-5 pt-5 pb-3 border-b border-line">
+        <h2 className="text-lg font-bold mb-1">Sinkronisasi</h2>
+        <p className="text-sm text-faint">
+          {localOnly
+            ? "Akun ini disetel menyimpan di perangkat sendiri saja. Data terbaru dari cloud tetap masuk seperti biasa, tapi apa pun yang Anda catat di sini tidak dikirim ke sana dan tidak terlihat oleh orang lain."
+            : "Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya — dan memaksanya kalau sedang buru-buru."}
+        </p>
+      </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       {localOnly && (
         <p className="mb-4 text-sm text-muted bg-surface-sunken border border-line rounded-lg px-3 py-2">
           <strong>Catatan penting.</strong> Karena tidak ada salinan di cloud,
@@ -222,7 +229,10 @@ function SyncPanel({
         </p>
       )}
 
-      <div className="flex gap-6 flex-wrap mb-4">
+      {/* Grid, not flex-wrap: four stats in a narrow panel wrapped one per row
+          and made the panel twice as tall as it needed to be. Pairs at every
+          width, three across once there is room. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 mb-4">
         <Stat
           label="Koneksi"
           value={status.online ? "Online" : "Offline"}
@@ -292,25 +302,7 @@ function SyncPanel({
         </p>
       )}
 
-      <div className="flex gap-2 flex-wrap items-center">
-        {/* Still offered when local-only, because the pull half is unaffected
-            and getting fresh data is exactly what this account still wants.
-            Only the label changes, so the button never claims to send. */}
-        <PrimaryButton
-          onClick={() => setConfirming("sync")}
-          disabled={status.busy}
-        >
-          {localOnly ? "Ambil data terbaru" : "Sinkronkan sekarang"}
-        </PrimaryButton>
-        {status.busy && (
-          <span className="text-sm text-faint">Sedang berjalan…</span>
-        )}
-        <Button className="ml-auto" onClick={onClose}>
-          Tutup
-        </Button>
-      </div>
-
-      <div className="mt-4 pt-3 border-t border-line">
+      <div className="pt-3 border-t border-line">
         <button
           onClick={() => setAdvanced((a) => !a)}
           aria-expanded={advanced}
@@ -348,6 +340,26 @@ function SyncPanel({
           {error}
         </p>
       )}
+      </div>
+
+      <div className="shrink-0 flex gap-2 items-center border-t border-line px-5 py-3">
+        {/* Still offered when local-only, because the pull half is unaffected
+            and getting fresh data is exactly what this account still wants.
+            Only the label changes, so the button never claims to send. */}
+        <PrimaryButton
+          className="whitespace-nowrap"
+          onClick={() => setConfirming("sync")}
+          disabled={status.busy}
+        >
+          {localOnly ? "Ambil data terbaru" : "Sinkronkan sekarang"}
+        </PrimaryButton>
+        {status.busy && (
+          <span className="text-sm text-faint">Sedang berjalan…</span>
+        )}
+        <Button className="ml-auto whitespace-nowrap" onClick={onClose}>
+          Tutup
+        </Button>
+      </div>
 
       {confirming === "sync" && (
         <ConfirmDialog
