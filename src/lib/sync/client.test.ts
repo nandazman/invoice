@@ -340,6 +340,30 @@ describe("push sweep", () => {
     expect(getSyncStatus().pending.products).toBe(1);
     expect(getSyncStatus().pendingTotal).toBe(1);
   });
+
+  it("reports the OLDEST pending cursor, across tables", async () => {
+    // The backlog's age is what tells a normal write apart from one stuck for
+    // a fortnight, and it comes from the rows themselves — nothing is stored.
+    await db.products.bulkPut([
+      product("p1", "2026-08-05T00:00:00.000Z") as never,
+      product("p2", "2026-08-01T00:00:00.000Z") as never,
+    ]);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+
+    await bootWithoutPush();
+
+    expect(getSyncStatus().pendingSince).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("clears pendingSince once the backlog lands", async () => {
+    await db.products.put(product("p1", "2026-08-01T00:00:00.000Z") as never);
+    await setWatermarks({ products: "2026-07-15T00:00:00.000Z" });
+
+    await boot("write");
+
+    expect(getSyncStatus().pendingTotal).toBe(0);
+    expect(getSyncStatus().pendingSince).toBeNull();
+  });
 });
 
 describe("watermark advancement", () => {

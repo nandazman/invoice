@@ -25,6 +25,7 @@ import {
 } from "./store";
 import { getAudit, setAudit } from "./audit";
 import { getTemplates, setTemplates } from "./template-store";
+import { rescueUnsynced } from "./rescue";
 
 // Bumped whenever the on-disk backup shape changes incompatibly.
 //
@@ -131,7 +132,10 @@ function upgradeOrders<T extends { buyerId?: string }>(
 // that this installation has been asked, not that this data has buyers. An
 // installation that already answered stays unasked (the per-row picker is
 // there), and a fresh one still gets the prompt. See docs/2026-07-29/plan.md §6.
-export function importAll(text: string): void {
+// Async ONLY because of the rescue below. Every store write it makes is still
+// fire-and-forget (the caller waits on `flushWrites()`), so awaiting this does
+// not mean the restore is durable — it means the safety net is written.
+export async function importAll(text: string): Promise<void> {
   const data = JSON.parse(text) as Partial<BackupFile>;
 
   if (typeof data.version !== "number" || !SUPPORTED_VERSIONS.includes(data.version)) {
@@ -149,6 +153,14 @@ export function importAll(text: string): void {
   const purchases = upgradeRows(data.purchases);
   const stock = upgradeRows(data.stock);
   const templates = upgradeRows(data.templates);
+
+  // Everything above validates; nothing above writes. From here the stores are
+  // replaced wholesale — `setOrders` and its siblings `clear()` the table and
+  // drop tombstones with it — so this is the last moment at which rows that
+  // never reached the cloud still exist anywhere. Write them out first, and let
+  // a failure here abort the restore. See R1 in
+  // docs/2026-09-23/data-loss-rules.md.
+  await rescueUnsynced("pulihkan-cadangan");
 
   setProducts(products);
   setOrders(orders);

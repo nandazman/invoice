@@ -7,6 +7,7 @@ import {
 } from "../lib/sync/client";
 import { TABLES } from "../lib/sync/tables";
 import { formatAngka, formatDateTimeID } from "../lib/format";
+import { describeCounts, type Unsynced } from "../lib/rescue";
 import { Button, PrimaryButton, DangerButton } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
@@ -162,12 +163,11 @@ function SyncPanel({
 
   // Every action shares one runner so a thrown error can never leave the panel
   // silently unchanged — `busy` comes from the client, not from local state.
-  async function run(fn: () => Promise<void>, ok: string) {
+  async function run(fn: () => Promise<unknown>, ok: (r: unknown) => string) {
     setError(null);
     setNote(null);
     try {
-      await fn();
-      setNote(ok);
+      setNote(ok(await fn()));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -179,15 +179,22 @@ function SyncPanel({
   function confirmed() {
     const key = confirming;
     setConfirming(null);
-    if (key === "sync") void run(syncNow, "Sinkronisasi selesai.");
+    if (key === "sync") void run(syncNow, () => "Sinkronisasi selesai.");
     else if (key === "discard")
-      void run(
-        discardLocalChanges,
-        "Perubahan lokal dibuang dan data diambil ulang dari cloud.",
-      );
+      // Names the rescue file in the success message. A download that lands in
+      // the browser's folder without anything saying so is a file nobody keeps.
+      void run(discardLocalChanges, (r) => {
+        const saved = (r as Unsynced).total;
+        return saved > 0
+          ? `Perubahan lokal dibuang dan data diambil ulang dari cloud. ${formatAngka(saved)} baris yang belum tersimpan di cloud sudah diunduh lebih dulu sebagai berkas invoice-unsynced-…json — simpan berkas itu.`
+          : "Perubahan lokal dibuang dan data diambil ulang dari cloud. Tidak ada baris yang belum tersinkron, jadi tidak ada yang hilang.";
+      });
   }
 
   const diverging = status.pendingTotal;
+  // Per-table names for the discard confirmation. Computed here rather than in
+  // the dialog so it stays a plain string the JSX just prints.
+  const breakdown = describeCounts(status.pending);
   // The whole panel changes voice on this: half the copy below promises that
   // changes are on their way to the cloud, and for a local-only account every
   // one of those sentences is false.
@@ -374,14 +381,18 @@ function SyncPanel({
               ? `${formatAngka(diverging)} baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus.`
               : "Semua baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus."}
           </p>
+          {/* The breakdown, not just the total. "47 baris" and "47 Pesanan"
+              are the same number and a completely different decision. */}
+          {breakdown && <p className="font-semibold text-danger-text">{breakdown}.</p>}
           <p>
             Setelah itu seluruh data diambil ulang dari cloud, jadi isi
             perangkat ini akan sama persis dengan isi cloud.
           </p>
           <p className="font-semibold">
-            Tidak bisa dibatalkan. Tidak ada salinan yang disimpan lebih dulu —
-            kalau masih ragu, batalkan dan tekan “Backup semua” di bawah menu
-            kiri.
+            Sebelum menghapus, baris-baris itu diunduh dulu sebagai berkas{" "}
+            <code>invoice-unsynced-…json</code>. Simpan berkas itu: isinya satu-
+            satunya salinan yang tersisa, dan memulihkannya perlu dikerjakan
+            manual. Kalau unduhannya gagal, penghapusan ikut dibatalkan.
           </p>
           <p>
             Yang sudah tersimpan di cloud aman: tindakan ini tidak menghapus apa

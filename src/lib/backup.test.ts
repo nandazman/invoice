@@ -10,6 +10,7 @@ import {
 import { hydrateAudit, getAudit } from "./audit";
 import { hydrateTemplates, getTemplates } from "./template-store";
 import { db, flushWrites, readAll } from "./db";
+import { capturedDownloads } from "../test-setup";
 import type { Snapshot } from "./db";
 
 // A backup you cannot restore is not a backup. The v2 cases here are the ones
@@ -146,8 +147,8 @@ async function resetStores() {
 describe("importAll — v2 files (pre-IndexedDB)", () => {
   beforeEach(resetStores);
 
-  it("restores a v2 backup instead of rejecting it", () => {
-    importAll(v2File());
+  it("restores a v2 backup instead of rejecting it", async () => {
+    await importAll(v2File());
 
     expect(getProducts()).toHaveLength(1);
     expect(getProducts()[0].namaProduk).toBe("Almond Kacang");
@@ -156,15 +157,15 @@ describe("importAll — v2 files (pre-IndexedDB)", () => {
     expect(getAudit()).toHaveLength(1);
   });
 
-  it("backfills deletedAt: null on every restored row", () => {
-    importAll(v2File());
+  it("backfills deletedAt: null on every restored row", async () => {
+    await importAll(v2File());
 
     expect(getProducts()[0].deletedAt).toBeNull();
     expect(getOrders()[0].deletedAt).toBeNull();
   });
 
-  it("preserves ids — a restore is a replacement, not an import", () => {
-    importAll(v2File());
+  it("preserves ids — a restore is a replacement, not an import", async () => {
+    await importAll(v2File());
 
     expect(getProducts()[0].id).toBe("p1");
     expect(getOrders()[0].id).toBe("o1");
@@ -177,18 +178,18 @@ describe("importAll — v2 files (pre-IndexedDB)", () => {
 describe("importAll — v3 files (pre-buyers)", () => {
   beforeEach(resetStores);
 
-  it("restores a v3 backup with no buyers at all", () => {
+  it("restores a v3 backup with no buyers at all", async () => {
     // v3 predates the buyers table, so the key is simply absent — not empty.
-    importAll(v3File());
+    await importAll(v3File());
 
     expect(getBuyers()).toEqual([]);
     expect(getOrders()).toHaveLength(1);
   });
 
-  it("stamps buyerId: \"\" on every restored order", () => {
+  it("stamps buyerId: \"\" on every restored order", async () => {
     // Not undefined: IndexedDB stores that verbatim and every `buyerId === ""`
     // check downstream would silently miss the row.
-    importAll(v3File());
+    await importAll(v3File());
 
     for (const o of getOrders()) expect(o.buyerId).toBe("");
   });
@@ -197,11 +198,11 @@ describe("importAll — v3 files (pre-buyers)", () => {
 describe("exportAll / importAll — v4 round-trip", () => {
   beforeEach(resetStores);
 
-  it("round-trips byte-identically apart from exportedAt", () => {
-    importAll(v2File());
+  it("round-trips byte-identically apart from exportedAt", async () => {
+    await importAll(v2File());
     const first = exportAll();
 
-    importAll(first);
+    await importAll(first);
     const second = exportAll();
 
     const a = JSON.parse(first);
@@ -211,10 +212,10 @@ describe("exportAll / importAll — v4 round-trip", () => {
     expect(b).toEqual(a);
   });
 
-  it("round-trips a v4 file byte-identically apart from exportedAt", () => {
+  it("round-trips a v4 file byte-identically apart from exportedAt", async () => {
     // Nothing to upgrade at v4, so what comes back out must be what went in —
     // buyers and the orders pointing at them included.
-    importAll(v4File());
+    await importAll(v4File());
     const out = exportAll();
 
     const a = JSON.parse(v4File());
@@ -226,13 +227,13 @@ describe("exportAll / importAll — v4 round-trip", () => {
     expect(b.orders[0].buyerId).toBe("b1");
   });
 
-  it("stamps the current version on export", () => {
-    importAll(v2File());
+  it("stamps the current version on export", async () => {
+    await importAll(v2File());
     expect(JSON.parse(exportAll()).version).toBe(BACKUP_VERSION);
     expect(BACKUP_VERSION).toBe(4);
   });
 
-  it("does not export tombstones", () => {
+  it("does not export tombstones", async () => {
     // The stores hold live rows only, so a tombstone cannot reach a backup. A
     // delete that already happened is not something a restore needs to replay.
     hydrateStores({
@@ -257,7 +258,7 @@ describe("importAll — durability", () => {
   // restore settles, IndexedDB must hold the restored data — a reload, a closed
   // tab, or a crash must not undo it.
   it("writes the restored data to IndexedDB, not just memory", async () => {
-    importAll(v2File());
+    await importAll(v2File());
     await flushWrites();
 
     // Read the database back exactly as a fresh boot would.
@@ -270,7 +271,7 @@ describe("importAll — durability", () => {
   });
 
   it("survives a simulated reload", async () => {
-    importAll(v2File());
+    await importAll(v2File());
     await flushWrites();
 
     // Drop everything in memory, then re-hydrate from disk — a page reload.
@@ -300,7 +301,7 @@ describe("importAll — durability", () => {
     await db.products.put({ ...product, id: "stale", deletedAt: null });
     await flushWrites();
 
-    importAll(v2File());
+    await importAll(v2File());
     await flushWrites();
 
     const snap = await readAll();
@@ -309,32 +310,83 @@ describe("importAll — durability", () => {
   });
 });
 
+describe("importAll — the unsynced-row rescue", () => {
+  beforeEach(async () => {
+    await resetStores();
+    await db.meta.clear();
+    capturedDownloads.length = 0;
+  });
+
+  // R1, enforced where it cannot be skipped: the restore replaces every store
+  // wholesale, so rows that never reached the cloud exist nowhere else. Six
+  // such orders were lost on 2026-09-07 because nothing wrote them out first.
+  it("saves rows that never reached the cloud before replacing the stores", async () => {
+    await importAll(v2File());
+    capturedDownloads.length = 0;
+
+    // A second restore: the rows from the first one have never synced.
+    await importAll(v4File());
+
+    expect(capturedDownloads).toHaveLength(1);
+    expect(capturedDownloads[0].filename).toMatch(/^invoice-unsynced-pulihkan-cadangan-/);
+    const file = JSON.parse(capturedDownloads[0].text);
+    expect(file.tables.orders.map((r: { id: string }) => r.id)).toEqual(["o1"]);
+  });
+
+  it("writes nothing when there is nothing at risk", async () => {
+    await expect(importAll("{ not json")).rejects.toThrow();
+    expect(capturedDownloads).toHaveLength(0);
+  });
+
+  it("aborts the restore rather than replacing the stores unprotected", async () => {
+    await importAll(v2File());
+    capturedDownloads.length = 0;
+
+    // Whatever the reason a rescue cannot be written, the restore must not
+    // proceed — a safety net that fails silently is worse than none, because
+    // it is believed in.
+    const realCreate = document.createElement;
+    (document as { createElement: unknown }).createElement = () => {
+      throw new Error("tidak bisa menulis berkas");
+    };
+    try {
+      await expect(importAll(v4File())).rejects.toThrow(/tidak bisa menulis berkas/);
+    } finally {
+      (document as { createElement: unknown }).createElement = realCreate;
+    }
+
+    // Untouched: still the v2 file's single order, not v4's.
+    expect(getOrders()).toHaveLength(1);
+    expect(getBuyers()).toEqual([]);
+  });
+});
+
 describe("importAll — validation", () => {
   beforeEach(resetStores);
 
-  it("rejects an unknown/future version", () => {
+  it("rejects an unknown/future version", async () => {
     const future = JSON.stringify({ ...JSON.parse(v2File()), version: 99 });
-    expect(() => importAll(future)).toThrow(/tidak didukung/);
+    await expect(importAll(future)).rejects.toThrow(/tidak didukung/);
   });
 
-  it("rejects the next version up, not just wildly future ones", () => {
+  it("rejects the next version up, not just wildly future ones", async () => {
     // v5 does not exist yet; guessing at its shape is how a restore corrupts.
     const next = JSON.stringify({ ...JSON.parse(v4File()), version: 5 });
-    expect(() => importAll(next)).toThrow(/tidak didukung/);
+    await expect(importAll(next)).rejects.toThrow(/tidak didukung/);
   });
 
-  it("rejects a file with no version", () => {
-    expect(() => importAll(JSON.stringify({ products: [] }))).toThrow(
+  it("rejects a file with no version", async () => {
+    await expect(importAll(JSON.stringify({ products: [] }))).rejects.toThrow(
       /tidak didukung/,
     );
   });
 
-  it("leaves every store untouched when the file is bad", () => {
-    importAll(v2File());
+  it("leaves every store untouched when the file is bad", async () => {
+    await importAll(v2File());
     const before = exportAll();
 
-    expect(() => importAll("{ not json")).toThrow();
-    expect(() => importAll(JSON.stringify({ version: 99 }))).toThrow();
+    await expect(importAll("{ not json")).rejects.toThrow();
+    await expect(importAll(JSON.stringify({ version: 99 }))).rejects.toThrow();
 
     const after = exportAll();
     const a = JSON.parse(before);
@@ -364,7 +416,7 @@ describe("importAll — reactivity", () => {
     };
     hydrateTemplates({ ...emptySnapshot, templates: [template] });
 
-    importAll(
+    await importAll(
       JSON.stringify({
         ...JSON.parse(v2File()),
         templates: [{ ...template, nama: "Dipulihkan" }],

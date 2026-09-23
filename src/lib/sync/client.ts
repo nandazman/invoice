@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { type Table } from "dexie";
-import { db, onWrite, resolveSeed } from "../db";
+import { db, onWrite, resolveSeed, WATERMARKS_KEY } from "../db";
 import { rehydrate } from "../bootstrap";
 import { nowISO } from "../format";
+import { rescueUnsynced, type Unsynced } from "../rescue";
 import {
   TABLES,
   attributionOf,
@@ -67,6 +68,16 @@ export interface SyncStatus {
   // edits that will never leave this device.
   pending: Record<string, number>;
   pendingTotal: number;
+  // The OLDEST cursor in that backlog, i.e. when the longest-waiting row was
+  // last written. A row is pending from the moment it is written until a push
+  // lands it, and the watermark never advances past an unpushed row, so the
+  // row's own cursor IS the answer to "waiting since when?" — there is nothing
+  // to persist. Null when the backlog is empty or holds only cursorless rows.
+  //
+  // This exists because a count alone cannot tell "3 rows written a minute ago"
+  // from "3 rows stuck for two weeks", and only the second one is a data-loss
+  // risk. See docs/2026-09-23/data-loss-rules.md (R4).
+  pendingSince: string | null;
   error: string | null;
 }
 
@@ -76,7 +87,6 @@ export interface SyncStatus {
 // buyer-backfill flags (db.ts). They are bookkeeping, not user data, and they
 // must survive a reload — localStorage would work but would then be a second
 // storage system holding a piece of the sync state.
-const WATERMARKS_KEY = "sync.watermarks.v1";
 
 // The last role /api/sync/me confirmed, so the UI has something better than
 // "none" to show before the network answers — see `isBlocked`. localStorage
@@ -168,6 +178,7 @@ function freshStatus(): SyncStatus {
     lastPullAt: null,
     pending: {},
     pendingTotal: 0,
+    pendingSince: null,
     error: null,
   };
 }
@@ -327,6 +338,9 @@ interface Swept {
   // newer sibling, the next sweep filters it out on the cursor before the size
   // check ever runs, and it is never synced and never reported again.
   oversizedFloor: string | null;
+  // The LOWEST cursor among the rows being sent — the oldest thing waiting.
+  // Null for a cursorless table, which has no time to report.
+  oldestPending: string | null;
 }
 
 // The content marker for a cursorless table. `types` is a bare list of names
@@ -357,6 +371,7 @@ async function sweepTable(spec: TableSpec, marks: Watermarks): Promise<Swept> {
       next: m,
       oversized: [],
       oversizedFloor: null,
+      oldestPending: null,
     };
   }
 
@@ -404,7 +419,15 @@ async function sweepTable(spec: TableSpec, marks: Watermarks): Promise<Swept> {
     if (next === null || value > next) next = value;
   }
 
-  return { spec, rows, keys, next, oversized, oversizedFloor };
+  // `sent` holds the cursors of exactly the rows in `rows`, so the minimum is
+  // the oldest row actually waiting to go — oversized rows are excluded, which
+  // is right: they are reported by name through their own message.
+  let oldestPending: string | null = null;
+  for (const value of sent) {
+    if (oldestPending === null || value < oldestPending) oldestPending = value;
+  }
+
+  return { spec, rows, keys, next, oversized, oversizedFloor, oldestPending };
 }
 
 async function sweepAll(marks: Watermarks): Promise<Swept[]> {
@@ -413,15 +436,18 @@ async function sweepAll(marks: Watermarks): Promise<Swept[]> {
 
 function pendingFrom(
   swept: Swept[],
-): Pick<SyncStatus, "pending" | "pendingTotal"> {
+): Pick<SyncStatus, "pending" | "pendingTotal" | "pendingSince"> {
   const pending: Record<string, number> = {};
   let total = 0;
+  let since: string | null = null;
   for (const s of swept) {
     if (s.rows.length === 0) continue;
     pending[s.spec.name] = s.rows.length;
     total += s.rows.length;
+    const o = s.oldestPending;
+    if (o !== null && (since === null || o < since)) since = o;
   }
-  return { pending, pendingTotal: total };
+  return { pending, pendingTotal: total, pendingSince: since };
 }
 
 // ---------- Transport ----------
@@ -800,12 +826,25 @@ export async function syncNow(): Promise<void> {
   return running;
 }
 
-export async function discardLocalChanges(): Promise<void> {
+export async function discardLocalChanges(): Promise<Unsynced> {
+  // FIRST, before anything else touches state: write the rows this is about to
+  // destroy to a file. The force-pull below clears each table outright, so a
+  // row that never reached the cloud has no other copy anywhere — that is
+  // exactly how six orders were lost on 2026-09-07. See rescue.ts and R1 in
+  // docs/2026-09-23/data-loss-rules.md.
+  //
+  // Order matters twice over. It has to run before `saveWatermarks({})`, which
+  // resets every cursor to null and would make the whole dataset look pending;
+  // and it has to be allowed to THROW, aborting the discard, because a discard
+  // whose safety net failed is the operation this comment exists to prevent.
+  const rescued = await rescueUnsynced("buang-perubahan-lokal");
+
   // Reset to null so the next pull asks for the entire dataset, then apply it
   // unconditionally — this is the one path where the server wins outright.
   resetWatermarkCache();
   await saveWatermarks({});
   await runPull(true);
+  return rescued;
 }
 
 // The other direction: make the cloud match THIS device, exactly.

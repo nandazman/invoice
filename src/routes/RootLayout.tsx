@@ -11,6 +11,7 @@ import {
   canPushToCloud,
 } from "../lib/sync/client";
 import { formatAngka } from "../lib/format";
+import { describeUnsynced, stalenessDays } from "../lib/rescue";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { PrimaryButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -235,17 +236,22 @@ export function RootLayout() {
   async function doReset() {
     setResetting(true);
     try {
-      await discardLocalChanges();
+      const rescued = await discardLocalChanges();
       setResult({
         ok: true,
         message: "Data di perangkat ini sudah disamakan dengan cloud.",
+        note:
+          rescued.total > 0
+            ? `${formatAngka(rescued.total)} baris yang belum tersimpan di cloud (${describeUnsynced(rescued)}) diunduh lebih dulu sebagai berkas invoice-unsynced-…json. Simpan berkas itu — isinya satu-satunya salinan yang tersisa.`
+            : undefined,
       });
     } catch (e) {
       setResult({
         ok: false,
         message: "Gagal mengambil ulang: " + (e as Error).message,
-        // Nothing was replaced: `discardLocalChanges` only writes after the pull
-        // has answered, so a failure leaves this device exactly as it was.
+        // Nothing was replaced. Two reasons now, and both leave the device
+        // whole: the rescue runs first and aborts the discard if it fails, and
+        // `discardLocalChanges` only writes after the pull has answered.
         note: "Data di perangkat ini belum diganti dan masih utuh.",
       });
     } finally {
@@ -273,7 +279,7 @@ export function RootLayout() {
     let replaced = false;
     try {
       const text = await pickJSONFile();
-      importAll(text);
+      await importAll(text);
       replaced = true;
       // Every store writes to IndexedDB fire-and-forget, so the restore is NOT
       // durable when importAll returns — only the in-memory arrays are. Wait
@@ -297,8 +303,9 @@ export function RootLayout() {
             "Data sudah diganti sebelum kesalahan ini terjadi, tetapi belum tentu " +
             "tersimpan. Muat ulang halaman untuk memeriksa, lalu pulihkan sekali " +
             "lagi bila perlu."
-          : // importAll validates the whole file before it touches any store, so
-            // a berkas that fails there never lands halfway.
+          : // importAll validates the whole file AND writes the unsynced-row
+            // rescue before it touches any store, so a failure at either step
+            // leaves the old data whole.
             "Berkas cadangan diperiksa sebelum data lama diganti, jadi data di " +
             "perangkat ini masih utuh.",
       });
@@ -543,6 +550,7 @@ export function RootLayout() {
 
       <main className="flex-1 min-w-0 pt-14 md:pt-0">
         <div className="max-w-[1400px] mx-auto p-4 md:p-6">
+          <StaleBacklogBanner />
           <Outlet />
         </div>
       </main>
@@ -660,6 +668,36 @@ export function RootLayout() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+// R4: a backlog that is merely large is normal — one written a fortnight ago
+// is not. Six orders sat unpushed on a second device for six days in September
+// 2026 and nothing outside the sync panel ever said so, which is why they were
+// lost rather than noticed. See docs/2026-09-23/data-loss-rules.md (R4).
+//
+// Deliberately NOT shown when the account is local-only or the API is absent:
+// those devices diverge permanently by design, so the warning would be
+// constant, and a warning that is always on is one nobody reads.
+function StaleBacklogBanner() {
+  const status = useSyncStatus();
+  if (!status.available || !status.canPush) return null;
+
+  const days = stalenessDays(status.pendingSince);
+  if (days === null || days < 1) return null;
+
+  return (
+    <div className="mb-4 rounded-lg border border-danger-line bg-danger-soft p-3 text-sm text-danger-text">
+      <p className="font-semibold">
+        {formatAngka(status.pendingTotal)} baris belum tersimpan di cloud,
+        yang terlama sudah {formatAngka(days)} hari.
+      </p>
+      <p className="mt-1">
+        Data ini baru ada di perangkat ini. Buka panel sinkronisasi lalu coba
+        kirim ulang — kalau tetap gagal, simpan cadangan dulu sebelum menghapus
+        apa pun.
+      </p>
     </div>
   );
 }

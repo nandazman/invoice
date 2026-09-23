@@ -31,6 +31,9 @@ yarn-error.log*
 /d1-export*.sql
 /backup-*.sql
 
+# Drizzle schema introspected from live D1 (bun run db:pull) — generated.
+/drizzle/
+
 # Environment
 .env
 .env.local

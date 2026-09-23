@@ -69,6 +69,13 @@ export const BUYER_BACKFILL_KEY = "buyerBackfill.v1";
 // the catalogue is empty.
 export const SEED_PENDING_KEY = "seed.pending.v1";
 
+// Per-table sync cursors: the newest cursor value known to have reached the
+// cloud. Owned by sync/client.ts, which is the only writer — it lives here
+// because `rescue.ts` must read it to tell synced rows from pending ones, and
+// importing client.ts from there would close an import cycle through
+// bootstrap.ts.
+export const WATERMARKS_KEY = "sync.watermarks.v1";
+
 class InvoiceDB extends Dexie {
   products!: Table<Product, string>;
   orders!: Table<OrderItem, string>;

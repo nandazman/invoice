@@ -31,6 +31,7 @@ import {
   type StatusFilter,
 } from "../lib/useOrderFilter";
 import type { StockMovement } from "../lib/types";
+import { checkIntegrity } from "../lib/integrity";
 import {
   formatRupiah,
   formatAngka,
@@ -67,6 +68,14 @@ export function ReportPage() {
   const purchases = usePurchases();
   const stock = useStock();
   const buyers = useBuyers();
+
+  // Deliberately NOT filtered: a dangling row from outside the selected period
+  // is still a dangling row, and hiding it behind a date filter is how this
+  // went unnoticed for two weeks in September.
+  const integrity = useMemo(
+    () => checkIntegrity(stock, orders, purchases),
+    [stock, orders, purchases],
+  );
 
   const filter = useOrderFilter(orders, products);
   const { filtered } = filter;
@@ -268,6 +277,45 @@ export function ReportPage() {
       <FilterBar filter={filter}>
         <StatusField filter={filter} />
       </FilterBar>
+
+      {/* 0. Integrity. Above everything, outside every filter, and rendered
+          only when something is actually wrong — so it is an alarm rather than
+          a permanent panel people learn to scroll past. It reports the whole
+          dataset on purpose: a broken link from a date outside the current
+          filter is still broken. See lib/integrity.ts. */}
+      {integrity.total > 0 && (
+        <Panel>
+          <PanelHead
+            title="Ada data yang tidak cocok"
+            scope={<Chip tone="partial">seluruh riwayat</Chip>}
+          />
+          <p className="text-sm text-warn-text mb-3">
+            Ada baris stok yang menunjuk ke pesanan atau pembelian yang sudah
+            tidak ada. Ini tidak bisa terjadi lewat tombol hapus biasa — menghapus
+            pesanan ikut menghapus baris stoknya — jadi induknya hilang lewat
+            jalan lain: tabel yang terhapus sebelum tersinkron, atau pemulihan
+            cadangan yang setengah jalan.
+          </p>
+          <ul className="text-sm space-y-2">
+            {integrity.findings.map((f) => (
+              <li key={f.kind}>
+                <span className="font-semibold">
+                  {f.movements.length} baris stok
+                </span>{" "}
+                menunjuk ke {f.missingIds.length}{" "}
+                {f.kind === "order" ? "pesanan" : "pembelian"} yang hilang
+                {/* The dates are the actionable part: they name the session
+                    that broke, which is how the September loss was traced. */}
+                {f.dates.length > 0 && <> — tanggal {f.dates.join(", ")}</>}.
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm text-faint mt-3">
+            Angka laba dan stok di bawah ini tidak menghitung baris-baris itu
+            dengan benar sampai induknya dipulihkan.
+          </p>
+        </Panel>
+      )}
 
       <Band
         title="Selama periode"
