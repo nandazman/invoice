@@ -33,3 +33,9 @@ it: `docs/2026-09-23/data-loss-rules.md`. The short form:
   for you.
 - **Export before hand-written SQL against remote D1** (`bun run d1:export`,
   keep it in `backup/`).
+
+## Design System
+Always read DESIGN.md before making any visual or UI decisions.
+All font choices, colors, spacing, and aesthetic direction are defined there.
+Do not deviate without explicit user approval.
+In QA mode, flag any code that doesn't match DESIGN.md.
