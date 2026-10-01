@@ -45,8 +45,8 @@ export function BuyerBackfillDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <h2 className="text-xl font-bold mb-2">Pembeli untuk pesanan lama</h2>
+    <Modal onClose={onClose} className="bg-surface p-4 md:p-5 w-full max-w-md overflow-auto">
+      <h2 className="text-lg font-bold mb-2">Pembeli untuk pesanan lama</h2>
 
       <p className="text-sm text-muted mb-3">
         Ada <b>{count} pesanan lama</b> yang belum punya pembeli. Pilih satu
@@ -68,7 +68,7 @@ export function BuyerBackfillDialog({
         mengunci apa pun.
       </p>
 
-      <div className="flex gap-3 justify-end">
+      <div className="flex flex-wrap gap-2 justify-end">
         <Button onClick={dismissBuyerBackfill}>Lewati</Button>
         <PrimaryButton
           disabled={buyerId === ""}

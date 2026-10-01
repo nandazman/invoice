@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Buyer } from "../lib/types";
 import { useBuyers, useOrders, upsertBuyer, deleteBuyer } from "../lib/store";
@@ -6,24 +6,23 @@ import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
-  MobileBy,
+  ByCell,
   ByCells,
   ByHeaders,
   bothBy,
 } from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
-import {
-  PrimaryButton,
-  DangerGhostButton,
-  GhostButton,
-} from "../components/Button";
+import { Button, PrimaryButton, GhostButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
-import { Field } from "../components/Field";
 import { thClass, tdClass } from "../components/DataTable";
-import { MobileList, MobileRow } from "../components/MobileList";
-import { TrashIcon, PencilIcon } from "../components/icons";
+import {
+  PlusIcon,
+  PencilIcon,
+  ChevronDownIcon,
+  SearchIcon,
+} from "../components/icons";
 
 
 export function BuyersPage() {
@@ -32,6 +31,15 @@ export function BuyersPage() {
   const [editing, setEditing] = useState<Buyer | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
+  // Phone rows opened into their detail card.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [showBy, setShowBy] = usePersistentAttribution(
     "invoice.pembeli.by.v1",
   );
@@ -86,82 +94,116 @@ export function BuyersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Pembeli</h1>
-      <p className="text-faint mb-4">
-        Daftar pembeli beserta jumlah dan nilai pesanan mereka.
-      </p>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold mb-1">Pembeli</h1>
+          <p className="text-faint">
+            Daftar pembeli beserta jumlah dan nilai pesanan mereka.
+          </p>
+        </div>
+        <PrimaryButton onClick={() => setCreating(true)}>
+          <PlusIcon /> Tambah
+        </PrimaryButton>
+      </div>
 
       <Panel>
-        <div className="flex gap-3 flex-wrap items-end mb-3">
-          <Field label="Cari pembeli" className="flex-1 min-w-[220px]">
+        <div className="flex gap-3 flex-wrap items-center mb-3">
+          <div className="relative flex-1 min-w-[200px] md:max-w-sm">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint pointer-events-none" />
             <Input
+              className="!pl-8"
+              aria-label="Cari pembeli"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Ketik nama, telepon, atau email…"
+              placeholder="Cari nama, telepon, atau email…"
             />
-          </Field>
-          <PrimaryButton onClick={() => setCreating(true)}>
-            + Tambah Pembeli
-          </PrimaryButton>
-          <div className="h-9 flex items-center">
+          </div>
+          <span className="flex-1 hidden md:block" />
+          <div className="hidden md:flex h-9 items-center">
             <AttributionToggle show={showBy} onChange={setShowBy} />
           </div>
+          <Button
+            size="sm"
+            className="md:!hidden"
+            onClick={() =>
+              setExpanded(
+                expanded.size > 0 ? new Set() : new Set(shown.map((b) => b.id)),
+              )
+            }
+          >
+            <ChevronDownIcon
+              className={expanded.size > 0 ? "rotate-180" : undefined}
+            />
+            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+          </Button>
         </div>
 
-        {/* The phone layout: the row collapses to who the buyer IS on the left
-            and what they are WORTH on the right. Telepon and email restack
-            under the name, the order count under the total. Ubah and Hapus
-            join the meta line — the desktop action cell has nowhere else to go
-            once the table is two columns wide, and the name stays the link to
-            the buyer's page exactly as it is on the wide table. */}
+        {/* Phone: name left, what the buyer is WORTH right; tap for the card
+            with telepon, email and Ubah. Hapus lives in the Ubah dialog. */}
         {shown.length > 0 && (
           <div className="md:hidden">
-            <MobileList left="Nama" right="Total Nilai">
-              {shown.map((b) => {
-                const stats = statsByBuyer.get(b.id);
-                return (
-                  <MobileRow
-                    key={b.id}
-                    title={
-                      <Link
-                        to="/pembeli/$id"
-                        params={{ id: b.id }}
-                        className="flex items-center w-full min-h-9 -my-1 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-                      >
-                        {b.nama}
-                      </Link>
-                    }
-                    meta={
-                      <>
-                        <span>{b.telepon || "—"}</span>
-                        <span>{b.email || "—"}</span>
-                        <MobileBy show={bothBy(showBy)} row={b} />
-                        <span className="flex gap-1 w-full">
-                          <GhostButton
-                            size="sm"
-                            title={`Ubah pembeli "${b.nama}"`}
-                            aria-label={`Ubah pembeli "${b.nama}"`}
-                            onClick={() => setEditing(b)}
+            {shown.map((b) => {
+              const stats = statsByBuyer.get(b.id);
+              const open = expanded.has(b.id);
+              const kv: [string, React.ReactNode][] = [
+                ["Telepon", b.telepon || <span className="text-faint">—</span>],
+                ["Email", b.email || <span className="text-faint">—</span>],
+                ["Pesanan", formatAngka(stats?.count ?? 0)],
+                ["Dibuat oleh", <ByCell key="c" email={b.createdBy} />],
+                ["Diperbarui oleh", <ByCell key="u" email={b.updatedBy} />],
+              ];
+              return (
+                <div key={b.id} className="border-b border-line">
+                  <div
+                    className="flex items-center gap-2 pl-3 pr-2 min-h-11 cursor-pointer"
+                    onClick={() => toggleExpanded(b.id)}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      className="flex-1 min-w-0 text-left font-medium break-words py-1"
+                    >
+                      {b.nama}
+                    </button>
+                    <span className="tabular-nums font-medium whitespace-nowrap">
+                      {formatRupiah(stats?.total ?? 0)}
+                    </span>
+                    <ChevronDownIcon
+                      className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+                    />
+                  </div>
+                  {open && (
+                    <div className="bg-surface-sunken border-t border-line px-3 py-3 text-sm">
+                      <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+                        <dt className="text-faint">Nama</dt>
+                        <dd className="text-right">
+                          <Link
+                            to="/pembeli/$id"
+                            params={{ id: b.id }}
+                            className="text-brand hover:underline font-medium"
                           >
-                            <PencilIcon />
-                          </GhostButton>
-                          <DangerGhostButton
-                            size="sm"
-                            title={`Hapus pembeli "${b.nama}"`}
-                            aria-label={`Hapus pembeli "${b.nama}"`}
-                            onClick={() => setDeleting(b)}
-                          >
-                            <TrashIcon />
-                          </DangerGhostButton>
-                        </span>
-                      </>
-                    }
-                    value={formatRupiah(stats?.total ?? 0)}
-                    note={`${formatAngka(stats?.count ?? 0)} pesanan`}
-                  />
-                );
-              })}
-            </MobileList>
+                            {b.nama}
+                          </Link>
+                        </dd>
+                        {kv.map(([label, value]) => (
+                          <Fragment key={label}>
+                            <dt className="text-faint">{label}</dt>
+                            <dd className="text-right tabular-nums font-medium break-words">
+                              {value}
+                            </dd>
+                          </Fragment>
+                        ))}
+                      </dl>
+                      <div className="flex justify-end mt-3">
+                        <Button size="sm" onClick={() => setEditing(b)}>
+                          <PencilIcon /> Edit
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -201,7 +243,7 @@ export function BuyersPage() {
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatAngka(stats?.count ?? 0)}
                     </td>
-                    <td className={`${tdClass} text-right tabular-nums font-semibold`}>
+                    <td className={`${tdClass} text-right tabular-nums`}>
                       {formatRupiah(stats?.total ?? 0)}
                     </td>
                     <ByCells
@@ -209,25 +251,15 @@ export function BuyersPage() {
                       row={b}
                       className={tdClass}
                     />
-                    <td className={tdClass}>
-                      <div className="flex gap-1 justify-end">
-                        <GhostButton
-                          size="sm"
-                          title={`Ubah pembeli "${b.nama}"`}
-                          aria-label={`Ubah pembeli "${b.nama}"`}
-                          onClick={() => setEditing(b)}
-                        >
-                          <PencilIcon />
-                        </GhostButton>
-                        <DangerGhostButton
-                          size="sm"
-                          title={`Hapus pembeli "${b.nama}"`}
-                          aria-label={`Hapus pembeli "${b.nama}"`}
-                          onClick={() => setDeleting(b)}
-                        >
-                          <TrashIcon />
-                        </DangerGhostButton>
-                      </div>
+                    <td className={`${tdClass} text-right whitespace-nowrap`}>
+                      <GhostButton
+                        size="sm"
+                        title={`Ubah pembeli "${b.nama}"`}
+                        aria-label={`Ubah pembeli "${b.nama}"`}
+                        onClick={() => setEditing(b)}
+                      >
+                        <PencilIcon />
+                      </GhostButton>
                     </td>
                   </tr>
                 );
@@ -273,6 +305,14 @@ export function BuyersPage() {
         <BuyerDialog
           buyer={editing}
           onSave={upsert}
+          onDelete={
+            editing
+              ? () => {
+                  setDeleting(editing);
+                  setEditing(null);
+                }
+              : undefined
+          }
           onClose={() => {
             setEditing(null);
             setCreating(false);

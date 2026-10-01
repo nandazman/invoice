@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useBuyers, useOrders, upsertBuyer } from "../lib/store";
 import { useAudit } from "../lib/audit";
@@ -12,17 +12,17 @@ import {
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
-  MobileBy,
+  ByCell,
   ByCells,
   ByHeaders,
   bothBy,
 } from "../components/Attribution";
 import { BuyerDialog } from "../components/BuyerDialog";
-import { PrimaryButton } from "../components/Button";
+import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { Stat } from "../components/Stat";
 import { thClass, tdClass } from "../components/DataTable";
-import { MobileList, MobileRow } from "../components/MobileList";
+import { PencilIcon, ChevronDownIcon } from "../components/icons";
 
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,12 +30,37 @@ const STATUS_LABEL: Record<string, string> = {
   paid: "Lunas",
 };
 
+// Read-only here (changing status happens on Pesanan), so a tinted label, not a
+// button.
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+        status === "paid"
+          ? "text-ok bg-ok-soft border-ok-line"
+          : "text-warn bg-warn-soft border-warn-line"
+      }`}
+    >
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
+
 export function BuyerDetailPage() {
   const { id } = useParams({ strict: false }) as { id: string };
   const buyers = useBuyers();
   const orders = useOrders();
   const audit = useAudit();
   const [editing, setEditing] = useState(false);
+  // Phone order rows opened into their detail card.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [showBy, setShowBy] = usePersistentAttribution(
     "invoice.pembeli.detail.by.v1",
   );
@@ -115,7 +140,9 @@ export function BuyerDetailPage() {
               <p className="text-sm text-faint mt-1">{buyer.catatan}</p>
             )}
           </div>
-          <PrimaryButton onClick={() => setEditing(true)}>Ubah</PrimaryButton>
+          <Button onClick={() => setEditing(true)}>
+            <PencilIcon /> Ubah
+          </Button>
         </div>
       </Panel>
 
@@ -142,7 +169,27 @@ export function BuyerDetailPage() {
           <h2 className="text-lg font-bold">Pesanan</h2>
           <span className="flex-1" />
           {buyerOrders.length > 0 && (
-            <AttributionToggle show={showBy} onChange={setShowBy} />
+            <>
+              <div className="hidden md:block">
+                <AttributionToggle show={showBy} onChange={setShowBy} />
+              </div>
+              <Button
+                size="sm"
+                className="md:!hidden"
+                onClick={() =>
+                  setExpanded(
+                    expanded.size > 0
+                      ? new Set()
+                      : new Set(buyerOrders.map((o) => o.id)),
+                  )
+                }
+              >
+                <ChevronDownIcon
+                  className={expanded.size > 0 ? "rotate-180" : undefined}
+                />
+                {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+              </Button>
+            </>
           )}
         </div>
         {buyerOrders.length === 0 ? (
@@ -150,53 +197,75 @@ export function BuyerDetailPage() {
         ) : (
           <>
           <div className="md:hidden">
-            <MobileList left="Produk" right="Total">
-              {buyerOrders.map((o) => (
-                <MobileRow
-                  key={o.id}
-                  title={
-                    o.productId ? (
-                      <Link
-                        to="/produk/$id"
-                        params={{ id: o.productId }}
-                        className="text-brand hover:underline font-medium"
-                      >
-                        {o.namaProduk}
-                      </Link>
-                    ) : (
-                      o.namaProduk
-                    )
-                  }
-                  meta={
-                    <>
-                      <span>{formatTanggalID(o.tanggal)}</span>
-                      <span>{o.satuan}</span>
-                      <span
-                        className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
-                          o.status === "paid"
-                            ? "bg-ok-soft text-ok-text"
-                            : "bg-warn-soft text-warn-text"
-                        }`}
-                      >
-                        {STATUS_LABEL[o.status] ?? o.status}
-                      </span>
-                      {/* The desktop's date cell carries these under Tanggal;
-                          the phone layout keeps them rather than dropping a
-                          column, which is the whole point of restacking. */}
-                      <span>Dibuat {formatDateTimeID(o.createdAt)}</span>
-                      {o.updatedAt !== o.createdAt && (
-                        <span>Diubah {formatDateTimeID(o.updatedAt)}</span>
-                      )}
-                      <MobileBy show={bothBy(showBy)} row={o} />
-                    </>
-                  }
-                  value={formatRupiah(o.totalHarga)}
-                  note={`${formatAngka(o.kuantitas)} × ${formatRupiah(
-                    o.hargaSatuan,
-                  )}`}
-                />
-              ))}
-            </MobileList>
+            {buyerOrders.map((o) => {
+              const open = expanded.has(o.id);
+              const kv: [string, React.ReactNode][] = [
+                ["Tanggal", formatTanggalID(o.tanggal)],
+                ["Satuan", o.satuan],
+                ["Qty", formatAngka(o.kuantitas)],
+                ["Harga satuan", formatRupiah(o.hargaSatuan)],
+                ["Dibuat", formatDateTimeID(o.createdAt)],
+                ...(o.updatedAt !== o.createdAt
+                  ? ([["Diubah", formatDateTimeID(o.updatedAt)]] as [
+                      string,
+                      React.ReactNode,
+                    ][])
+                  : []),
+                ["Dibuat oleh", <ByCell key="c" email={o.createdBy} />],
+                ["Diperbarui oleh", <ByCell key="u" email={o.updatedBy} />],
+              ];
+              return (
+                <div key={o.id} className="border-b border-line">
+                  <div
+                    className="flex items-center gap-2 pl-3 pr-2 min-h-11 cursor-pointer"
+                    onClick={() => toggleExpanded(o.id)}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      className="flex-1 min-w-0 text-left font-medium break-words py-1"
+                    >
+                      {o.namaProduk}
+                    </button>
+                    <StatusBadge status={o.status} />
+                    <span className="tabular-nums font-medium whitespace-nowrap">
+                      {formatRupiah(o.totalHarga)}
+                    </span>
+                    <ChevronDownIcon
+                      className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+                    />
+                  </div>
+                  {open && (
+                    <div className="bg-surface-sunken border-t border-line px-3 py-3 text-sm">
+                      <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+                        <dt className="text-faint">Produk</dt>
+                        <dd className="text-right">
+                          {o.productId ? (
+                            <Link
+                              to="/produk/$id"
+                              params={{ id: o.productId }}
+                              className="text-brand hover:underline font-medium"
+                            >
+                              {o.namaProduk}
+                            </Link>
+                          ) : (
+                            o.namaProduk
+                          )}
+                        </dd>
+                        {kv.map(([label, value]) => (
+                          <Fragment key={label}>
+                            <dt className="text-faint">{label}</dt>
+                            <dd className="text-right tabular-nums font-medium break-words">
+                              {value}
+                            </dd>
+                          </Fragment>
+                        ))}
+                      </dl>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">
@@ -250,15 +319,7 @@ export function BuyerDetailPage() {
                       {formatRupiah(o.totalHarga)}
                     </td>
                     <td className={tdClass}>
-                      <span
-                        className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
-                          o.status === "paid"
-                            ? "bg-ok-soft text-ok-text"
-                            : "bg-warn-soft text-warn-text"
-                        }`}
-                      >
-                        {STATUS_LABEL[o.status] ?? o.status}
-                      </span>
+                      <StatusBadge status={o.status} />
                     </td>
                     <ByCells
                       show={bothBy(showBy)}
