@@ -64,7 +64,7 @@ export function useScrollLock(active = true) {
 // DESIGN.md elevation: overlays are the one place a shadow is allowed — offset,
 // soft blur, never a coloured halo.
 const panelShape =
-  "!rounded-t-2xl md:!rounded-xl !max-h-[85vh] shadow-[0_8px_24px_rgb(20_32_31/0.12)]";
+  "!rounded-t-2xl md:!rounded-xl !max-h-[90vh] max-md:!w-full max-md:!max-w-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_8px_24px_rgb(20_32_31/0.12)]";
 
 // The overlay every dialog was repeating: click-outside to close, Escape to
 // close, and a panel that swallows its own clicks. Only the panel's width and
@@ -93,7 +93,7 @@ export function Modal({
 
   const overlay = (
     <div
-      className={`fixed inset-0 bg-ink/40 flex items-end md:items-center justify-center p-4 ${overlayClassName}`}
+      className={`fixed inset-0 bg-ink/40 flex items-end md:items-center justify-center md:p-4 ${overlayClassName}`}
       onClick={closeOnOverlay ? onClose : undefined}
     >
       <div

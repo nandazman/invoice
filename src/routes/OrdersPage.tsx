@@ -788,6 +788,7 @@ export function OrdersPage() {
                           group={g}
                           visible={visible}
                           hidden={hidden}
+                          onToggleHidden={toggleHidden}
                           onEdit={setEditing}
                           onSetStatus={setOrderStatus}
                           onLink={setLinking}
@@ -1106,6 +1107,7 @@ function GroupRows({
   group,
   visible,
   hidden,
+  onToggleHidden,
   onEdit,
   onSetStatus,
   onLink,
@@ -1119,6 +1121,7 @@ function GroupRows({
   group: DateGroup;
   visible: Record<string, boolean>;
   hidden: Set<string>;
+  onToggleHidden: (id: string) => void;
   onEdit: (item: OrderItem) => void;
   onSetStatus: (id: string, status: OrderStatus) => void;
   onLink: (item: OrderItem) => void;
@@ -1241,6 +1244,22 @@ function GroupRows({
             className={tdClass}
           />
           <td className={`${tdClass} text-right whitespace-nowrap`}>
+            <GhostButton
+              size="sm"
+              onClick={() => onToggleHidden(it.id)}
+              title={
+                hidden.has(it.id)
+                  ? `Hitung lagi "${it.namaProduk}"`
+                  : `Sembunyikan "${it.namaProduk}" dari total`
+              }
+              aria-label={
+                hidden.has(it.id)
+                  ? `Hitung lagi "${it.namaProduk}"`
+                  : `Sembunyikan "${it.namaProduk}" dari total`
+              }
+            >
+              {hidden.has(it.id) ? <EyeOffIcon /> : <EyeIcon />}
+            </GhostButton>
             <GhostButton
               size="sm"
               onClick={() => onEdit(it)}
