@@ -78,8 +78,14 @@ export function ColumnToggle({
         title="Tampilkan / sembunyikan kolom"
       >
         <span>Kolom</span>
+        {/* Count dropped below md: on Harga the actions row scrolls
+            horizontally at 390px and the full label pushed this last button
+            past its edge. */}
         <span className="text-faint">
-          ({shown}/{columns.length}) ▾
+          <span className="hidden md:inline">
+            ({shown}/{columns.length}){" "}
+          </span>
+          ▾
         </span>
       </button>
 
