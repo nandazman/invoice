@@ -131,7 +131,13 @@ const COLUMNS = [
 // form insists on. No storage-key bump needed: usePersistentVisibility merges
 // the saved object over `defaults` key by key (`columns.ts`), so an id the saved
 // state has never heard of resolves to its default rather than to `undefined`.
-const HIDDEN_BY_DEFAULT = ["createdAt", "updatedAt", ...ATTRIBUTION_COLUMN_IDS];
+// Satuan is folded into Qty ("4 karung") until the column is switched on.
+const HIDDEN_BY_DEFAULT = [
+  "satuan",
+  "createdAt",
+  "updatedAt",
+  ...ATTRIBUTION_COLUMN_IDS,
+];
 const COLUMN_DEFAULTS = Object.fromEntries(
   COLUMNS.map((c) => [c.id, !HIDDEN_BY_DEFAULT.includes(c.id)]),
 );
@@ -276,8 +282,8 @@ function ModalValue({
 // Colored badge feel for the inline status dropdown.
 function statusSelectClass(status: OrderStatus): string {
   return status === "paid"
-    ? "text-ok bg-ok-soft border-ok-line font-semibold"
-    : "text-warn bg-warn-soft border-warn-line font-semibold";
+    ? "text-ok bg-ok-soft-strong font-semibold"
+    : "text-warn bg-warn-soft-strong font-semibold";
 }
 
 export function OrdersPage() {
@@ -412,10 +418,7 @@ export function OrdersPage() {
       // "Beli stok": the Beli Stok button's job, in the same step. Buy at Harga
       // Dasar, then the offsetting sale for this order.
       addPurchase(
-        purchaseFromOrderItem(
-          order,
-          productById.get(order.productId),
-        ),
+        purchaseFromOrderItem(order, productById.get(order.productId)),
         "pembelian dari pesanan langsung untuk stok (by order)",
         order,
       );
@@ -530,12 +533,12 @@ export function OrdersPage() {
         onAdd={products.length > 0 ? () => setAdding(true) : undefined}
       />
 
-      <Panel>
-        <div className="flex gap-3 flex-wrap items-center mb-3">
-          <span className="text-lg font-bold">
+      <Panel className="md:!p-0 md:overflow-hidden">
+        <div className="flex gap-3 flex-wrap items-center mb-3 md:mb-0 md:px-3 md:py-3 md:border-b md:border-line">
+          <span className="text-[17px] font-bold">
             Total: {formatRupiah(grandTotal)}
           </span>
-          <span className="text-faint">
+          <span className="text-xs text-faint">
             · {counted.length} item
             {hiddenCount > 0 && ` (${hiddenCount} disembunyikan)`}
           </span>
@@ -558,8 +561,39 @@ export function OrdersPage() {
             />
             {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
           </Button>
-          <div className="hidden md:block">
-            <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+          <div className="hidden md:flex items-center gap-2">
+            <span className="text-xs text-faint">Pisahkan per pembeli</span>
+            <div
+              role="group"
+              aria-label="Pisahkan per pembeli"
+              className="inline-flex overflow-hidden rounded-md border border-line-strong bg-surface"
+            >
+              {(
+                [
+                  ["Per tanggal", false],
+                  ["Per pembeli", true],
+                ] as const
+              ).map(([label, value]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={perBuyer === value}
+                  onClick={() => setPerBuyer(value)}
+                  className={`px-2.5 py-1 text-[13px] font-semibold cursor-pointer border-r border-line last:border-0 ${
+                    perBuyer === value
+                      ? "bg-brand-soft text-brand-text"
+                      : "text-body hover:bg-surface-hover"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <ColumnToggle
+              columns={COLUMNS}
+              visible={visible}
+              onToggle={toggle}
+            />
           </div>
         </div>
 
@@ -605,7 +639,9 @@ export function OrdersPage() {
                           · {s.items.length} item
                         </span>
                       </span>
-                      <span className="tabular-nums">{formatRupiah(s.total)}</span>
+                      <span className="tabular-nums">
+                        {formatRupiah(s.total)}
+                      </span>
                     </div>
                   )}
                   {s.dates.map((g) => (
@@ -620,8 +656,12 @@ export function OrdersPage() {
                           onToggle={toggleAll}
                           title={`Pilih semua item ${formatTanggalID(g.tanggal)}`}
                         />
-                        <span className="flex-1">{formatTanggalID(g.tanggal)}</span>
-                        <span className="tabular-nums">{formatRupiah(g.total)}</span>
+                        <span className="flex-1">
+                          {formatTanggalID(g.tanggal)}
+                        </span>
+                        <span className="tabular-nums">
+                          {formatRupiah(g.total)}
+                        </span>
                       </div>
                       {g.items.map((it) => (
                         <PhoneRow
@@ -650,7 +690,7 @@ export function OrdersPage() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr>
-                    <th className={`${thClass} w-8`}>
+                    <th className={`${thClass} bg-surface-sunken w-8`}>
                       <SelectAllBox
                         ids={filtered.map((o) => o.id)}
                         selected={chosen}
@@ -659,37 +699,52 @@ export function OrdersPage() {
                       />
                     </th>
                     {visible.namaProduk !== false && (
-                      <th className={thClass}>Produk</th>
+                      <th className={`${thClass} bg-surface-sunken`}>Produk</th>
                     )}
                     {visible.satuan !== false && (
-                      <th className={thClass}>Satuan</th>
+                      <th className={`${thClass} bg-surface-sunken`}>Satuan</th>
                     )}
                     {visible.kuantitas !== false && (
-                      <th className={`${thClass} text-right`}>Qty</th>
+                      <th className={`${thClass} bg-surface-sunken text-right`}>
+                        Qty
+                      </th>
                     )}
                     {visible.hargaSatuan !== false && (
-                      <th className={`${thClass} text-right`}>Harga Satuan</th>
+                      <th className={`${thClass} bg-surface-sunken text-right`}>
+                        Harga Satuan
+                      </th>
                     )}
                     {visible.modalSatuan !== false && (
-                      <th className={`${thClass} text-right`}>Harga Dasar</th>
+                      <th className={`${thClass} bg-surface-sunken text-right`}>
+                        Harga Dasar
+                      </th>
                     )}
                     {visible.totalHarga !== false && (
-                      <th className={`${thClass} text-right`}>Total</th>
+                      <th className={`${thClass} bg-surface-sunken text-right`}>
+                        Total
+                      </th>
                     )}
                     {visible.status !== false && (
-                      <th className={thClass}>Status</th>
+                      <th className={`${thClass} bg-surface-sunken`}>Status</th>
                     )}
                     {visible.buyer !== false && (
-                      <th className={thClass}>Pembeli</th>
+                      <th className={`${thClass} bg-surface-sunken`}>
+                        Pembeli
+                      </th>
                     )}
                     {visible.createdAt !== false && (
-                      <th className={thClass}>Dibuat</th>
+                      <th className={`${thClass} bg-surface-sunken`}>Dibuat</th>
                     )}
                     {visible.updatedAt !== false && (
-                      <th className={thClass}>Diperbarui</th>
+                      <th className={`${thClass} bg-surface-sunken`}>
+                        Diperbarui
+                      </th>
                     )}
-                    <ByHeaders show={byVisible} className={thClass} />
-                    <th className={thClass}></th>
+                    <ByHeaders
+                      show={byVisible}
+                      className={`${thClass} bg-surface-sunken`}
+                    />
+                    <th className={`${thClass} bg-surface-sunken`}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -846,8 +901,12 @@ function StatusBadge({
         e.stopPropagation();
         onToggle();
       }}
-      title={status === "paid" ? "Paid — ketuk untuk jadikan Pending" : "Pending — ketuk untuk jadikan Paid"}
-      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs cursor-pointer whitespace-nowrap ${statusSelectClass(status)}`}
+      title={
+        status === "paid"
+          ? "Paid — ketuk untuk jadikan Pending"
+          : "Pending — ketuk untuk jadikan Paid"
+      }
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs cursor-pointer whitespace-nowrap ${statusSelectClass(status)}`}
     >
       {status === "paid" ? "Paid" : "Pending"}
     </button>
@@ -865,7 +924,7 @@ function ProductLink({
     <Link
       to="/produk/$id"
       params={{ id: item.productId }}
-      className="text-brand hover:underline font-medium"
+      className="text-brand hover:underline font-semibold"
     >
       {item.namaProduk}
     </Link>
@@ -891,7 +950,8 @@ function BuyerName({
   item: OrderItem;
   buyerById: Map<string, Buyer>;
 }) {
-  if (!item.buyerId) return <span className="text-faint">— tanpa pembeli —</span>;
+  if (!item.buyerId)
+    return <span className="text-faint">— tanpa pembeli —</span>;
   const buyer = buyerById.get(item.buyerId);
   // deleteBuyer does not cascade, so a live order can point at a tombstoned
   // buyer. Say so instead of rendering a link that lands on a not-found page.
@@ -899,7 +959,7 @@ function BuyerName({
     <Link
       to="/pembeli/$id"
       params={{ id: buyer.id }}
-      className="text-brand hover:underline font-medium whitespace-nowrap"
+      className="text-brand hover:underline font-semibold whitespace-nowrap"
     >
       {buyer.nama}
     </Link>
@@ -999,7 +1059,10 @@ function PhoneRow({
           )}
           {it.namaProduk}
         </button>
-        <StatusBadge status={it.status} onToggle={() => onStatus(it.status === "paid" ? "pending" : "paid")} />
+        <StatusBadge
+          status={it.status}
+          onToggle={() => onStatus(it.status === "paid" ? "pending" : "paid")}
+        />
         <span className="tabular-nums font-medium whitespace-nowrap">
           {formatRupiah(it.totalHarga)}
         </span>
@@ -1077,7 +1140,7 @@ function GroupRows({
 
   return (
     <>
-      <tr className="bg-surface-hover font-bold">
+      <tr className="bg-surface-sunken font-bold">
         <td className={tdClass}>
           <SelectAllBox
             ids={group.items.map((i) => i.id)}
@@ -1124,6 +1187,7 @@ function GroupRows({
           {visible.kuantitas !== false && (
             <td className={`${tdClass} text-right tabular-nums`}>
               {formatAngka(it.kuantitas)}
+              {visible.satuan === false && ` ${it.satuan}`}
             </td>
           )}
           {visible.hargaSatuan !== false && (
@@ -1132,10 +1196,10 @@ function GroupRows({
             </td>
           )}
           {visible.modalSatuan !== false && (
-            <td className={`${tdClass} text-right tabular-nums whitespace-nowrap`}>
-              <ModalValue
-                modal={orderModal(it, productById, productByName)}
-              />
+            <td
+              className={`${tdClass} text-right tabular-nums whitespace-nowrap`}
+            >
+              <ModalValue modal={orderModal(it, productById, productByName)} />
             </td>
           )}
           {visible.totalHarga !== false && (
@@ -1249,38 +1313,46 @@ function BulkBar({
   onClear: () => void;
 }) {
   return (
-    <div className="flex gap-3 flex-wrap items-center mb-3 p-2.5 rounded-lg border border-brand-line bg-brand-soft">
+    <div className="flex gap-3 flex-wrap items-center mb-3 p-2.5 rounded-lg border border-brand-line bg-brand-soft md:mb-0 md:rounded-none md:border-0 md:border-b md:px-3">
       <span className="text-sm font-semibold text-brand-text">
         {count} item dipilih
       </span>
-      <Select
-        className="w-auto py-1"
-        // Resets to the placeholder after every apply: the control is an action,
-        // not a field, and leaving "Paid" showing would imply the selection is
-        // now paid when the selection has already been cleared.
-        value=""
-        onChange={(e) =>
-          e.target.value && onStatus(e.target.value as OrderStatus)
-        }
-      >
-        <option value="">Ubah status…</option>
-        <option value="pending">Pending</option>
-        <option value="paid">Paid</option>
-      </Select>
-      <div className="w-52">
+      <div className="w-44">
+        <Select
+          className="py-1"
+          // Resets to the placeholder after every apply: the control is an action,
+          // not a field, and leaving "Paid" showing would imply the selection is
+          // now paid when the selection has already been cleared.
+          value=""
+          onChange={(e) =>
+            e.target.value && onStatus(e.target.value as OrderStatus)
+          }
+        >
+          <option value="">Ubah status…</option>
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+        </Select>
+      </div>
+      <div className="w-44">
         <BuyerSelect
+          placeholder="Ubah pembeli…"
           value=""
           options={buyers}
           onChange={onBuyer}
           onCreate={onCreateBuyer}
         />
       </div>
-      <Button size="sm" onClick={onBuy} title="Catat pembelian stok untuk item terpilih">
+      <Button
+        size="sm"
+        onClick={onBuy}
+        title="Catat pembelian stok untuk item terpilih"
+      >
         Beli stok ({count})
       </Button>
-      <GhostButton size="sm" onClick={onClear}>
+      <span className="flex-1" />
+      <Button size="sm" onClick={onClear}>
         Batal pilih
-      </GhostButton>
+      </Button>
     </div>
   );
 }

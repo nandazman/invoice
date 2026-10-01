@@ -15,11 +15,13 @@ export function BuyerSelect({
   options,
   onChange,
   onCreate,
+  placeholder = "— pilih pembeli —",
 }: {
   value: string; // a Buyer id, "" = unassigned
   options: Buyer[];
   onChange: (id: string) => void;
   onCreate: (nama: string) => void;
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -69,7 +71,7 @@ export function BuyerSelect({
         onClick={() => setOpen((o) => !o)}
       >
         <span className={selected ? "" : "text-faint"}>
-          {selected ? selected.nama : "— pilih pembeli —"}
+          {selected ? selected.nama : placeholder}
         </span>
         <span className="text-ghost">▾</span>
       </button>

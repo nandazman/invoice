@@ -80,10 +80,12 @@ export function OrderFilterBar({
     });
 
   return (
-    <Panel>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 min-w-0">
+    <Panel className="!p-3">
+      <div className="flex flex-col gap-2.5">
+        {/* One row on desktop (search, presets, Filter); on a phone the presets
+            wrap under the search row. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-0 md:flex-none md:w-60">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint pointer-events-none" />
             <Input
               className="!pl-8"
@@ -93,6 +95,24 @@ export function OrderFilterBar({
               aria-label="Cari produk"
             />
           </div>
+          {/* Presets scroll sideways on a phone instead of wrapping into a block. */}
+          <div className="order-last w-full flex items-center gap-2 overflow-x-auto md:order-none md:w-auto md:overflow-visible -mx-1 px-1 pb-0.5 md:m-0 md:p-0">
+            {PRESETS.map((key) => (
+              <Button
+                key={key}
+                size="sm"
+                className={`shrink-0 !rounded-full ${
+                  activePreset === key
+                    ? "!bg-brand-soft !border-brand !text-brand-text"
+                    : ""
+                }`}
+                onClick={() => preset(key)}
+              >
+                {PRESET_LABELS[key]}
+              </Button>
+            ))}
+          </div>
+          <span className="hidden md:block flex-1" />
           <Button
             onClick={() => setOpen(true)}
             aria-label={`Filter${chips.length > 0 ? ` (${chips.length})` : ""}`}
@@ -110,24 +130,6 @@ export function OrderFilterBar({
               <PlusIcon /> Tambah
             </PrimaryButton>
           )}
-        </div>
-
-        {/* Presets scroll sideways on a phone instead of wrapping into a block. */}
-        <div className="flex items-center gap-2 overflow-x-auto md:flex-wrap -mx-1 px-1 pb-0.5">
-          {PRESETS.map((key) => (
-            <Button
-              key={key}
-              size="sm"
-              className={`shrink-0 ${
-                activePreset === key
-                  ? "!bg-brand-soft !border-brand-line !text-brand-text"
-                  : ""
-              }`}
-              onClick={() => preset(key)}
-            >
-              {PRESET_LABELS[key]}
-            </Button>
-          ))}
         </div>
 
         {hasFilter && (
@@ -148,13 +150,11 @@ export function OrderFilterBar({
                 </button>
               </span>
             ))}
-            <button
-              type="button"
-              onClick={clear}
-              className="text-xs font-semibold text-muted hover:text-body underline cursor-pointer"
-            >
+            <span className="flex-1" />
+            <span className="text-xs text-faint">{filtered.length} cocok</span>
+            <Button size="sm" onClick={clear}>
               Reset
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -246,7 +246,7 @@ export function OrderFilterBar({
           </div>
 
           {onPerBuyer && (
-            <label className="flex items-center gap-2 text-sm text-muted cursor-pointer mt-3">
+            <label className="md:hidden flex items-center gap-2 text-sm text-muted cursor-pointer mt-3">
               <input
                 type="checkbox"
                 checked={!!perBuyer}
