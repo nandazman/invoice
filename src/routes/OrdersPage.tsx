@@ -72,6 +72,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   CloseIcon,
+  AlertIcon,
 } from "../components/icons";
 
 interface DateGroup {
@@ -679,7 +680,7 @@ export function OrdersPage() {
                                     title="Belum tertaut ke produk — klik untuk menautkan"
                                     onClick={() => setLinking(it)}
                                   >
-                                    ⚠ {it.namaProduk}
+                                    <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
                                   </button>
                                 )}
                               </div>
@@ -1070,7 +1071,7 @@ function GroupRows({
                   title="Belum tertaut ke produk — klik untuk menautkan"
                   onClick={() => onLink(it)}
                 >
-                  ⚠ {it.namaProduk}
+                  <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
                 </button>
               )}
             </td>

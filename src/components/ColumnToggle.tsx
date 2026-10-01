@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Visibility } from "../lib/columns";
 
 const btnCls =
-  "inline-flex items-center gap-1 px-3.5 py-2 min-h-11 md:min-h-0 text-sm font-semibold rounded-lg border border-line bg-surface text-body hover:bg-surface-hover cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+  "inline-flex items-center gap-1 px-3 py-2 md:py-1.5 min-h-9 md:min-h-0 text-sm font-semibold rounded-lg border border-line-strong bg-surface text-body hover:bg-surface-hover cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 // Dropdown checklist to show/hide table columns one by one.
 // Table-agnostic: it just reports visibility state and toggles by column id.
@@ -92,7 +92,7 @@ export function ColumnToggle({
             {columns.map((c) => (
               <label
                 key={c.id}
-                className="flex items-center gap-2 px-2 py-1.5 min-h-11 md:min-h-0 text-sm rounded-md hover:bg-surface-hover cursor-pointer text-body focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand"
+                className="flex items-center gap-2 px-2 py-1.5 min-h-10 md:min-h-0 text-sm rounded-md hover:bg-surface-hover cursor-pointer text-body focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand"
               >
                 <input
                   type="checkbox"

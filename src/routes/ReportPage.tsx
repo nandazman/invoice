@@ -741,8 +741,8 @@ export function ReportPage() {
         {piutang.count === 0 ? (
           <p className="text-sm text-faint">
             {periode
-              ? `Semua pesanan dari ${periode} sudah dibayar. 🎉`
-              : "Semua pesanan sudah dibayar. 🎉"}
+              ? `Semua pesanan dari ${periode} sudah dibayar.`
+              : "Semua pesanan sudah dibayar."}
           </p>
         ) : (
           <div className="flex gap-6 flex-wrap">
@@ -866,7 +866,7 @@ export function ReportPage() {
           bukan angka yang bisa dipotong per bulan.
         </p>
         {piutangSemua.count === 0 ? (
-          <p className="text-sm text-faint">Semua pesanan sudah dibayar. 🎉</p>
+          <p className="text-sm text-faint">Semua pesanan sudah dibayar.</p>
         ) : (
           <div className="flex gap-6 flex-wrap">
             <Stat label="Total" value={formatRupiah(piutangSemua.total)} />

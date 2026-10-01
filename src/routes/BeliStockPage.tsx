@@ -35,7 +35,7 @@ import {
   qtyTimesHarga,
 } from "../components/MobileList";
 import { thClass, tdClass } from "../components/DataTable";
-import { TrashIcon } from "../components/icons";
+import { TrashIcon, AlertIcon } from "../components/icons";
 
 interface DateGroup {
   tanggal: string;
@@ -200,7 +200,7 @@ export function BeliStockPage() {
                               title="Belum tertaut ke produk — klik untuk menautkan"
                               onClick={() => setLinking(it)}
                             >
-                              ⚠ {it.namaProduk}
+                              <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
                             </button>
                           )
                         }
@@ -374,7 +374,7 @@ function GroupRows({
                   title="Belum tertaut ke produk — klik untuk menautkan"
                   onClick={() => onLink(it)}
                 >
-                  ⚠ {it.namaProduk}
+                  <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
                 </button>
               )}
             </td>

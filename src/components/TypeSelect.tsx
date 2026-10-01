@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 const fieldCls =
-  "w-full px-2.5 py-2 min-h-11 md:min-h-0 text-sm border border-line rounded-lg bg-surface text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge";
+  "w-full px-2.5 py-1.5 text-base md:text-sm border border-line-strong rounded-lg bg-surface text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge";
 
 // GitHub-style type picker: open the dropdown to pick an existing type,
 // or type a new name and click "Buat tipe" to create it.

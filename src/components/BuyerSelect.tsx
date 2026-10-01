@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Buyer } from "../lib/types";
 
 const fieldCls =
-  "w-full px-2.5 py-2 min-h-11 md:min-h-0 text-sm border border-line rounded-lg bg-surface text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge";
+  "w-full px-2.5 py-1.5 text-base md:text-sm border border-line-strong rounded-lg bg-surface text-left flex items-center justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-focus focus:border-brand-edge";
 
 // A deliberate copy of TypeSelect, not a shared `EntitySelect`. Generalising the
 // two would cost a `labelSingular` prop, an `itemKey` for `string` vs `Buyer`,

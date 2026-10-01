@@ -22,6 +22,7 @@ import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { thClass, tdClass } from "../components/DataTable";
 import { MobileList, MobileRow } from "../components/MobileList";
+import { AlertIcon } from "../components/icons";
 
 
 interface Row {
@@ -160,7 +161,7 @@ export function StockPage() {
                           )}
                           {r.low && (
                             <span className="font-semibold text-warn">
-                              ⚠ menipis
+                              <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> menipis
                             </span>
                           )}
                           <MobileBy show={bothBy(showBy)} row={r.product} />
@@ -209,7 +210,7 @@ export function StockPage() {
                         </Link>
                         {r.low && (
                           <span className="ml-2 text-xs font-semibold text-warn">
-                            ⚠ menipis
+                            <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> menipis
                           </span>
                         )}
                       </td>
