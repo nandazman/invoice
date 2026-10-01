@@ -6,8 +6,8 @@ import { flexRender, type Column, type Table } from "@tanstack/react-table";
 // state. Column-specific rendering still lives in each page's column defs —
 // this owns only what every table shares.
 export const thClass =
-  "text-left px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-faint border-b border-line";
-export const tdClass = "px-2.5 py-2 text-sm border-b border-line-soft";
+  "text-left px-3 py-2 text-xs font-semibold text-muted border-b border-line";
+export const tdClass = "px-3 py-2.5 text-sm border-b border-line";
 
 // Right-aligned, tabular-figure columns opt in through the column def's meta.
 export interface ColumnMeta {
@@ -42,13 +42,13 @@ export function SortHeader<T>({
       }
       // `top-14` clears the fixed mobile app bar; above `md` that bar is
       // gone and the header sticks to the viewport itself.
-      className={`${thClass} sticky top-14 md:top-0 z-10 bg-surface ${num ? "text-right" : ""}`}
+      className={`${thClass} sticky top-14 md:top-0 z-10 bg-surface-sunken ${num ? "text-right" : ""}`}
     >
       {column.getCanSort() ? (
         <button
           type="button"
           onClick={column.getToggleSortingHandler()}
-          className={`inline-flex items-center gap-1 w-full min-h-11 md:min-h-0 cursor-pointer select-none uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+          className={`inline-flex items-center gap-1 w-full min-h-11 md:min-h-0 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
             num ? "justify-end" : ""
           }`}
         >
@@ -112,7 +112,7 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-surface-sunken">
+              <tr key={row.id} className="hover:bg-surface-hover">
                 {row.getVisibleCells().map((cell) => {
                   const num = (cell.column.columnDef.meta as ColumnMeta)?.num;
                   return (

@@ -1,6 +1,7 @@
 import { exportAll } from "../lib/backup";
 import { downloadJSON } from "../lib/io";
 import { Button } from "./Button";
+import { DeviceIcon, LockIcon } from "./icons";
 
 // Shown instead of the whole app when the signed-in Access identity is not on
 // the roles list. See docs/2026-08-15/permissions-plan.md §B.
@@ -28,11 +29,11 @@ export function GateScreen({ email }: { email: string | null }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-surface-sunken">
       <div className="w-full max-w-md bg-surface border border-line rounded-xl p-6">
-        <div className="text-3xl mb-3">🔒</div>
+        <LockIcon className="mb-3 h-8 w-8 text-muted" />
         <h1 className="text-xl font-bold mb-2">Belum punya akses</h1>
 
         <div className="mb-4">
-          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+          <div className="text-xs text-faint font-semibold">
             Masuk sebagai
           </div>
           <div className="text-lg font-bold break-all">
@@ -55,7 +56,9 @@ export function GateScreen({ email }: { email: string | null }) {
             Kalau perangkat ini pernah dipakai mencatat, datanya masih tersimpan
             di browser dan bisa Anda salin keluar sekarang.
           </p>
-          <Button onClick={doBackup}>💾 Backup semua</Button>
+          <Button onClick={doBackup}>
+            <DeviceIcon /> Backup semua
+          </Button>
         </div>
       </div>
     </div>

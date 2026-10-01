@@ -16,7 +16,7 @@ import { Input } from "../Input";
 import { Select } from "../Select";
 import { Field } from "../Field";
 import { Button, DangerButton, DangerGhostButton } from "../Button";
-import { TrashIcon } from "../icons";
+import { ArrowDownIcon, ArrowUpIcon, TrashIcon } from "../icons";
 
 const TOKENS = [
   "{{business.nama}}",
@@ -194,7 +194,7 @@ export function Inspector({
         </Field>
 
         <div className="border-t border-line pt-3 space-y-2">
-          <h4 className="font-semibold text-xs uppercase text-faint">Bisnis</h4>
+          <h4 className="font-semibold text-xs text-faint">Bisnis</h4>
           <Field label="Nama bisnis">
             <Input
               value={template.business.nama}
@@ -247,7 +247,7 @@ export function Inspector({
         </div>
 
         <div className="border-t border-line pt-3 space-y-2">
-          <h4 className="font-semibold text-xs uppercase text-faint">Pelanggan</h4>
+          <h4 className="font-semibold text-xs text-faint">Pelanggan</h4>
           <Field label="Nama pelanggan">
             <Input
               value={template.customer.nama}
@@ -290,7 +290,7 @@ export function Inspector({
             title="Ke depan"
             aria-label="Ke depan"
           >
-            ⬆
+            <ArrowUpIcon />
           </Button>
           <Button
             size="sm"
@@ -298,7 +298,7 @@ export function Inspector({
             title="Ke belakang"
             aria-label="Ke belakang"
           >
-            ⬇
+            <ArrowDownIcon />
           </Button>
           <Button
             size="sm"

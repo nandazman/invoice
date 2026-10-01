@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentType, type SVGProps } from "react";
 import {
   useSyncStatus,
   syncNow,
@@ -8,6 +8,13 @@ import {
 import { TABLES } from "../lib/sync/tables";
 import { formatAngka, formatDateTimeID } from "../lib/format";
 import { describeCounts, type Unsynced } from "../lib/rescue";
+import {
+  AlertIcon,
+  CloudCheckIcon,
+  CloudIcon,
+  CloudOffIcon,
+  DeviceIcon,
+} from "./icons";
 import { Button, PrimaryButton, DangerButton } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
@@ -16,7 +23,7 @@ import { thClass, tdClass } from "./DataTable";
 
 // The sync affordance in the sidebar. It is a CHIP first and a button second:
 // a bare "Sinkronisasi" button says nothing about whether sync is actually
-// working, while "☁️ 3 menunggu" answers the question you have before you
+// working, while "3 menunggu" answers the question you have before you
 // click. The click is only there for the rarer follow-up — the detail, and the
 // two actions that force things.
 //
@@ -43,7 +50,7 @@ function tableLabel(name: string): string {
 }
 
 interface Chip {
-  icon: string;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
   label: string;
   // Colour tracks severity, not state: only the two things worth acting on —
   // a failure and being offline — are warm.
@@ -56,21 +63,21 @@ interface Chip {
 function chipOf(status: SyncStatus): Chip {
   if (status.error) {
     return {
-      icon: "⚠️",
+      Icon: AlertIcon,
       label: "gagal",
       tone: "border-negative-line bg-negative-soft text-negative-text hover:bg-negative-soft-strong",
     };
   }
   if (!status.online) {
     return {
-      icon: "☁️",
+      Icon: CloudOffIcon,
       label: "offline",
       tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
   if (status.busy) {
     return {
-      icon: "☁️",
+      Icon: CloudIcon,
       label: "menyinkronkan…",
       tone: "border-line bg-surface text-faint hover:bg-surface-hover",
     };
@@ -80,7 +87,7 @@ function chipOf(status: SyncStatus): Chip {
   // would promise a drain that is never coming.
   if (!status.canPush) {
     return {
-      icon: "💾",
+      Icon: DeviceIcon,
       label:
         status.pendingTotal > 0
           ? `${formatAngka(status.pendingTotal)} lokal`
@@ -91,13 +98,13 @@ function chipOf(status: SyncStatus): Chip {
   }
   if (status.pendingTotal > 0) {
     return {
-      icon: "☁️",
+      Icon: CloudIcon,
       label: `${formatAngka(status.pendingTotal)} menunggu`,
       tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
   return {
-    icon: "☁️",
+    Icon: CloudCheckIcon,
     label: "tersinkron",
     tone: "border-ok-line bg-ok-soft text-ok-text hover:bg-ok-soft-strong",
   };
@@ -125,7 +132,7 @@ export function SyncChip({ collapsed }: { collapsed: boolean }) {
           chip.tone
         } ${collapsed ? "justify-center px-0" : ""}`}
       >
-        <span className="text-base">{chip.icon}</span>
+        <chip.Icon className="h-4 w-4 shrink-0" />
         {!collapsed && <span className="truncate">{chip.label}</span>}
       </button>
 
@@ -306,7 +313,7 @@ function SyncPanel({
         <button
           onClick={() => setAdvanced((a) => !a)}
           aria-expanded={advanced}
-          className="flex items-center gap-1 text-xs uppercase tracking-wide font-semibold text-faint hover:text-muted cursor-pointer"
+          className="flex items-center gap-1 text-xs font-semibold text-faint hover:text-muted cursor-pointer"
         >
           <span className="text-[10px] w-3 inline-block">
             {advanced ? "▾" : "▸"}

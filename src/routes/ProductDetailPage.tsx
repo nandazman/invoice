@@ -551,7 +551,7 @@ function Stat({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+      <div className="text-xs text-faint font-semibold">
         {label}
       </div>
       <div className={`text-lg font-bold tabular-nums ${className}`}>

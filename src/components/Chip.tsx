@@ -29,7 +29,7 @@ export function Chip({
   }[tone];
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${styles}`}
+      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${styles}`}
     >
       {children}
     </span>

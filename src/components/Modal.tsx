@@ -32,7 +32,10 @@ export function useEscapeToClose(onClose: () => void, active = true) {
 // always wins regardless of what a caller passes as `className` — every
 // existing call site already sets its own `rounded-*`/`max-h-*`, and losing
 // the sheet shape to that would defeat the point of making it the default.
-const panelShape = "!rounded-t-2xl md:!rounded-xl !max-h-[85vh]";
+// DESIGN.md elevation: overlays are the one place a shadow is allowed — offset,
+// soft blur, never a coloured halo.
+const panelShape =
+  "!rounded-t-2xl md:!rounded-xl !max-h-[85vh] shadow-[0_8px_24px_rgb(20_32_31/0.12)]";
 
 // The overlay every dialog was repeating: click-outside to close, Escape to
 // close, and a panel that swallows its own clicks. Only the panel's width and
@@ -60,7 +63,7 @@ export function Modal({
 
   const overlay = (
     <div
-      className={`fixed inset-0 bg-black/40 flex items-end md:items-center justify-center p-4 ${overlayClassName}`}
+      className={`fixed inset-0 bg-ink/40 flex items-end md:items-center justify-center p-4 ${overlayClassName}`}
       onClick={closeOnOverlay ? onClose : undefined}
     >
       <div

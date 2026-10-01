@@ -394,7 +394,7 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
       <h2 className="text-lg font-bold mb-3">Identitas</h2>
       <div className="flex gap-6 flex-wrap items-start">
         <div>
-          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+          <div className="text-xs text-faint font-semibold">
             Email
           </div>
           <div className="text-lg font-bold">
@@ -402,7 +402,7 @@ function IdentityPanel({ status, me }: { status: SyncStatus; me: Me | null }) {
           </div>
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+          <div className="text-xs text-faint font-semibold">
             Peran
           </div>
           <span

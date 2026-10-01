@@ -18,7 +18,7 @@ const base: SVGProps<SVGSVGElement> = {
   viewBox: "0 0 24 24",
   fill: "none",
   stroke: "currentColor",
-  strokeWidth: 2,
+  strokeWidth: 1.5,
   strokeLinecap: "round",
   strokeLinejoin: "round",
   "aria-hidden": true,
@@ -76,3 +76,93 @@ export function CloseIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Navigation and status icons (DESIGN.md: one line set, 1.5px stroke,
+// currentColor). These replace the emoji that used to sit in the nav and on the
+// sync chip. Built by one factory because a dozen copies of the same <svg>
+// wrapper say nothing the path data does not.
+// ---------------------------------------------------------------------------
+function icon(...d: string[]) {
+  return function Icon(props: SVGProps<SVGSVGElement>) {
+    return (
+      <svg {...base} {...props}>
+        {d.map((p) => (
+          <path key={p} d={p} />
+        ))}
+      </svg>
+    );
+  };
+}
+
+export const TagIcon = icon("M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z", "M7.5 7.5h.01");
+export const BoxIcon = icon("M3 7l9-4 9 4v10l-9 4-9-4z", "M3 7l9 4 9-4", "M12 11v10");
+export const UsersIcon = icon(
+  "M15 19c0-3-2.7-5-6-5s-6 2-6 5",
+  "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
+  "M16 4.5a3.5 3.5 0 0 1 0 7",
+  "M18 14.5c2 .7 3.5 2.5 3.5 5",
+);
+export const StoreIcon = icon(
+  "M4 9l1.5-5h13L20 9",
+  "M4 9v11h16V9",
+  "M4 9c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3",
+  "M10 20v-5h4v5",
+);
+export const CartIcon = icon("M3 4h2.5l2 11h10l2-8H7", "M9 20h.01", "M17 20h.01");
+export const ClockIcon = icon("M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 7v5l3 2");
+export const ChartIcon = icon("M4 20V4", "M4 20h16", "M8 16v-4", "M12 16V8", "M16 16v-6");
+export const MoreIcon = icon("M5 12h.01", "M12 12h.01", "M19 12h.01");
+export const FileTextIcon = icon(
+  "M6 3h8l4 4v14H6z",
+  "M14 3v4h4",
+  "M9 12h6",
+  "M9 16h6",
+);
+export const SheetIcon = icon(
+  "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
+  "M4 10h16",
+  "M4 15h16",
+  "M10 4v16",
+);
+export const PenToolIcon = icon("M4 20l1-4L16 5l3 3L8 19z", "M14 7l3 3");
+export const GearIcon = icon(
+  "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  "M12 2v3M12 19v3M2 12h3M19 12h3",
+  "M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1",
+);
+export const CloudIcon = icon("M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5 4.25 4.25 0 0 1 17.5 18z");
+export const CloudCheckIcon = icon(
+  "M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5 4.25 4.25 0 0 1 17.5 18z",
+  "M9.5 13l2 2 3.5-3.5",
+);
+export const CloudOffIcon = icon(
+  "M3 3l18 18",
+  "M17.5 18H7a4 4 0 0 1-.6-7.96 6 6 0 0 1 1.2-2.5",
+  "M10 5.2A6 6 0 0 1 18 9.5 4.25 4.25 0 0 1 21 13.7",
+);
+export const AlertIcon = icon(
+  "M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
+  "M12 9v4",
+  "M12 17h.01",
+);
+export const DeviceIcon = icon(
+  "M5 3h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z",
+  "M12 18h.01",
+);
+export const LockIcon = icon(
+  "M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z",
+  "M8 11V8a4 4 0 0 1 8 0v3",
+);
+export const ArrowUpIcon = icon("M12 19V5", "M5 12l7-7 7 7");
+export const ArrowDownIcon = icon("M12 5v14", "M19 12l-7 7-7-7");
+export const RefreshIcon = icon(
+  "M20 11a8 8 0 0 0-14.9-3M4 5v4h4",
+  "M4 13a8 8 0 0 0 14.9 3M20 19v-4h-4",
+);
+export const CheckCircleIcon = icon(
+  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
+  "M8 12.5l2.7 2.7L16 9.5",
+);
+export const PlusIcon = icon("M12 5v14", "M5 12h14");
+export const SearchIcon = icon("M11 17a6 6 0 1 0 0-12 6 6 0 0 0 0 12z", "M16 16l4.5 4.5");

@@ -183,7 +183,7 @@ export function BuyFromOrderDialog({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-faint">
+              <tr className="text-left text-xs text-faint">
                 <th className="px-2 py-2 border-b border-line"></th>
                 <th className="px-2 py-2 border-b border-line">
                   Nama Produk

@@ -5,8 +5,8 @@ import { useFieldError } from "./Field";
 // the order of same-property utilities itself — a conditional append of
 // `border-danger-line-strong` next to `border-line` is not guaranteed to win.
 const base =
-  "w-full px-2.5 py-2 text-sm border rounded-lg bg-surface focus:outline-none focus:ring-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:bg-surface-sunken disabled:text-faint";
-const normal = "border-line focus:ring-brand-focus focus:border-brand-edge";
+  "w-full px-2.5 py-1.5 text-base md:text-sm border rounded-lg bg-surface focus:outline-none focus:ring-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:bg-surface-sunken disabled:text-faint";
+const normal = "border-line-strong focus:ring-brand-focus focus:border-brand-edge";
 const invalidCls = "border-danger-line-strong focus:ring-danger-focus-soft focus:border-danger-edge";
 
 export function Input({

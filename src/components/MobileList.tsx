@@ -11,9 +11,9 @@ import { formatAngka, formatRupiah } from "../lib/format";
 // the right. Nothing is dropped; the other columns restack as small lines under
 // whichever of the two they belong to.
 //
-// `min-h-11` on the first line of each side is the 44px touch target: on pages
-// where that line is a link, the tap area is the whole line rather than the
-// text's own height.
+// `min-h-7` on the first line of each side keeps a link there a comfortable
+// target without the 44px-per-line height that made a two-line row read as
+// mostly gap (DESIGN.md: rows are one tight line plus a muted meta line).
 export function MobileList({
   left,
   right,
@@ -77,7 +77,7 @@ export function qtyTimesHarga(
 // the same padding landed on top of space the content had itself — the phone
 // rows read as mostly gap. Half the vertical padding, and the sub-lines tuck up
 // under their line instead of adding a `pb-1` of their own.
-const cellClass = `${tdClass} py-1 align-top`;
+const cellClass = `${tdClass} py-1.5 align-top`;
 
 export function MobileRow({
   title,
@@ -107,7 +107,7 @@ export function MobileRow({
             Pesanan's phone table past 390px and hand the whole page a sideways
             scroll. Letting links wrap here drops the minimum to the longest
             single word, which fits any phone. Desktop keeps its nowrap. */}
-        <div className="flex items-center min-h-11 font-medium min-w-0 [&_a]:whitespace-normal [&_a]:break-words">
+        <div className="flex items-center min-h-7 font-medium min-w-0 [&_a]:whitespace-normal [&_a]:break-words">
           {title}
         </div>
         {/* Same rule as above, plus `<select>`: a select reports the width of
@@ -121,7 +121,7 @@ export function MobileRow({
         )}
       </td>
       <td className={`${cellClass} text-right tabular-nums whitespace-nowrap`}>
-        <div className="flex items-center justify-end min-h-11 font-medium">
+        <div className="flex items-center justify-end min-h-7 font-medium">
           {value}
         </div>
         {note && <div className="text-xs text-faint">{note}</div>}

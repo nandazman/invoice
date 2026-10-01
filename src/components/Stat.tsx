@@ -1,4 +1,4 @@
-// A labelled figure: small uppercase caption over a bold tabular number. Used
+// A labelled figure: small caption over a bold tabular number. Used
 // wherever a page shows a handful of summary values side by side — the Ringkasan
 // block on a buyer, the laba-rugi and piutang blocks on Laporan.
 export function Stat({
@@ -19,10 +19,10 @@ export function Stat({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+      <div className="text-xs text-faint font-semibold">
         {label}
       </div>
-      <div className={`text-lg font-bold tabular-nums ${className}`}>
+      <div className={`text-xl font-bold tabular-nums ${className}`}>
         {value}
       </div>
       {hint && <div className="text-xs text-faint mt-0.5">{hint}</div>}

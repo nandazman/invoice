@@ -401,7 +401,7 @@ export function ReportPage() {
               one column nobody can tell them apart again. */}
           {pakaiPerkiraan && perkiraan.count > 0 && (
             <div className="mt-4 pt-3 border-t border-dashed border-warn-line">
-              <p className="text-xs uppercase tracking-wide font-semibold text-warn-text mb-1">
+              <p className="text-xs font-semibold text-warn-text mb-1">
                 Perkiraan — bukan angka pasti
               </p>
               <Line
@@ -1046,7 +1046,7 @@ function Band({ title, sub }: { title: string; sub: string }) {
   return (
     <div className="flex items-center gap-3 mt-6 mb-3">
       <div className="shrink-0">
-        <div className="text-xs uppercase tracking-wide text-faint font-semibold">
+        <div className="text-xs text-faint font-semibold">
           {title}
         </div>
         <div className="text-sm text-faint">{sub}</div>
@@ -1464,7 +1464,7 @@ function SortTh({
       <button
         type="button"
         onClick={() => onSort(col)}
-        className={`inline-flex items-center gap-1 w-full cursor-pointer select-none uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+        className={`inline-flex items-center gap-1 w-full cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
           num ? "justify-end" : ""
         }`}
       >
