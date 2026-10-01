@@ -48,8 +48,8 @@ export function DangerButton({ size = "md", className = "", ...rest }: Props) {
   );
 }
 
-// A row action that happens to be destructive. Ghost-quiet at rest like its
-// neighbours, red only on hover and focus.
+// A row action that happens to be destructive. Borderless like its neighbours,
+// but red at rest so a delete is never mistaken for a harmless icon.
 //
 // The bordered `DangerButton` is right for a standalone "Hapus terpilih (3)" —
 // a deliberate button someone goes looking for. Inside a table row it made the
@@ -63,7 +63,7 @@ export function DangerGhostButton({
 }: Props) {
   return (
     <button
-      className={`${base} ${sizeClass(size)} border-transparent bg-transparent text-faint hover:bg-danger-soft hover:text-danger focus-visible:text-danger ${className}`}
+      className={`${base} ${sizeClass(size)} border-transparent bg-transparent text-danger hover:bg-danger-soft ${className}`}
       {...rest}
     />
   );
