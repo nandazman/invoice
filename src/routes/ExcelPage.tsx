@@ -179,6 +179,7 @@ export function ExcelPage() {
           <label className="flex items-center gap-1.5 text-sm text-muted select-none cursor-pointer mr-auto">
             <input
               type="checkbox"
+              className="w-4 h-4 accent-brand cursor-pointer"
               checked={showPrice}
               onChange={(e) => setShowPrice(e.target.checked)}
             />
@@ -260,6 +261,7 @@ export function ExcelPage() {
                   <th className={`${thClass} w-8`}>
                     <input
                       type="checkbox"
+                      className="w-4 h-4 accent-brand cursor-pointer"
                       checked={allChecked}
                       onChange={toggleAll}
                     />
@@ -282,6 +284,7 @@ export function ExcelPage() {
                     <td className={tdClass}>
                       <input
                         type="checkbox"
+                        className="w-4 h-4 accent-brand cursor-pointer"
                         checked={selected.has(it.id)}
                         onChange={() => toggleRow(it.id)}
                       />

@@ -84,11 +84,11 @@ export function OrderFilterBar({
 
   return (
     <Panel className="!p-3">
-      <div className="flex flex-col gap-2.5">
+      <div className="@container flex flex-col gap-2.5">
         {/* One row on desktop (search, presets, Filter); on a phone the presets
             wrap under the search row. */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-0 md:flex-none md:w-60">
+          <div className="relative flex-1 min-w-0 @2xl:flex-none @2xl:w-60">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint pointer-events-none" />
             <Input
               className="!pl-8"
@@ -99,7 +99,7 @@ export function OrderFilterBar({
             />
           </div>
           {/* Presets scroll sideways on a phone instead of wrapping into a block. */}
-          <div className="order-last w-full flex items-center gap-2 overflow-x-auto md:order-none md:w-auto md:overflow-visible -mx-1 px-1 pb-0.5 md:m-0 md:p-0">
+          <div className="order-last w-full flex items-center gap-2 overflow-x-auto @2xl:order-none @2xl:w-auto @2xl:overflow-visible -mx-1 px-1 pb-0.5 @2xl:m-0 @2xl:p-0">
             {PRESETS.map((key) => (
               <Button
                 key={key}
@@ -115,13 +115,13 @@ export function OrderFilterBar({
               </Button>
             ))}
           </div>
-          <span className="hidden md:block flex-1" />
+          <span className="hidden @2xl:block flex-1" />
           <Button
             onClick={() => setOpen(true)}
             aria-label={`Filter${chips.length > 0 ? ` (${chips.length})` : ""}`}
           >
             <FilterIcon />
-            <span className="hidden md:inline">Filter</span>
+            <span className="hidden @2xl:inline">Filter</span>
             {chips.length > 0 && (
               <span className="rounded-full bg-brand text-white text-[11px] leading-[18px] min-w-[18px] px-1.5 text-center">
                 {chips.length}
