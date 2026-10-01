@@ -43,7 +43,6 @@ interface DateGroup {
   total: number;
 }
 
-
 // Columns shown left of the "Total" column, in display order.
 const COLS_BEFORE_TOTAL = [
   "namaProduk",
@@ -57,6 +56,9 @@ const COLS_AFTER_TOTAL = [
   "updatedAt",
   ...ATTRIBUTION_COLUMN_IDS,
 ] as const;
+
+// Always on the collapsed phone row, so the phone Kolom menu leaves them out.
+const PHONE_FIXED = ["namaProduk", "totalHarga"];
 
 const COLUMNS = [
   { id: "namaProduk", label: "Produk" },
@@ -167,25 +169,41 @@ export function BeliStockPage() {
             Total: {formatRupiah(grandTotal)}
           </span>
           <span className="text-faint">· {filtered.length} item</span>
-          <span className="flex-1" />
+          <span className="flex-1 max-md:hidden" />
           {/* Phone: one switch for every row's detail card. Desktop keeps
               the Kolom menu instead. */}
-          <Button
-            size="sm"
-            className="md:!hidden"
-            onClick={() =>
-              setExpanded(
-                expanded.size > 0 ? new Set() : new Set(filtered.map((o) => o.id)),
-              )
-            }
-          >
-            <ChevronDownIcon
-              className={expanded.size > 0 ? "rotate-180" : undefined}
-            />
-            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
-          </Button>
+          <div className="flex items-center gap-2 max-md:ml-auto md:contents">
+            <Button
+              size="sm"
+              className="md:!hidden"
+              onClick={() =>
+                setExpanded(
+                  expanded.size > 0
+                    ? new Set()
+                    : new Set(filtered.map((o) => o.id)),
+                )
+              }
+            >
+              <ChevronDownIcon
+                className={expanded.size > 0 ? "rotate-180" : undefined}
+              />
+              {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+            </Button>
+            {/* Phone: the same Kolom state, limited to the lines the card shows. */}
+            <div className="md:hidden">
+              <ColumnToggle
+                columns={COLUMNS.filter((c) => !PHONE_FIXED.includes(c.id))}
+                visible={visible}
+                onToggle={toggle}
+              />
+            </div>
+          </div>
           <div className="hidden md:block">
-            <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+            <ColumnToggle
+              columns={COLUMNS}
+              visible={visible}
+              onToggle={toggle}
+            />
           </div>
         </div>
 
@@ -198,14 +216,16 @@ export function BeliStockPage() {
         ) : (
           <>
             {/* The phone layout. Below `md` a row is product and total;
-                tapping it opens a label / value card with the rest and Edit.
-                No Kolom menu here: the collapsed row is fixed. */}
+                tapping it opens a label / value card with the rest and Edit;
+                the Kolom menu chooses which lines the card shows. */}
             <div className="md:hidden">
               {groups.map((g) => (
                 <Fragment key={g.tanggal}>
                   <div className="sticky top-14 z-10 flex items-center gap-2 px-3 py-1.5 bg-surface-hover border-b border-line text-sm font-bold">
                     <span className="flex-1">{formatTanggalID(g.tanggal)}</span>
-                    <span className="tabular-nums">{formatRupiah(g.total)}</span>
+                    <span className="tabular-nums">
+                      {formatRupiah(g.total)}
+                    </span>
                   </div>
                   {g.items.map((it) => (
                     <PhoneRow
@@ -215,6 +235,7 @@ export function BeliStockPage() {
                       onToggleOpen={() => toggleExpanded(it.id)}
                       onEdit={() => setEditing(it)}
                       onLink={() => setLinking(it)}
+                      visible={visible}
                     />
                   ))}
                 </Fragment>
@@ -222,52 +243,52 @@ export function BeliStockPage() {
             </div>
 
             <div className="overflow-x-auto hidden md:block">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  {visible.namaProduk !== false && (
-                    <th className={thClass}>Produk</th>
-                  )}
-                  {visible.satuan !== false && (
-                    <th className={thClass}>Satuan</th>
-                  )}
-                  {visible.kuantitas !== false && (
-                    <th className={`${thClass} text-right`}>Qty</th>
-                  )}
-                  {visible.hargaSatuan !== false && (
-                    <th className={`${thClass} text-right`}>Harga Satuan</th>
-                  )}
-                  {visible.totalHarga !== false && (
-                    <th className={`${thClass} text-right`}>Total</th>
-                  )}
-                  {visible.createdAt !== false && (
-                    <th className={thClass}>Dibuat</th>
-                  )}
-                  {visible.updatedAt !== false && (
-                    <th className={thClass}>Diperbarui</th>
-                  )}
-                  <ByHeaders
-                    show={{
-                      created: visible.createdBy !== false,
-                      updated: visible.updatedBy !== false,
-                    }}
-                    className={thClass}
-                  />
-                  <th className={thClass}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g) => (
-                  <GroupRows
-                    key={g.tanggal}
-                    group={g}
-                    visible={visible}
-                    onEdit={setEditing}
-                    onLink={setLinking}
-                  />
-                ))}
-              </tbody>
-            </table>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    {visible.namaProduk !== false && (
+                      <th className={thClass}>Produk</th>
+                    )}
+                    {visible.satuan !== false && (
+                      <th className={thClass}>Satuan</th>
+                    )}
+                    {visible.kuantitas !== false && (
+                      <th className={`${thClass} text-right`}>Qty</th>
+                    )}
+                    {visible.hargaSatuan !== false && (
+                      <th className={`${thClass} text-right`}>Harga Satuan</th>
+                    )}
+                    {visible.totalHarga !== false && (
+                      <th className={`${thClass} text-right`}>Total</th>
+                    )}
+                    {visible.createdAt !== false && (
+                      <th className={thClass}>Dibuat</th>
+                    )}
+                    {visible.updatedAt !== false && (
+                      <th className={thClass}>Diperbarui</th>
+                    )}
+                    <ByHeaders
+                      show={{
+                        created: visible.createdBy !== false,
+                        updated: visible.updatedBy !== false,
+                      }}
+                      className={thClass}
+                    />
+                    <th className={thClass}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((g) => (
+                    <GroupRows
+                      key={g.tanggal}
+                      group={g}
+                      visible={visible}
+                      onEdit={setEditing}
+                      onLink={setLinking}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
           </>
         )}
@@ -329,7 +350,10 @@ function GroupRows({
   return (
     <>
       <tr className="bg-surface-hover font-bold">
-        <td className={`${tdClass} font-bold`} colSpan={Math.max(1, beforeCount)}>
+        <td
+          className={`${tdClass} font-bold`}
+          colSpan={Math.max(1, beforeCount)}
+        >
           {formatTanggalID(group.tanggal)}
         </td>
         {visible.totalHarga !== false && (
@@ -358,14 +382,13 @@ function GroupRows({
                   title="Belum tertaut ke produk — klik untuk menautkan"
                   onClick={() => onLink(it)}
                 >
-                  <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
+                  <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" />{" "}
+                  {it.namaProduk}
                 </button>
               )}
             </td>
           )}
-          {visible.satuan !== false && (
-            <td className={tdClass}>{it.satuan}</td>
-          )}
+          {visible.satuan !== false && <td className={tdClass}>{it.satuan}</td>}
           {visible.kuantitas !== false && (
             <td className={`${tdClass} text-right tabular-nums`}>
               {formatAngka(it.kuantitas)}
@@ -422,22 +445,35 @@ function PhoneRow({
   onToggleOpen,
   onEdit,
   onLink,
+  visible,
 }: {
   item: PurchaseItem;
+  visible: Record<string, boolean>;
   open: boolean;
   onToggleOpen: () => void;
   onEdit: () => void;
   onLink: () => void;
 }) {
-  const kv: [string, React.ReactNode][] = [
-    ["Satuan", it.satuan],
-    ["Qty", formatAngka(it.kuantitas)],
-    ["Harga satuan", formatRupiah(it.hargaSatuan)],
-    ["Dibuat", formatDateTimeID(it.createdAt)],
-    ["Diperbarui", formatDateTimeID(it.updatedAt)],
-    ["Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
-    ["Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
+  // The same Kolom state as the desktop table decides which lines the card shows.
+  const all: [string, string, React.ReactNode][] = [
+    ["satuan", "Satuan", it.satuan],
+    [
+      "kuantitas",
+      "Qty",
+      // Folded in ("4 karung") while the Satuan line is switched off.
+      visible.satuan === false
+        ? `${formatAngka(it.kuantitas)} ${it.satuan}`
+        : formatAngka(it.kuantitas),
+    ],
+    ["hargaSatuan", "Harga satuan", formatRupiah(it.hargaSatuan)],
+    ["createdAt", "Dibuat", formatDateTimeID(it.createdAt)],
+    ["updatedAt", "Diperbarui", formatDateTimeID(it.updatedAt)],
+    ["createdBy", "Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
+    ["updatedBy", "Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
   ];
+  const kv: [string, React.ReactNode][] = all
+    .filter(([id]) => visible[id] !== false)
+    .map(([, label, value]) => [label, value]);
   return (
     <div className="border-b border-line">
       <div

@@ -1,14 +1,13 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Product, StockMovement } from "../lib/types";
-import {
-  useProducts,
-  useStock,
-  addMovement,
-} from "../lib/store";
+import { useProducts, useStock, addMovement } from "../lib/store";
 import { computeFifo } from "../lib/stock";
 import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
-import { usePersistentAttribution } from "../lib/columns";
+import {
+  usePersistentAttribution,
+  usePersistentVisibility,
+} from "../lib/columns";
 import {
   AttributionToggle,
   ByCell,
@@ -18,11 +17,33 @@ import {
 } from "../components/Attribution";
 import { AddMovementForm } from "../components/AddMovementForm";
 import { Button, PrimaryButton } from "../components/Button";
+import { ColumnToggle } from "../components/ColumnToggle";
 import { SearchInput } from "../components/SearchInput";
 import { Panel } from "../components/Panel";
 import { thClass, tdClass } from "../components/DataTable";
 import { AlertIcon, ChevronDownIcon, PlusIcon } from "../components/icons";
 
+// The phone card's detail lines, chosen from the phone-only Kolom menu. Product
+// name, low-stock badge and Nilai are on the collapsed row, so they are not here.
+const COLUMNS = [
+  { id: "stok", label: "Stok" },
+  { id: "min", label: "Min" },
+  { id: "modal", label: "Modal/satuan" },
+  { id: "createdAt", label: "Dibuat" },
+  { id: "updatedAt", label: "Diperbarui" },
+  { id: "createdBy", label: "Dibuat oleh" },
+  { id: "updatedBy", label: "Diperbarui oleh" },
+];
+// Dates and attribution start hidden, as on Pesanan.
+const DEFAULT_VISIBLE: Record<string, boolean> = {
+  stok: true,
+  min: true,
+  modal: true,
+  createdAt: false,
+  updatedAt: false,
+  createdBy: false,
+  updatedBy: false,
+};
 
 interface Row {
   product: Product;
@@ -59,6 +80,10 @@ export function StockPage() {
   }, []);
   // The row here IS a product — the stock figures are derived — so the
   // attribution shown is the product's, not the movements'.
+  const [visible, toggleCol] = usePersistentVisibility(
+    "invoice.stok.cols.v1",
+    DEFAULT_VISIBLE,
+  );
   const [showBy, setShowBy] = usePersistentAttribution("invoice.stok.by.v1");
 
   function addMovements(ms: StockMovement[]) {
@@ -104,7 +129,8 @@ export function StockPage() {
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Stok</h1>
           <p className="text-faint">
-            Catat stok masuk & keluar, pantau stok menipis, dan nilai persediaan.
+            Catat stok masuk & keluar, pantau stok menipis, dan nilai
+            persediaan.
           </p>
         </div>
         {products.length > 0 && (
@@ -130,25 +156,35 @@ export function StockPage() {
               {lowCount} produk stok menipis
             </span>
           )}
-          <span className="flex-1" />
-          {/* Phone: one switch for every row's detail card. Desktop keeps the
+          <span className="flex-1 max-md:hidden" />
+          <div className="flex items-center gap-2 max-md:ml-auto md:contents">
+            {/* Phone: one switch for every row's detail card. Desktop keeps the
               attribution toggle instead. */}
-          <Button
-            size="sm"
-            className="md:!hidden"
-            onClick={() =>
-              setExpanded(
-                expanded.size > 0
-                  ? new Set()
-                  : new Set(rows.map((r) => r.product.id)),
-              )
-            }
-          >
-            <ChevronDownIcon
-              className={expanded.size > 0 ? "rotate-180" : undefined}
-            />
-            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
-          </Button>
+            <Button
+              size="sm"
+              className="md:!hidden"
+              onClick={() =>
+                setExpanded(
+                  expanded.size > 0
+                    ? new Set()
+                    : new Set(rows.map((r) => r.product.id)),
+                )
+              }
+            >
+              <ChevronDownIcon
+                className={expanded.size > 0 ? "rotate-180" : undefined}
+              />
+              {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+            </Button>
+            {/* Phone: chooses which lines the detail card shows. */}
+            <div className="md:hidden">
+              <ColumnToggle
+                columns={COLUMNS}
+                visible={visible}
+                onToggle={toggleCol}
+              />
+            </div>
+          </div>
           <div className="hidden md:block">
             <AttributionToggle show={showBy} onChange={setShowBy} />
           </div>
@@ -186,73 +222,77 @@ export function StockPage() {
                   row={r}
                   open={expanded.has(r.product.id)}
                   onToggleOpen={() => toggleExpanded(r.product.id)}
+                  visible={visible}
                 />
               ))}
             </div>
 
             <div className="overflow-x-auto hidden md:block">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={thClass}>Produk</th>
-                  <th className={`${thClass} text-right`}>Stok</th>
-                  <th className={thClass}>Satuan</th>
-                  <th className={`${thClass} text-right`}>Min</th>
-                  <th className={`${thClass} text-right`}>Modal/satuan</th>
-                  <th className={`${thClass} text-right`}>Nilai</th>
-                  <ByHeaders show={bothBy(showBy)} className={thClass} />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const satuan = r.product.satuan ?? "satuan";
-                  return (
-                    <tr key={r.product.id} className="hover:bg-surface-sunken">
-                      <td className={tdClass}>
-                        <Link
-                          to="/produk/$id"
-                          params={{ id: r.product.id }}
-                          className="text-brand hover:underline font-medium"
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className={thClass}>Produk</th>
+                    <th className={`${thClass} text-right`}>Stok</th>
+                    <th className={thClass}>Satuan</th>
+                    <th className={`${thClass} text-right`}>Min</th>
+                    <th className={`${thClass} text-right`}>Modal/satuan</th>
+                    <th className={`${thClass} text-right`}>Nilai</th>
+                    <ByHeaders show={bothBy(showBy)} className={thClass} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const satuan = r.product.satuan ?? "satuan";
+                    return (
+                      <tr
+                        key={r.product.id}
+                        className="hover:bg-surface-sunken"
+                      >
+                        <td className={tdClass}>
+                          <Link
+                            to="/produk/$id"
+                            params={{ id: r.product.id }}
+                            className="text-brand hover:underline font-medium"
+                          >
+                            {r.product.namaProduk}
+                          </Link>
+                          {r.low && (
+                            <span className="ml-2">
+                              <LowBadge />
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className={`${tdClass} text-right tabular-nums font-semibold ${
+                            r.qty < 0 ? "text-danger" : ""
+                          }`}
                         >
-                          {r.product.namaProduk}
-                        </Link>
-                        {r.low && (
-                          <span className="ml-2">
-                            <LowBadge />
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className={`${tdClass} text-right tabular-nums font-semibold ${
-                          r.qty < 0 ? "text-danger" : ""
-                        }`}
-                      >
-                        {formatAngka(r.qty)}
-                      </td>
-                      <td className={tdClass}>{satuan}</td>
-                      <td
-                        className={`${tdClass} text-right tabular-nums text-faint`}
-                      >
-                        {r.product.stokMin > 0
-                          ? formatAngka(r.product.stokMin)
-                          : "—"}
-                      </td>
-                      <td className={`${tdClass} text-right tabular-nums`}>
-                        {r.qty > 0 ? formatRupiah(r.unitCost) : "—"}
-                      </td>
-                      <td className={`${tdClass} text-right tabular-nums`}>
-                        {formatRupiah(r.value)}
-                      </td>
-                      <ByCells
-                        show={bothBy(showBy)}
-                        row={r.product}
-                        className={tdClass}
-                      />
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {formatAngka(r.qty)}
+                        </td>
+                        <td className={tdClass}>{satuan}</td>
+                        <td
+                          className={`${tdClass} text-right tabular-nums text-faint`}
+                        >
+                          {r.product.stokMin > 0
+                            ? formatAngka(r.product.stokMin)
+                            : "—"}
+                        </td>
+                        <td className={`${tdClass} text-right tabular-nums`}>
+                          {r.qty > 0 ? formatRupiah(r.unitCost) : "—"}
+                        </td>
+                        <td className={`${tdClass} text-right tabular-nums`}>
+                          {formatRupiah(r.value)}
+                        </td>
+                        <ByCells
+                          show={bothBy(showBy)}
+                          row={r.product}
+                          className={tdClass}
+                        />
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </>
         )}
@@ -276,27 +316,47 @@ function PhoneRow({
   row: r,
   open,
   onToggleOpen,
+  visible,
 }: {
   row: Row;
+  visible: Record<string, boolean>;
   open: boolean;
   onToggleOpen: () => void;
 }) {
   const satuan = r.product.satuan ?? "satuan";
-  const kv: [string, React.ReactNode][] = [
+  const all: [string, string, React.ReactNode][] = [
     [
+      "stok",
       "Stok",
-      <span key="s" className={r.qty < 0 ? "text-danger" : r.low ? "text-warn" : ""}>
+      <span
+        key="s"
+        className={r.qty < 0 ? "text-danger" : r.low ? "text-warn" : ""}
+      >
         {formatAngka(r.qty)} {satuan}
       </span>,
     ],
-    ["Min", r.product.stokMin > 0 ? formatAngka(r.product.stokMin) : "—"],
-    ["Modal/satuan", r.qty > 0 ? formatRupiah(r.unitCost) : "—"],
-    ["Nilai", formatRupiah(r.value)],
-    ["Dibuat", formatDateTimeID(r.product.createdAt)],
-    ["Diperbarui", formatDateTimeID(r.product.updatedAt)],
-    ["Dibuat oleh", <ByCell key="c" email={r.product.createdBy} />],
-    ["Diperbarui oleh", <ByCell key="u" email={r.product.updatedBy} />],
+    [
+      "min",
+      "Min",
+      r.product.stokMin > 0 ? formatAngka(r.product.stokMin) : "—",
+    ],
+    ["modal", "Modal/satuan", r.qty > 0 ? formatRupiah(r.unitCost) : "—"],
+    ["createdAt", "Dibuat", formatDateTimeID(r.product.createdAt)],
+    ["updatedAt", "Diperbarui", formatDateTimeID(r.product.updatedAt)],
+    [
+      "createdBy",
+      "Dibuat oleh",
+      <ByCell key="c" email={r.product.createdBy} />,
+    ],
+    [
+      "updatedBy",
+      "Diperbarui oleh",
+      <ByCell key="u" email={r.product.updatedBy} />,
+    ],
   ];
+  const kv: [string, React.ReactNode][] = all
+    .filter(([id]) => visible[id] !== false)
+    .map(([, label, value]) => [label, value]);
   return (
     <div className="border-b border-line">
       <div

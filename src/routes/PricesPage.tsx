@@ -31,11 +31,7 @@ import { ProductDialog } from "../components/ProductDialog";
 import { CatalogDialog } from "../components/CatalogDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ColumnToggle } from "../components/ColumnToggle";
-import {
-  Button,
-  PrimaryButton,
-  GhostButton,
-} from "../components/Button";
+import { Button, PrimaryButton, GhostButton } from "../components/Button";
 import { SearchInput } from "../components/SearchInput";
 import { Panel } from "../components/Panel";
 import { DataTable } from "../components/DataTable";
@@ -71,16 +67,21 @@ const col = createColumnHelper<Product>();
 // which derives it from the type name, so the two stay separable.
 const badgeClass = "inline-block rounded-md px-2 py-0.5 text-xs font-semibold";
 
+// Always on the collapsed phone row, so the phone Kolom menu leaves them out.
+const PHONE_FIXED = ["namaProduk", "tipe", "hargaJual"];
+
 // The phone layout. Eight columns do not fit on 390px, so below `md` a row is
 // name, type badge and price; tapping it opens a label / value card with the
-// rest, plus Detail and Edit. There is no Kolom menu on a phone: the collapsed
-// row is fixed and the card is where the detail lives.
+// rest, plus Detail and Edit. The Kolom menu in the toolbar chooses which lines
+// the card shows, from the same state as the desktop table.
 function PhoneRow({
   p,
   open,
   onToggleOpen,
   onEdit,
+  visible,
 }: {
+  visible: Record<string, boolean>;
   p: Product;
   open: boolean;
   onToggleOpen: () => void;
@@ -88,17 +89,20 @@ function PhoneRow({
 }) {
   const laba = p.hargaJual - p.hargaDasar;
   const ukuran = `${p.ukuran ?? ""} ${p.satuan ?? ""}`.trim();
-  const kv: [string, ReactNode][] = [
-    ["Ukuran", ukuran || <span className="text-faint">—</span>],
-    ["Harga Dasar", formatUang(p.hargaDasar)],
-    ["Harga Satuan", formatUang(p.hargaJual)],
+  // Harga Satuan is the price on the collapsed row, so its line is not optional.
+  const all: [string, string, ReactNode][] = [
+    ["ukuran", "Ukuran", ukuran || <span className="text-faint">—</span>],
+    ["hargaDasar", "Harga Dasar", formatUang(p.hargaDasar)],
+    ["hargaJual", "Harga Satuan", formatUang(p.hargaJual)],
     [
+      "laba",
       "Laba",
       <span key="l" className={laba < 0 ? "text-danger" : "text-ok"}>
         {formatUang(laba)}
       </span>,
     ],
     [
+      "konversi",
       "Konversi",
       p.konversi.length === 0 ? (
         <span className="text-faint">—</span>
@@ -112,11 +116,14 @@ function PhoneRow({
         </span>
       ),
     ],
-    ["Dibuat", formatDateTimeID(p.createdAt)],
-    ["Diperbarui", formatDateTimeID(p.updatedAt)],
-    ["Dibuat oleh", <ByCell key="c" email={p.createdBy} />],
-    ["Diubah oleh", <ByCell key="u" email={p.updatedBy} />],
+    ["createdAt", "Dibuat", formatDateTimeID(p.createdAt)],
+    ["updatedAt", "Diperbarui", formatDateTimeID(p.updatedAt)],
+    ["createdBy", "Dibuat oleh", <ByCell key="c" email={p.createdBy} />],
+    ["updatedBy", "Diubah oleh", <ByCell key="u" email={p.updatedBy} />],
   ];
+  const kv: [string, ReactNode][] = all
+    .filter(([id]) => id === "hargaJual" || visible[id] !== false)
+    .map(([, label, value]) => [label, value]);
   return (
     <div className="border-b border-line">
       <div
@@ -424,6 +431,15 @@ export function PricesPage() {
                   />
                   {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
                 </Button>
+                <div className="md:hidden">
+                  <ColumnToggle
+                    columns={TOGGLE_COLUMNS.filter(
+                      (c) => !PHONE_FIXED.includes(c.id),
+                    )}
+                    visible={visible}
+                    onToggle={toggleColumn}
+                  />
+                </div>
                 <div className="hidden md:block">
                   <ColumnToggle
                     columns={TOGGLE_COLUMNS}
@@ -445,6 +461,7 @@ export function PricesPage() {
               open={expanded.has(row.original.id)}
               onToggleOpen={() => toggleExpanded(row.original.id)}
               onEdit={() => setEditing(row.original)}
+              visible={visible}
             />
           ))}
           empty={
@@ -480,7 +497,9 @@ export function PricesPage() {
         <div className="text-faint mt-2 mb-2 px-4 md:px-0 md:mb-0 text-xs">
           {/* The old line printed the unfiltered total and never moved while
               you typed, so it contradicted the table right above it. */}
-          {filtering ? `Menampilkan ${shown} dari ${total} produk` : `${total} produk`}
+          {filtering
+            ? `Menampilkan ${shown} dari ${total} produk`
+            : `${total} produk`}
         </div>
       </Panel>
 
@@ -521,8 +540,8 @@ export function PricesPage() {
           onClose={() => setDeleting(null)}
         >
           <p>
-            <strong>1 produk</strong> ({deleting.namaProduk}) akan hilang
-            dari daftar harga. Tidak bisa dibatalkan.
+            <strong>1 produk</strong> ({deleting.namaProduk}) akan hilang dari
+            daftar harga. Tidak bisa dibatalkan.
           </p>
           <p>
             Pesanan, pembelian, dan stok yang sudah tercatat tidak ikut
