@@ -7,7 +7,7 @@ import { flexRender, type Column, type Table } from "@tanstack/react-table";
 // this owns only what every table shares.
 export const thClass =
   "text-left px-3 py-2 text-xs font-semibold text-muted border-b border-line";
-export const tdClass = "px-3 py-2.5 text-sm border-b border-line";
+export const tdClass = "px-3 py-1.5 md:py-2.5 text-sm border-b border-line";
 
 // Right-aligned, tabular-figure columns opt in through the column def's meta.
 export interface ColumnMeta {
@@ -48,7 +48,7 @@ export function SortHeader<T>({
         <button
           type="button"
           onClick={column.getToggleSortingHandler()}
-          className={`inline-flex items-center gap-1 w-full min-h-11 md:min-h-0 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+          className={`inline-flex items-center gap-1 w-full min-h-9 md:min-h-0 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
             num ? "justify-end" : ""
           }`}
         >

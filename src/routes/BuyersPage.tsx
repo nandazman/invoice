@@ -126,7 +126,7 @@ export function BuyersPage() {
                       <Link
                         to="/pembeli/$id"
                         params={{ id: b.id }}
-                        className="flex items-center w-full min-h-11 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                        className="flex items-center w-full min-h-9 -my-1 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                       >
                         {b.nama}
                       </Link>

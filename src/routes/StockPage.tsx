@@ -135,7 +135,7 @@ export function StockPage() {
                         <Link
                           to="/produk/$id"
                           params={{ id: r.product.id }}
-                          className="flex items-center w-full min-h-11 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                          className="flex items-center w-full min-h-9 -my-1 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                         >
                           {r.product.namaProduk}
                         </Link>

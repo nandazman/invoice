@@ -166,3 +166,5 @@ export const CheckCircleIcon = icon(
 );
 export const PlusIcon = icon("M12 5v14", "M5 12h14");
 export const SearchIcon = icon("M11 17a6 6 0 1 0 0-12 6 6 0 0 0 0 12z", "M16 16l4.5 4.5");
+export const ChevronDownIcon = icon("M6 9l6 6 6-6");
+export const DownloadIcon = icon("M12 4v11", "M7 11l5 5 5-5", "M5 20h14");

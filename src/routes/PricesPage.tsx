@@ -111,7 +111,7 @@ function MobilePriceRow({
         <Link
           to="/produk/$id"
           params={{ id: p.id }}
-          className="flex items-center min-h-11 font-medium text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="flex items-center min-h-9 -my-1 font-medium text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           {p.namaProduk}
         </Link>
@@ -156,7 +156,7 @@ function MobilePriceRow({
       <td
         className={`${tdClass} align-top text-right tabular-nums whitespace-nowrap`}
       >
-        <div className="flex items-center justify-end min-h-11 font-medium">
+        <div className="flex items-center justify-end min-h-7 font-medium">
           {on("hargaJual") && formatUang(p.hargaJual)}
         </div>
         {on("laba") && (

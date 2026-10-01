@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type SVGProps,
+} from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { exportAll, importAll } from "../lib/backup";
 import { flushWrites } from "../lib/db";
@@ -18,7 +25,27 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { GateScreen } from "../components/GateScreen";
 import { Modal, useEscapeToClose } from "../components/Modal";
 import { SyncChip } from "../components/SyncChip";
-import { CloseIcon } from "../components/icons";
+import {
+  ArrowUpIcon,
+  BoxIcon,
+  CartIcon,
+  ChartIcon,
+  ChevronDownIcon,
+  ClockIcon,
+  CloudIcon,
+  DownloadIcon,
+  FileTextIcon,
+  GearIcon,
+  MoreIcon,
+  PenToolIcon,
+  RefreshIcon,
+  SheetIcon,
+  StoreIcon,
+  TagIcon,
+  UsersIcon,
+} from "../components/icons";
+
+type IconType = ComponentType<SVGProps<SVGSVGElement>>;
 
 const COLLAPSE_KEY = "invoice.sidebar.collapsed";
 const GROUPS_KEY = "invoice.sidebar.groups";
@@ -29,18 +56,17 @@ const GROUPS_KEY = "invoice.sidebar.groups";
 // header whose arrow never matched what it was hiding.
 const BACKUP_GROUP = "Cadangan";
 
+// The desktop sidebar's row. It is pointer-driven now: below `md` navigation is
+// the bottom tab bar and the "Lainnya" sheet, which carry their own touch sizes.
 const linkBase =
-  // `min-h-11` is the 44px touch minimum, and it is mobile-only: the drawer is
-  // thumb-driven, the desktop sidebar is not, and stretching every row there
-  // would just cost vertical space.
-  "flex items-center gap-2.5 px-3 py-2.5 min-h-11 md:min-h-0 rounded-lg font-semibold text-faint hover:bg-surface-hover transition-colors";
+  "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm font-semibold text-muted hover:bg-surface-hover transition-colors";
 const linkActive = "bg-brand-soft text-brand hover:bg-brand-soft";
 
 // Sidebar navigation, grouped. Each group's item list is collapsible.
 interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  Icon: IconType;
 }
 interface NavGroup {
   label: string;
@@ -51,25 +77,25 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Data",
     items: [
-      { to: "/harga", label: "Harga", icon: "🏷️" },
-      { to: "/pesanan", label: "Pesanan", icon: "📦" },
-      { to: "/pembeli", label: "Pembeli", icon: "👥" },
-      { to: "/stok", label: "Stok", icon: "🏬" },
-      { to: "/beli-stok", label: "Beli Stock", icon: "🛒" },
-      { to: "/riwayat", label: "Riwayat", icon: "🕓" },
+      { to: "/harga", label: "Harga", Icon: TagIcon },
+      { to: "/pesanan", label: "Pesanan", Icon: BoxIcon },
+      { to: "/pembeli", label: "Pembeli", Icon: UsersIcon },
+      { to: "/stok", label: "Stok", Icon: StoreIcon },
+      { to: "/beli-stok", label: "Beli Stock", Icon: CartIcon },
+      { to: "/riwayat", label: "Riwayat", Icon: ClockIcon },
     ],
   },
   {
     label: "Alat",
     items: [
-      { to: "/excel", label: "Ekspor Excel", icon: "📊" },
-      { to: "/template", label: "Desain Template", icon: "🎨" },
-      { to: "/invoice", label: "Buat Invoice", icon: "🧾" },
+      { to: "/excel", label: "Ekspor Excel", Icon: SheetIcon },
+      { to: "/template", label: "Desain Template", Icon: PenToolIcon },
+      { to: "/invoice", label: "Buat Invoice", Icon: FileTextIcon },
     ],
   },
   {
     label: "Laporan",
-    items: [{ to: "/laporan", label: "Laba Rugi", icon: "📈" }],
+    items: [{ to: "/laporan", label: "Laba Rugi", Icon: ChartIcon }],
   },
 ];
 
@@ -82,8 +108,38 @@ const NAV_GROUPS: NavGroup[] = [
 // admin-only: roles and the D1 dashboard, nothing else.
 const SYSTEM_GROUP: NavGroup = {
   label: "Sistem",
-  items: [{ to: "/admin", label: "Pengaturan", icon: "⚙️" }],
+  items: [{ to: "/admin", label: "Pengaturan", Icon: GearIcon }],
 };
+
+// The phone's bottom tab bar: the four pages used all day. Everything else is in
+// the "Lainnya" sheet, which lists the same groups the desktop sidebar does, so
+// no page is reachable on a phone that is not reachable on a desktop and the
+// other way round. Same routes, a different control.
+const TAB_ITEMS: NavItem[] = [
+  { to: "/harga", label: "Harga", Icon: TagIcon },
+  { to: "/pesanan", label: "Pesanan", Icon: BoxIcon },
+  { to: "/stok", label: "Stok", Icon: StoreIcon },
+  { to: "/laporan", label: "Laporan", Icon: ChartIcon },
+];
+const TAB_PATHS = new Set(TAB_ITEMS.map((t) => t.to));
+
+// Tab-bar height, plus the home-indicator inset on notched phones. One string so
+// the bar and the padding that keeps content clear of it cannot drift apart.
+const TAB_BAR_H = "calc(3.75rem + env(safe-area-inset-bottom))";
+
+function isActivePath(pathname: string, to: string) {
+  return pathname === to || pathname.startsWith(to + "/");
+}
+
+// What the phone app bar calls the current page. A detail route has no nav item
+// of its own, so it borrows its parent's name rather than a generic one.
+function pageTitle(pathname: string, groups: NavGroup[]): string {
+  if (pathname.startsWith("/produk")) return "Harga";
+  for (const item of [...TAB_ITEMS, ...groups.flatMap((g) => g.items)]) {
+    if (isActivePath(pathname, item.to)) return item.label;
+  }
+  return "Invoice";
+}
 
 export function RootLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -101,50 +157,46 @@ export function RootLayout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1",
   );
-  // The mobile drawer. Deliberately NOT persisted like `collapsed` is: a
-  // drawer that is still open when you come back is a drawer covering the page
-  // you asked for.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // The phone's "Lainnya" sheet. Deliberately NOT persisted like `collapsed`
+  // is: a sheet that is still open when you come back is a sheet covering the
+  // page you asked for.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const desktop = useMediaQuery("(min-width: 768px)");
-  // `collapsed` decides what is rendered, not just how wide it is, so the
-  // icon-only mode has to stay out of the drawer — a 16rem panel showing four
-  // emoji and no words is not a menu.
+  // Icon-only is a desktop-sidebar mode; the phone has no sidebar to narrow.
   const iconOnly = desktop && collapsed;
-  const hamburgerRef = useRef<HTMLButtonElement>(null);
-  const drawerRef = useRef<HTMLElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
-  useEscapeToClose(() => setDrawerOpen(false), drawerOpen);
+  useEscapeToClose(() => setSheetOpen(false), sheetOpen);
 
-  // Close on navigation. Without this the drawer stays over the page it just
+  // Close on navigation. Without this the sheet stays over the page it just
   // sent you to, which reads as a broken tap.
   useEffect(() => {
-    setDrawerOpen(false);
+    setSheetOpen(false);
   }, [pathname]);
 
-  // Crossing into desktop with the drawer open would otherwise leave the
+  // Crossing into desktop with the sheet open would otherwise leave the
   // backdrop and the scroll lock behind, since both are mobile-only.
   useEffect(() => {
-    if (desktop) setDrawerOpen(false);
+    if (desktop) setSheetOpen(false);
   }, [desktop]);
 
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!sheetOpen) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Focus into the drawer so the keyboard follows the eye. The first LINK,
-    // not the first focusable: the first focusable is the ✕, and landing the
-    // keyboard on "close" makes the drawer feel like something to escape
-    // rather than something to use.
+    // Focus into the sheet so the keyboard follows the eye: its first link,
+    // not the scrim or the tab bar underneath.
     const first =
-      drawerRef.current?.querySelector<HTMLElement>("nav a[href]") ??
-      drawerRef.current?.querySelector<HTMLElement>("button");
+      sheetRef.current?.querySelector<HTMLElement>("a[href]") ??
+      sheetRef.current?.querySelector<HTMLElement>("button");
     first?.focus();
     return () => {
       document.body.style.overflow = previous;
       // Back to the control that opened it, not to the top of the document.
-      hamburgerRef.current?.focus();
+      moreRef.current?.focus();
     };
-  }, [drawerOpen]);
+  }, [sheetOpen]);
   // Per-group collapse state: a set of group labels whose item list is hidden.
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
     try {
@@ -324,64 +376,203 @@ export function RootLayout() {
   // has no API to ask and therefore no role.
   if (isBlocked(status)) return <GateScreen email={status.email} />;
 
+  // The four whole-dataset actions. Data, not markup, because the desktop
+  // sidebar and the phone's "Lainnya" sheet both list them and must never
+  // disagree about which exist.
+  const dataActions: {
+    key: string;
+    Icon: IconType;
+    label: string;
+    title: string;
+    show: boolean;
+    onClick: () => void;
+  }[] = [
+    {
+      // Hidden entirely where there is no cloud to take data from — the GitHub
+      // Pages copy, which has no Worker behind it. A button that offered to
+      // replace everything with nothing would be the single most destructive
+      // control in the app.
+      key: "reset",
+      Icon: CloudIcon,
+      label: "Ambil dari cloud",
+      title: "Ambil ulang semua data dari cloud",
+      show: status.available,
+      onClick: () => setConfirmingReset(true),
+    },
+    {
+      // The opposite direction, and its own button rather than a link buried in
+      // the dialog above. Both are answers to "these two copies disagree", but
+      // a control you cannot find is a control that does not exist — and this
+      // is the one people reach for after a restore from a backup file, which
+      // is the moment the cloud is the copy that is wrong.
+      //
+      // Two conditions, not one: `available` because there must be a cloud to
+      // overwrite, and `canPushToCloud` because a local-only account would only
+      // ever get a 403 from it.
+      key: "publish",
+      Icon: ArrowUpIcon,
+      label: "Kirim ke cloud",
+      title: "Ganti isi cloud dengan data di perangkat ini",
+      show: status.available && canPushToCloud(),
+      onClick: () => setConfirmingPublish(true),
+    },
+    {
+      key: "backup",
+      Icon: DownloadIcon,
+      label: "Backup semua",
+      title: "Backup semua data",
+      show: true,
+      onClick: doBackup,
+    },
+    {
+      key: "restore",
+      Icon: RefreshIcon,
+      label: "Pulihkan",
+      title: "Pulihkan dari cadangan",
+      show: true,
+      onClick: () => setConfirmingRestore(true),
+    },
+  ];
+
+  // What the "Lainnya" sheet lists: every nav group minus the four pages that
+  // already have a tab, so nothing appears twice and nothing is missing.
+  const sheetGroups = groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => !TAB_PATHS.has(i.to)) }))
+    .filter((g) => g.items.length > 0);
+  const moreActive =
+    sheetOpen ||
+    sheetGroups.some((g) => g.items.some((i) => isActivePath(pathname, i.to)));
+
+  const tabBase =
+    "group flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold text-faint";
+  const tabPill =
+    "flex items-center justify-center h-7 w-14 rounded-full transition-colors";
+
   return (
     <div className="flex min-h-screen">
-      {/* The mobile app bar. The sync chip rides in it rather than in the
-          drawer: sync state is the one thing that must never cost a tap to
-          see. */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-20 h-14 bg-surface border-b border-line flex items-center gap-1 px-2">
-        <button
-          ref={hamburgerRef}
-          onClick={() => setDrawerOpen(true)}
-          aria-expanded={drawerOpen}
-          aria-controls="nav-utama"
-          aria-label="Buka menu"
-          className="h-11 w-11 shrink-0 rounded-lg text-xl text-muted hover:bg-surface-hover cursor-pointer"
-        >
-          ☰
-        </button>
-        <span className="font-bold text-lg truncate">🧾 Invoice</span>
+      {/* The phone app bar: where you are, and the sync state. The chip rides
+          here rather than in the sheet: sync state is the one thing that must
+          never cost a tap to see. */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-20 h-14 bg-surface border-b border-line flex items-center gap-2 px-4">
+        <span className="font-bold text-lg truncate">
+          {pageTitle(pathname, groups)}
+        </span>
         <div className="ml-auto shrink-0">
           <SyncChip collapsed={false} />
         </div>
       </header>
 
-      {drawerOpen && (
-        <div
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden
-          className="md:hidden fixed inset-0 z-30 bg-black/40"
-        />
+      {/* Phone navigation. Four pages used all day get a tab; the rest live in
+          the "Lainnya" sheet. Same routes as the desktop sidebar. */}
+      <nav
+        aria-label="Menu utama"
+        style={{ height: TAB_BAR_H }}
+        className="md:hidden fixed bottom-0 inset-x-0 z-50 grid grid-cols-5 bg-surface border-t border-line pb-[env(safe-area-inset-bottom)]"
+      >
+        {TAB_ITEMS.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            className={tabBase}
+            activeProps={{ className: `${tabBase} text-brand` }}
+          >
+            <span className={`${tabPill} group-data-[status=active]:bg-brand-soft`}>
+              <item.Icon className="h-5 w-5" />
+            </span>
+            {item.label}
+          </Link>
+        ))}
+        <button
+          ref={moreRef}
+          onClick={() => setSheetOpen((o) => !o)}
+          aria-expanded={sheetOpen}
+          aria-controls="menu-lainnya"
+          className={`${tabBase} cursor-pointer ${moreActive ? "text-brand" : ""}`}
+        >
+          <span className={`${tabPill} ${moreActive ? "bg-brand-soft" : ""}`}>
+            <MoreIcon className="h-5 w-5" strokeWidth={3} />
+          </span>
+          Lainnya
+        </button>
+      </nav>
+
+      {sheetOpen && (
+        <>
+          <div
+            onClick={() => setSheetOpen(false)}
+            aria-hidden
+            className="md:hidden fixed inset-0 z-30 bg-ink/40"
+          />
+          <div
+            ref={sheetRef}
+            id="menu-lainnya"
+            role="dialog"
+            aria-label="Menu lainnya"
+            style={{ bottom: TAB_BAR_H }}
+            className="md:hidden fixed inset-x-0 z-40 max-h-[75vh] overflow-y-auto bg-surface rounded-t-xl border-t border-line px-3 pt-2 pb-3 shadow-[0_-8px_24px_rgb(20_32_31/0.12)]"
+          >
+            {sheetGroups.map((group) => (
+              <div key={group.label}>
+                <div className="px-1 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                  {group.label}
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {group.items.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="flex flex-col items-center justify-center gap-1 min-h-16 px-1 rounded-md text-xs font-semibold text-body text-center hover:bg-surface-hover"
+                      activeProps={{
+                        className:
+                          "flex flex-col items-center justify-center gap-1 min-h-16 px-1 rounded-md text-xs font-semibold text-center bg-brand-soft text-brand",
+                      }}
+                    >
+                      <item.Icon className="h-5 w-5" />
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="px-1 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
+              {BACKUP_GROUP}
+            </div>
+            <div className="flex flex-col">
+              {dataActions
+                .filter((a) => a.show)
+                .map((a) => (
+                  <button
+                    key={a.key}
+                    onClick={a.onClick}
+                    className="flex items-center gap-3 min-h-11 px-2 rounded-md text-sm font-semibold text-body hover:bg-surface-hover"
+                  >
+                    <a.Icon className="h-5 w-5 text-muted" />
+                    {a.label}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </>
       )}
 
       <aside
-        ref={drawerRef}
         id="nav-utama"
-        className={`fixed inset-y-0 left-0 z-40 w-64 ${
-          drawerOpen ? "translate-x-0" : "-translate-x-full"
-        } motion-safe:transition-transform motion-safe:duration-200 ease-out
-        md:sticky md:top-0 md:h-screen md:translate-x-0 md:shrink-0 ${
+        className={`hidden md:flex md:sticky md:top-0 md:h-screen md:shrink-0 ${
           iconOnly ? "md:w-16" : "md:w-56"
-        } md:motion-safe:transition-[width,transform] bg-surface border-r border-line p-3 flex flex-col h-screen`}
+        } motion-safe:transition-[width] bg-surface border-r border-line p-3 flex-col`}
       >
         <div className="shrink-0 flex items-center justify-between mb-4">
           {!iconOnly && (
-            <span className="font-bold text-lg px-2">🧾 Invoice</span>
+            <span className="flex items-center gap-2 font-bold text-lg px-2">
+              <FileTextIcon className="h-5 w-5 text-brand" />
+              Invoice
+            </span>
           )}
-          {/* Two different jobs, so two buttons: below md the control closes an
-              overlay, above md it narrows a column that never goes away. */}
-          <button
-            onClick={() => setDrawerOpen(false)}
-            aria-label="Tutup menu"
-            className="md:hidden ml-auto inline-flex items-center justify-center h-11 w-11 rounded-lg text-faint hover:bg-surface-hover cursor-pointer"
-          >
-            <CloseIcon />
-          </button>
           <button
             onClick={toggle}
             title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
             aria-label="Toggle sidebar"
-            className="hidden md:block ml-auto p-2 rounded-lg text-faint hover:bg-surface-hover cursor-pointer"
+            className="ml-auto p-2 rounded-md text-faint hover:bg-surface-hover cursor-pointer"
           >
             {collapsed ? "»" : "«"}
           </button>
@@ -398,12 +589,11 @@ export function RootLayout() {
           {groups.map((group, gi) => {
             const groupClosed = closedGroups.has(group.label);
             // Highlight the group header when one of its pages is the active route.
-            const groupActive = group.items.some(
-              (item) =>
-                pathname === item.to || pathname.startsWith(item.to + "/"),
+            const groupActive = group.items.some((item) =>
+              isActivePath(pathname, item.to),
             );
             return (
-              <div key={group.label} className="flex flex-col gap-1">
+              <div key={group.label} className="flex flex-col gap-0.5">
                 {iconOnly ? (
                   // Icon-only mode: a thin divider separates groups; items always show.
                   gi > 0 && <div className="my-2 border-t border-line" />
@@ -411,21 +601,19 @@ export function RootLayout() {
                   <button
                     onClick={() => toggleGroup(group.label)}
                     aria-expanded={!groupClosed}
-                    // `min-h-11` below `md`: in the drawer this is a real tap
-                    // target, and the label's own 12px line-height left it a
-                    // 24px strip. Released at `md`, where the sidebar is
-                    // pointer-driven and the tighter rhythm reads better.
-                    className={`flex items-center gap-1 px-2.5 text-xs uppercase tracking-wide cursor-pointer min-h-11 md:min-h-0 ${
+                    className={`flex items-center gap-1 px-2.5 text-[11px] uppercase tracking-wide cursor-pointer ${
                       gi > 0 ? "pt-3 pb-1" : "pt-1 pb-1"
                     } ${
                       groupActive
                         ? "text-brand font-semibold"
-                        : "text-faint hover:text-muted"
+                        : "text-faint font-semibold hover:text-muted"
                     }`}
                   >
-                    <span className="text-[10px] w-3 inline-block">
-                      {groupClosed ? "▸" : "▾"}
-                    </span>
+                    <ChevronDownIcon
+                      className={`h-3 w-3 transition-transform ${
+                        groupClosed ? "-rotate-90" : ""
+                      }`}
+                    />
                     {group.label}
                   </button>
                 )}
@@ -444,7 +632,7 @@ export function RootLayout() {
                         }`,
                       }}
                     >
-                      <span className="text-base">{item.icon}</span>
+                      <item.Icon className="h-5 w-5 shrink-0" />
                       {!iconOnly && item.label}
                     </Link>
                   ))}
@@ -454,81 +642,43 @@ export function RootLayout() {
 
           {/* The last group, and the reason it is written out here rather than
               added to NAV_GROUPS: every group above is a list of DESTINATIONS,
-              rendered as <Link>. These four are actions on the whole dataset —
-              they open a dialog, they do not navigate — so they share the
-              groups' markup and their collapse state but not their data shape.
+              rendered as <Link>. These are actions on the whole dataset — they
+              open a dialog, they do not navigate — so they share the groups'
+              markup and their collapse state but not their data shape.
 
               It lives inside <nav> so it scrolls and folds exactly like the
               others; only the sync chip stays pinned below. */}
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-0.5">
             {iconOnly ? (
               <div className="my-2 border-t border-line" />
             ) : (
               <button
                 onClick={() => toggleGroup(BACKUP_GROUP)}
                 aria-expanded={!closedGroups.has(BACKUP_GROUP)}
-                className="flex items-center gap-1 px-2.5 pt-3 pb-1 text-xs uppercase tracking-wide text-faint hover:text-muted cursor-pointer min-h-11 md:min-h-0"
+                className="flex items-center gap-1 px-2.5 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint hover:text-muted cursor-pointer"
               >
-                <span className="text-[10px] w-3 inline-block">
-                  {closedGroups.has(BACKUP_GROUP) ? "▸" : "▾"}
-                </span>
+                <ChevronDownIcon
+                  className={`h-3 w-3 transition-transform ${
+                    closedGroups.has(BACKUP_GROUP) ? "-rotate-90" : ""
+                  }`}
+                />
                 {BACKUP_GROUP}
               </button>
             )}
-            {(iconOnly || !closedGroups.has(BACKUP_GROUP)) && (
-              <>
-                {/* Hidden entirely where there is no cloud to take data from — the
-              GitHub Pages copy, which has no Worker behind it. A button that
-              offered to replace everything with nothing would be the single
-              most destructive control in the app. */}
-                {status.available && (
+            {(iconOnly || !closedGroups.has(BACKUP_GROUP)) &&
+              dataActions
+                .filter((a) => a.show)
+                .map((a) => (
                   <button
-                    onClick={() => setConfirmingReset(true)}
-                    title="Ambil ulang semua data dari cloud"
+                    key={a.key}
+                    onClick={a.onClick}
+                    title={a.title}
                     className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
                   >
-                    <span className="text-base">☁️</span>
-                    {!iconOnly && "Ambil dari cloud"}
+                    <a.Icon className="h-5 w-5 shrink-0" />
+                    {!iconOnly && a.label}
                   </button>
-                )}
-                {/* The opposite direction, and its own button rather than a link
-              buried in the dialog above. Both are answers to "these two copies
-              disagree", but a control you cannot find is a control that does
-              not exist — and this is the one people reach for after a restore
-              from a backup file, which is the moment the cloud is the copy that
-              is wrong.
-
-              Two conditions, not one: `available` because there must be a cloud
-              to overwrite, and `canPushToCloud` because a local-only account
-              would only ever get a 403 from it. */}
-                {status.available && canPushToCloud() && (
-                  <button
-                    onClick={() => setConfirmingPublish(true)}
-                    title="Ganti isi cloud dengan data di perangkat ini"
-                    className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
-                  >
-                    <span className="text-base">⬆️</span>
-                    {!iconOnly && "Kirim ke cloud"}
-                  </button>
-                )}
-                <button
-                  onClick={doBackup}
-                  title="Backup semua data"
-                  className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
-                >
-                  <span className="text-base">💾</span>
-                  {!iconOnly && "Backup semua"}
-                </button>
-                <button
-                  onClick={() => setConfirmingRestore(true)}
-                  title="Pulihkan dari cadangan"
-                  className={`${linkBase} ${iconOnly ? "justify-center px-0" : ""} cursor-pointer`}
-                >
-                  <span className="text-base">♻️</span>
-                  {!iconOnly && "Pulihkan"}
-                </button>
-              </>
-            )}
+                ))}
           </div>
         </nav>
 
@@ -538,7 +688,7 @@ export function RootLayout() {
             which is the whole reason it is a chip and not a nav link. */}
         {/* Hidden below md: the same chip already sits in the app bar there,
             and two of them would report the same state twice. */}
-        <div className="shrink-0 pt-3 hidden md:flex flex-col gap-1">
+        <div className="shrink-0 pt-3 flex flex-col gap-1">
           <SyncChip collapsed={iconOnly} />
           {!iconOnly && (
             <div className="px-2.5 pt-2 text-xs text-faint">
@@ -548,7 +698,7 @@ export function RootLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 pt-14 md:pt-0">
+      <main className="flex-1 min-w-0 pt-14 pb-[calc(3.75rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
         <div className="max-w-[1400px] mx-auto p-4 md:p-6">
           <StaleBacklogBanner />
           <Outlet />

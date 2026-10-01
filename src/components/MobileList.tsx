@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { thClass, tdClass } from "./DataTable";
+import { thClass } from "./DataTable";
 import { formatAngka, formatRupiah } from "../lib/format";
 
 // The phone layout every wide table falls back to below `md`.
@@ -77,7 +77,10 @@ export function qtyTimesHarga(
 // the same padding landed on top of space the content had itself — the phone
 // rows read as mostly gap. Half the vertical padding, and the sub-lines tuck up
 // under their line instead of adding a `pb-1` of their own.
-const cellClass = `${tdClass} py-1.5 align-top`;
+// Built from the pieces, not from `tdClass` plus an override: Tailwind orders
+// same-property utilities by value rather than by where they appear in the
+// string, so `py-2.5` from `tdClass` beat the `py-1.5` appended after it.
+const cellClass = "px-3 py-1.5 text-sm border-b border-line align-top";
 
 export function MobileRow({
   title,
