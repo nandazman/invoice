@@ -28,6 +28,7 @@ export function OrderFilterBar({
   showStatus = true,
   showBuyer = true,
   onAdd,
+  showPresets = true,
 }: {
   filter: OrderFilter<FilterableRow>;
   // A view switch, not a filter: it lives in the panel but Reset leaves it alone.
@@ -41,6 +42,8 @@ export function OrderFilterBar({
   // Phone only: the page header (and its Tambah) is hidden there, so the add
   // button rides the search row, as in the mockup.
   onAdd?: () => void;
+  // Invoice picks dates in the Filter dialog only, so it drops the shortcuts.
+  showPresets?: boolean;
 }) {
   const { values, set, preset, filtered, clear, hasFilter } = filter;
   const [open, setOpen] = useState(false);
@@ -99,24 +102,27 @@ export function OrderFilterBar({
             />
           </div>
           {/* Presets scroll sideways on a phone instead of wrapping into a block. */}
-          <div className="order-last w-full flex items-center gap-2 overflow-x-auto @2xl:order-none @2xl:w-auto @2xl:overflow-visible -mx-1 px-1 pb-0.5 @2xl:m-0 @2xl:p-0">
-            {PRESETS.map((key) => (
-              <Button
-                key={key}
-                size="sm"
-                className={`shrink-0 !rounded-full ${
-                  activePreset === key
-                    ? "!bg-brand-soft !border-brand !text-brand-text"
-                    : ""
-                }`}
-                onClick={() => preset(key)}
-              >
-                {PRESET_LABELS[key]}
-              </Button>
-            ))}
-          </div>
+          {showPresets && (
+            <div className="order-last w-full flex items-center gap-2 overflow-x-auto @2xl:order-none @2xl:w-auto @2xl:overflow-visible -mx-1 px-1 pb-0.5 @2xl:m-0 @2xl:p-0">
+              {PRESETS.map((key) => (
+                <Button
+                  key={key}
+                  size="sm"
+                  className={`shrink-0 !rounded-full ${
+                    activePreset === key
+                      ? "!bg-brand-soft !border-brand !text-brand-text"
+                      : ""
+                  }`}
+                  onClick={() => preset(key)}
+                >
+                  {PRESET_LABELS[key]}
+                </Button>
+              ))}
+            </div>
+          )}
           <span className="hidden @2xl:block flex-1" />
           <Button
+            className="self-stretch"
             onClick={() => setOpen(true)}
             aria-label={`Filter${chips.length > 0 ? ` (${chips.length})` : ""}`}
           >

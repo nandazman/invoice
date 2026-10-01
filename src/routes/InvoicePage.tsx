@@ -193,7 +193,7 @@ export function InvoicePage() {
             )}
           </Panel>
 
-          <OrderFilterBar filter={filter} />
+          <OrderFilterBar filter={filter} showPresets={false} />
 
           <Panel>
             <h3 className="font-bold text-sm text-body mb-2">Pilih Item Pesanan</h3>
