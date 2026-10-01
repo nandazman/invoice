@@ -352,8 +352,8 @@ export function TemplatePage() {
         <Button size="sm" onClick={() => addElement("line")}>+ Garis</Button>
       </div>
 
-      <div className="flex gap-4 items-start">
-        <div className="flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
+      <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
+        <div className="w-full lg:flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
           <Canvas
             template={draft}
             selectedId={selectedId}
@@ -361,7 +361,7 @@ export function TemplatePage() {
             onChange={(id, box) => patchElement(id, box)}
           />
         </div>
-        <div className="w-72 shrink-0 bg-surface border border-line rounded-xl p-4 sticky top-4">
+        <div className="w-full lg:w-72 lg:shrink-0 bg-surface border border-line rounded-xl p-4 lg:sticky lg:top-4">
           <Inspector
             template={draft}
             selected={selected}
