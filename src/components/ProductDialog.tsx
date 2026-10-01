@@ -7,7 +7,7 @@ import { Input } from "./Input";
 import { Field } from "./Field";
 import { TypeSelect } from "./TypeSelect";
 import { Modal } from "./Modal";
-import { TrashIcon } from "./icons";
+import { CloseIcon, TrashIcon } from "./icons";
 
 interface Props {
   product: Product | null; // null = creating new
@@ -100,9 +100,19 @@ export function ProductDialog({
       closeOnOverlay={false}
       className="bg-surface p-4 md:p-5 w-full max-w-xl overflow-auto"
     >
-        <h2 className="text-xl font-bold mb-4">
-          {product ? "Ubah Produk" : "Tambah Produk"}
-        </h2>
+        <div className="flex items-center mb-4">
+          <h2 className="text-xl font-bold flex-1">
+            {product ? "Ubah Produk" : "Tambah Produk"}
+          </h2>
+          <DangerGhostButton
+            onClick={onClose}
+            aria-label="Tutup"
+            title="Tutup"
+            className="hover:!bg-surface-hover hover:!text-body"
+          >
+            <CloseIcon />
+          </DangerGhostButton>
+        </div>
 
         {/* Single column on a phone — five side-by-side fields don't fit —
             back to the row layout from `md` up. */}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Visibility } from "../lib/columns";
 
 const btnCls =
-  "inline-flex items-center gap-1.5 px-3 py-2 md:px-2.5 md:py-1 min-h-9 md:min-h-0 text-sm md:text-[13px] font-semibold rounded-lg border border-line-strong bg-surface text-body hover:bg-surface-hover cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+  "inline-flex items-center gap-1.5 px-2.5 py-1.5 md:py-1 min-h-8 md:min-h-0 text-sm font-semibold rounded-lg border border-line-strong bg-surface text-body hover:bg-surface-hover cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
 
 // Dropdown checklist to show/hide table columns one by one.
 // Table-agnostic: it just reports visibility state and toggles by column id.

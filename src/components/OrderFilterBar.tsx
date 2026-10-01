@@ -26,6 +26,7 @@ export function OrderFilterBar({
   perBuyer,
   onPerBuyer,
   showStatus = true,
+  showBuyer = true,
   onAdd,
 }: {
   filter: OrderFilter<FilterableRow>;
@@ -35,6 +36,8 @@ export function OrderFilterBar({
   onPerBuyer?: (next: boolean) => void;
   // Beli Stok rows have no paid/pending state, so that page hides the control.
   showStatus?: boolean;
+  // Nor do they have a buyer: stock is bought from suppliers, not for someone.
+  showBuyer?: boolean;
   // Phone only: the page header (and its Tambah) is hidden there, so the add
   // button rides the search row, as in the mockup.
   onAdd?: () => void;
@@ -64,7 +67,7 @@ export function OrderFilterBar({
       label: `Tipe: ${values.tipe}`,
       clear: () => set({ tipe: "" }),
     });
-  if (values.pembeli) {
+  if (showBuyer && values.pembeli) {
     const nama = buyers.find((b) => b.id === values.pembeli)?.nama;
     chips.push({
       key: "pembeli",
@@ -216,19 +219,21 @@ export function OrderFilterBar({
             {/* A plain <Select>, not BuyerSelect: "+ Buat pembeli" belongs on a
                 form that records an order, not on a filter, where creating a
                 buyer could only ever narrow the list to nothing. */}
-            <Field label="Pembeli">
-              <Select
-                value={values.pembeli}
-                onChange={(e) => set({ pembeli: e.target.value })}
-              >
-                <option value="">Semua pembeli</option>
-                {buyers.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nama}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {showBuyer && (
+              <Field label="Pembeli">
+                <Select
+                  value={values.pembeli}
+                  onChange={(e) => set({ pembeli: e.target.value })}
+                >
+                  <option value="">Semua pembeli</option>
+                  {buyers.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nama}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             {showStatus && (
               <Field label="Status" className="col-span-2">
                 <Select

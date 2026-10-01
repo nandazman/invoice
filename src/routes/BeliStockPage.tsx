@@ -160,6 +160,7 @@ export function BeliStockPage() {
       <OrderFilterBar
         filter={filter}
         showStatus={false}
+        showBuyer={false}
         onAdd={products.length > 0 ? () => setAdding(true) : undefined}
       />
 

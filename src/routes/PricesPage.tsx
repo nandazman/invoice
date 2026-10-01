@@ -409,12 +409,14 @@ export function PricesPage() {
             actions={
               <>
                 <Button
+                  size="sm"
                   onClick={() => setCatalogOpen(true)}
                   disabled={products.length === 0}
                 >
                   Ekspor Katalog
                 </Button>
                 <Button
+                  size="sm"
                   className="md:!hidden"
                   onClick={() =>
                     setExpanded(
