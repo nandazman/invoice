@@ -367,7 +367,7 @@ export function PricesPage() {
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
+      <div className="hidden md:flex items-start gap-3 mb-4">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Daftar Harga</h1>
           <p className="text-faint">
@@ -383,12 +383,21 @@ export function PricesPage() {
         <div className="px-4 md:px-0">
           <Toolbar
             search={
-              <SearchInput
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Cari produk…"
-                aria-label="Cari produk"
-              />
+              <div className="flex gap-2">
+                <SearchInput
+                  className="flex-1"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Cari produk…"
+                  aria-label="Cari produk"
+                />
+                <PrimaryButton
+                  className="md:hidden"
+                  onClick={() => setCreating(true)}
+                >
+                  <PlusIcon /> Tambah
+                </PrimaryButton>
+              </div>
             }
             actions={
               <>

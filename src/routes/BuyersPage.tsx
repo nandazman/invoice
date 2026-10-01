@@ -94,7 +94,7 @@ export function BuyersPage() {
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
+      <div className="hidden md:flex items-start gap-3 mb-4">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Pembeli</h1>
           <p className="text-faint">
@@ -122,6 +122,9 @@ export function BuyersPage() {
           <div className="hidden md:flex h-9 items-center">
             <AttributionToggle show={showBy} onChange={setShowBy} />
           </div>
+          <PrimaryButton className="md:hidden" onClick={() => setCreating(true)}>
+            <PlusIcon /> Tambah
+          </PrimaryButton>
           <Button
             size="sm"
             className="md:!hidden"

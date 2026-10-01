@@ -133,7 +133,7 @@ export function BeliStockPage() {
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
+      <div className="hidden md:flex items-start gap-3 mb-4">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Beli Stock</h1>
           <p className="text-faint">
@@ -155,7 +155,11 @@ export function BeliStockPage() {
 
       {/* No children: purchases carry no status, and the hook's status
           predicate skips rows without one. */}
-      <OrderFilterBar filter={filter} showStatus={false} />
+      <OrderFilterBar
+        filter={filter}
+        showStatus={false}
+        onAdd={products.length > 0 ? () => setAdding(true) : undefined}
+      />
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">

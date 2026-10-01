@@ -298,7 +298,7 @@ export function TemplatePage() {
   return (
     <div>
       <div className="flex items-center gap-2 flex-wrap mb-4">
-        <h1 className="text-2xl font-bold mr-2">Desain Template</h1>
+        <h1 className="hidden md:block text-2xl font-bold mr-2">Desain Template</h1>
         <Select
           value={draft.id}
           onChange={(e) => switchTemplate(e.target.value)}

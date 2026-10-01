@@ -5,7 +5,7 @@ import { Input } from "./Input";
 import { Modal } from "./Modal";
 import { Panel } from "./Panel";
 import { Select } from "./Select";
-import { CloseIcon, FilterIcon, SearchIcon } from "./icons";
+import { CloseIcon, FilterIcon, PlusIcon, SearchIcon } from "./icons";
 import {
   PRESET_LABELS,
   periodeLabel,
@@ -26,6 +26,7 @@ export function OrderFilterBar({
   perBuyer,
   onPerBuyer,
   showStatus = true,
+  onAdd,
 }: {
   filter: OrderFilter<FilterableRow>;
   // A view switch, not a filter: it lives in the panel but Reset leaves it alone.
@@ -34,6 +35,9 @@ export function OrderFilterBar({
   onPerBuyer?: (next: boolean) => void;
   // Beli Stok rows have no paid/pending state, so that page hides the control.
   showStatus?: boolean;
+  // Phone only: the page header (and its Tambah) is hidden there, so the add
+  // button rides the search row, as in the mockup.
+  onAdd?: () => void;
 }) {
   const { values, set, preset, filtered, clear, hasFilter } = filter;
   const [open, setOpen] = useState(false);
@@ -89,10 +93,23 @@ export function OrderFilterBar({
               aria-label="Cari produk"
             />
           </div>
-          <Button onClick={() => setOpen(true)}>
+          <Button
+            onClick={() => setOpen(true)}
+            aria-label={`Filter${chips.length > 0 ? ` (${chips.length})` : ""}`}
+          >
             <FilterIcon />
-            Filter{chips.length > 0 && ` (${chips.length})`}
+            <span className="hidden md:inline">Filter</span>
+            {chips.length > 0 && (
+              <span className="rounded-full bg-brand text-white text-[11px] leading-[18px] min-w-[18px] px-1.5 text-center">
+                {chips.length}
+              </span>
+            )}
           </Button>
+          {onAdd && (
+            <PrimaryButton className="md:hidden" onClick={onAdd}>
+              <PlusIcon /> Tambah
+            </PrimaryButton>
+          )}
         </div>
 
         {/* Presets scroll sideways on a phone instead of wrapping into a block. */}

@@ -503,7 +503,7 @@ export function OrdersPage() {
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
+      <div className="hidden md:flex items-start gap-3 mb-4">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Pesanan</h1>
           <p className="text-faint">
@@ -527,6 +527,7 @@ export function OrdersPage() {
         filter={filter}
         perBuyer={perBuyer}
         onPerBuyer={setPerBuyer}
+        onAdd={products.length > 0 ? () => setAdding(true) : undefined}
       />
 
       <Panel>

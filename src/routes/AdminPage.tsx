@@ -252,8 +252,8 @@ export function AdminPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Sinkronisasi</h1>
-      <p className="text-faint mb-4">
+      <h1 className="hidden md:block text-2xl font-bold mb-1">Sinkronisasi</h1>
+      <p className="hidden md:block text-faint mb-4">
         Siapa Anda, apa yang sudah tersimpan di cloud, dan apa yang masih
         tertinggal di perangkat ini.
       </p>

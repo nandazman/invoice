@@ -100,7 +100,7 @@ export function StockPage() {
 
   return (
     <div>
-      <div className="flex items-start gap-3 mb-4">
+      <div className="hidden md:flex items-start gap-3 mb-4">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold mb-1">Stok</h1>
           <p className="text-faint">
@@ -152,13 +152,23 @@ export function StockPage() {
           <div className="hidden md:block">
             <AttributionToggle show={showBy} onChange={setShowBy} />
           </div>
-          <SearchInput
-            className="w-full md:w-56"
-            value={cari}
-            onChange={(e) => setCari(e.target.value)}
-            placeholder="Cari produk…"
-            aria-label="Cari produk"
-          />
+          <div className="flex gap-2 w-full md:w-56">
+            <SearchInput
+              className="flex-1"
+              value={cari}
+              onChange={(e) => setCari(e.target.value)}
+              placeholder="Cari produk…"
+              aria-label="Cari produk"
+            />
+            {products.length > 0 && (
+              <PrimaryButton
+                className="md:hidden"
+                onClick={() => setAdding(true)}
+              >
+                <PlusIcon /> Tambah
+              </PrimaryButton>
+            )}
+          </div>
         </div>
 
         {rows.length === 0 ? (

@@ -136,7 +136,7 @@ export function ExcelPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3 mb-1">
-        <h1 className="text-2xl font-bold sm:mr-auto">Ekspor Excel</h1>
+        <h1 className="hidden md:block text-2xl font-bold sm:mr-auto">Ekspor Excel</h1>
         <Field label="Sumber" className="w-full sm:w-36">
           <Select
             value={source}

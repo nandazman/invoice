@@ -116,7 +116,7 @@ export function InvoicePage() {
   return (
     <div>
       <div className="flex items-center gap-2 flex-wrap mb-4 no-print">
-        <h1 className="text-2xl font-bold mr-2">Buat Invoice</h1>
+        <h1 className="hidden md:block text-2xl font-bold mr-2">Buat Invoice</h1>
         <Select
           value={template.id}
           onChange={(e) => setTemplateId(e.target.value)}

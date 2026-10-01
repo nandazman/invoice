@@ -1002,8 +1002,8 @@ function RowLabel({ row }: { row: MarginRow }) {
 function Header() {
   return (
     <>
-      <h1 className="text-2xl font-bold mb-1">Laba Rugi</h1>
-      <p className="text-faint mb-4">
+      <h1 className="hidden md:block text-2xl font-bold mb-1">Laba Rugi</h1>
+      <p className="hidden md:block text-faint mb-4">
         Berapa uang yang masuk dari penjualan, berapa modal barang yang terjual,
         dan berapa sisanya jadi laba. Modal dihitung dari harga beli yang
         sebenarnya, stok yang lebih dulu masuk dianggap lebih dulu keluar
