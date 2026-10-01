@@ -23,7 +23,7 @@ import { useMediaQuery } from "../lib/useMediaQuery";
 import { PrimaryButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { GateScreen } from "../components/GateScreen";
-import { Modal, useEscapeToClose } from "../components/Modal";
+import { Modal, useEscapeToClose, useScrollLock } from "../components/Modal";
 import { SyncChip } from "../components/SyncChip";
 import {
   ArrowUpIcon,
@@ -168,6 +168,7 @@ export function RootLayout() {
   const sheetRef = useRef<HTMLDivElement>(null);
 
   useEscapeToClose(() => setSheetOpen(false), sheetOpen);
+  useScrollLock(sheetOpen);
 
   // Close on navigation. Without this the sheet stays over the page it just
   // sent you to, which reads as a broken tap.
@@ -537,16 +538,16 @@ export function RootLayout() {
             <div className="px-1 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
               {BACKUP_GROUP}
             </div>
-            <div className="flex flex-col">
+            <div className="grid grid-cols-3 gap-1">
               {dataActions
                 .filter((a) => a.show)
                 .map((a) => (
                   <button
                     key={a.key}
                     onClick={a.onClick}
-                    className="flex items-center gap-3 min-h-11 px-2 rounded-md text-sm font-semibold text-body hover:bg-surface-hover"
+                    className="flex flex-col items-center justify-center gap-1 min-h-16 px-1 rounded-md text-xs font-semibold text-body text-center hover:bg-surface-hover cursor-pointer"
                   >
-                    <a.Icon className="h-5 w-5 text-muted" />
+                    <a.Icon className="h-5 w-5" />
                     {a.label}
                   </button>
                 ))}

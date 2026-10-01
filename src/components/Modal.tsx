@@ -26,6 +26,35 @@ export function useEscapeToClose(onClose: () => void, active = true) {
   }, [onClose, active]);
 }
 
+// Page scroll lock for as long as any overlay is open. A count, not a flag:
+// modals nest, and the first one to close must not unlock the page under the
+// one that is still open. Exported for the phone nav sheet, which is an overlay
+// too. The scrollbar's width is padded back on desktop so the page does not
+// jump sideways when the bar disappears.
+let locks = 0;
+let saved = { overflow: "", paddingRight: "" };
+export function useScrollLock(active = true) {
+  useEffect(() => {
+    if (!active || typeof document === "undefined" || !document.body) return;
+    const body = document.body;
+    if (locks++ === 0) {
+      saved = {
+        overflow: body.style.overflow,
+        paddingRight: body.style.paddingRight,
+      };
+      const bar = window.innerWidth - document.documentElement.clientWidth;
+      body.style.overflow = "hidden";
+      if (bar > 0) body.style.paddingRight = `${bar}px`;
+    }
+    return () => {
+      if (--locks === 0) {
+        body.style.overflow = saved.overflow;
+        body.style.paddingRight = saved.paddingRight;
+      }
+    };
+  }, [active]);
+}
+
 // Every dialog is a bottom sheet on a phone (full-width, anchored to the
 // bottom edge, capped short of the viewport so it never hides behind the
 // keyboard) and a centred dialog from `md` up. This is `!important` so it
@@ -60,6 +89,7 @@ export function Modal({
   // Modals can nest (BuyFromOrderDialog opens a confirm over itself), so only
   // the topmost overlay reacts to Escape.
   useEscapeToClose(onClose);
+  useScrollLock();
 
   const overlay = (
     <div

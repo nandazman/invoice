@@ -18,9 +18,8 @@ import {
 } from "../components/Attribution";
 import { AddMovementForm } from "../components/AddMovementForm";
 import { Button, PrimaryButton } from "../components/Button";
-import { Input } from "../components/Input";
+import { SearchInput } from "../components/SearchInput";
 import { Panel } from "../components/Panel";
-import { Field } from "../components/Field";
 import { thClass, tdClass } from "../components/DataTable";
 import { AlertIcon, ChevronDownIcon, PlusIcon } from "../components/icons";
 
@@ -153,13 +152,13 @@ export function StockPage() {
           <div className="hidden md:block">
             <AttributionToggle show={showBy} onChange={setShowBy} />
           </div>
-          <Field label="" className="w-full md:w-48">
-            <Input
-              value={cari}
-              onChange={(e) => setCari(e.target.value)}
-              placeholder="Cari produk…"
-            />
-          </Field>
+          <SearchInput
+            className="w-full md:w-56"
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            placeholder="Cari produk…"
+            aria-label="Cari produk"
+          />
         </div>
 
         {rows.length === 0 ? (

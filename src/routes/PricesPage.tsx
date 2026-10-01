@@ -36,10 +36,9 @@ import {
   PrimaryButton,
   GhostButton,
 } from "../components/Button";
-import { Input } from "../components/Input";
+import { SearchInput } from "../components/SearchInput";
 import { Panel } from "../components/Panel";
 import { DataTable } from "../components/DataTable";
-import { Field } from "../components/Field";
 import { Toolbar } from "../components/Toolbar";
 import { typeBadgeClass } from "../lib/typeColor";
 import { PencilIcon, PlusIcon, ChevronDownIcon } from "../components/icons";
@@ -384,13 +383,12 @@ export function PricesPage() {
         <div className="px-4 md:px-0">
           <Toolbar
             search={
-              <Field label="Cari produk">
-                <Input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Ketik nama produk…"
-                />
-              </Field>
+              <SearchInput
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Cari produk…"
+                aria-label="Cari produk"
+              />
             }
             actions={
               <>
