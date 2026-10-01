@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   createColumnHelper,
@@ -6,9 +6,7 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
-  type Row,
   type SortingState,
-  type Table,
 } from "@tanstack/react-table";
 import type { Product } from "../lib/types";
 import {
@@ -28,8 +26,7 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCell, MobileBy } from "../components/Attribution";
-import { MobileField } from "../components/MobileList";
+import { ByCell } from "../components/Attribution";
 import { ProductDialog } from "../components/ProductDialog";
 import { CatalogDialog } from "../components/CatalogDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -37,21 +34,15 @@ import { ColumnToggle } from "../components/ColumnToggle";
 import {
   Button,
   PrimaryButton,
-  DangerGhostButton,
   GhostButton,
 } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
-import {
-  DataTable,
-  SortHeader,
-  tdClass,
-  thClass,
-} from "../components/DataTable";
+import { DataTable } from "../components/DataTable";
 import { Field } from "../components/Field";
 import { Toolbar } from "../components/Toolbar";
 import { typeBadgeClass } from "../lib/typeColor";
-import { TrashIcon, PencilIcon } from "../components/icons";
+import { PencilIcon, PlusIcon, ChevronDownIcon } from "../components/icons";
 
 const TOGGLE_COLUMNS = [
   { id: "namaProduk", label: "Nama Produk" },
@@ -81,128 +72,102 @@ const col = createColumnHelper<Product>();
 // which derives it from the type name, so the two stay separable.
 const badgeClass = "inline-block rounded-md px-2 py-0.5 text-xs font-semibold";
 
-// The phone layout: two columns, because eight will not fit on 390px and a
-// horizontally scrolled price table is a table nobody reads. Produk carries
-// the name, type, and size; Harga Satuan carries the price with the margin
-// beneath it. Editing happens on the product's detail page, which the name
-// already links to, so there is no action column to squeeze in.
-//
-// The Kolom toggle applies here as on the wide table: every other column the
-// user has switched on restacks, labelled, under the name, and a column
-// switched off leaves the phone row too. The name stays regardless — it is the
-// link, so it is the row.
-//
-// This is the swap point: replacing rows with cards means rewriting this
-// component and nothing else.
-function MobilePriceRow({
-  row,
-  visible,
+// The phone layout. Eight columns do not fit on 390px, so below `md` a row is
+// name, type badge and price; tapping it opens a label / value card with the
+// rest, plus Detail and Edit. There is no Kolom menu on a phone: the collapsed
+// row is fixed and the card is where the detail lives.
+function PhoneRow({
+  p,
+  open,
+  onToggleOpen,
+  onEdit,
 }: {
-  row: Row<Product>;
-  visible: Record<string, boolean>;
+  p: Product;
+  open: boolean;
+  onToggleOpen: () => void;
+  onEdit: () => void;
 }) {
-  const p = row.original;
-  const on = (id: string) => visible[id] !== false;
   const laba = p.hargaJual - p.hargaDasar;
   const ukuran = `${p.ukuran ?? ""} ${p.satuan ?? ""}`.trim();
+  const kv: [string, ReactNode][] = [
+    ["Ukuran", ukuran || <span className="text-faint">—</span>],
+    ["Harga Dasar", formatUang(p.hargaDasar)],
+    ["Harga Satuan", formatUang(p.hargaJual)],
+    [
+      "Laba",
+      <span key="l" className={laba < 0 ? "text-danger" : "text-ok"}>
+        {formatUang(laba)}
+      </span>,
+    ],
+    [
+      "Konversi",
+      p.konversi.length === 0 ? (
+        <span className="text-faint">—</span>
+      ) : (
+        <span key="k" className="flex flex-col items-end gap-1">
+          {p.konversi.map((kv, i) => (
+            <span key={i}>
+              1 {kv.nama} = {formatAngka(kv.jumlah)} · {formatRupiah(kv.harga)}
+            </span>
+          ))}
+        </span>
+      ),
+    ],
+    ["Dibuat", formatDateTimeID(p.createdAt)],
+    ["Diperbarui", formatDateTimeID(p.updatedAt)],
+    ["Dibuat oleh", <ByCell key="c" email={p.createdBy} />],
+    ["Diubah oleh", <ByCell key="u" email={p.updatedBy} />],
+  ];
   return (
-    <tr>
-      <td className={`${tdClass} align-top`}>
-        <Link
-          to="/produk/$id"
-          params={{ id: p.id }}
-          className="flex items-center min-h-9 -my-1 font-medium text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+    <div className="border-b border-line">
+      <div
+        className="flex items-center gap-2 pl-4 pr-3 min-h-11 cursor-pointer"
+        onClick={onToggleOpen}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex-1 min-w-0 text-left font-medium break-words py-1"
         >
           {p.namaProduk}
-        </Link>
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pb-1 text-xs text-faint min-w-0">
-          {on("tipe") && (
-            <span className={`${badgeClass} ${typeBadgeClass(p.tipe)}`}>
-              {p.tipe}
-            </span>
-          )}
-          {on("ukuran") && ukuran && <span>{ukuran}</span>}
-          {on("hargaDasar") && (
-            <MobileField label="Dasar">
-              <span className="tabular-nums">{formatUang(p.hargaDasar)}</span>
-            </MobileField>
-          )}
-          {on("konversi") &&
-            p.konversi.map((kv, i) => (
-              <span
-                key={i}
-                className="inline-block bg-brand-soft text-brand-text rounded-md px-2 py-0.5 font-semibold"
-              >
-                1 {kv.nama} = {formatAngka(kv.jumlah)} ·{" "}
-                {formatRupiah(kv.harga)}
-              </span>
+        </button>
+        <span className={`${badgeClass} ${typeBadgeClass(p.tipe)}`}>
+          {p.tipe}
+        </span>
+        <span className="tabular-nums font-medium whitespace-nowrap">
+          {formatUang(p.hargaJual)}
+        </span>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+        />
+      </div>
+      {open && (
+        <div className="bg-surface-sunken border-t border-line px-4 py-3 text-sm">
+          <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+            {kv.map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-faint">{label}</dt>
+                <dd className="text-right tabular-nums font-medium break-words">
+                  {value}
+                </dd>
+              </Fragment>
             ))}
-          {on("createdAt") && (
-            <MobileField label="Dibuat">
-              {formatDateTimeID(p.createdAt)}
-            </MobileField>
-          )}
-          {on("updatedAt") && (
-            <MobileField label="Diperbarui">
-              {formatDateTimeID(p.updatedAt)}
-            </MobileField>
-          )}
-          <MobileBy
-            show={{ created: on("createdBy"), updated: on("updatedBy") }}
-            row={p}
-          />
-        </div>
-      </td>
-      <td
-        className={`${tdClass} align-top text-right tabular-nums whitespace-nowrap`}
-      >
-        <div className="flex items-center justify-end min-h-7 font-medium">
-          {on("hargaJual") && formatUang(p.hargaJual)}
-        </div>
-        {on("laba") && (
-          <div
-            className={`text-xs pb-1 ${laba < 0 ? "text-danger" : "text-ok"}`}
-          >
-            {on("hargaJual") ? formatUang(laba) : `Laba ${formatUang(laba)}`}
+          </dl>
+          <div className="flex justify-end gap-2 mt-3">
+            <Link
+              to="/produk/$id"
+              params={{ id: p.id }}
+              className="inline-flex items-center min-h-8 px-3 text-sm font-medium text-brand hover:underline"
+            >
+              Detail
+            </Link>
+            <Button size="sm" onClick={onEdit}>
+              <PencilIcon /> Edit
+            </Button>
           </div>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function MobilePriceTable({
-  table,
-  visible,
-}: {
-  table: Table<Product>;
-  visible: Record<string, boolean>;
-}) {
-  // Sorting stays reachable on a phone: the two headers drive the same
-  // TanStack columns the desktop table sorts by, so the order matches across
-  // both layouts. Hiding a column in TanStack does not remove it from
-  // getColumn, so the price header checks the toggle itself.
-  const nama = table.getColumn("namaProduk");
-  const harga = table.getColumn("hargaJual");
-  const hargaOn = visible.hargaJual !== false;
-  return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr>
-          {nama && <SortHeader column={nama} label="Produk" />}
-          {harga && hargaOn ? (
-            <SortHeader column={harga} label="Harga Satuan (Rp)" num />
-          ) : (
-            <th className={thClass} />
-          )}
-        </tr>
-      </thead>
-      <tbody>
-        {table.getRowModel().rows.map((row) => (
-          <MobilePriceRow key={row.id} row={row} visible={visible} />
-        ))}
-      </tbody>
-    </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -213,6 +178,14 @@ export function PricesPage() {
   const [creating, setCreating] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
   const [sorting, setSorting] = useState<SortingState>([
     { id: "namaProduk", desc: false },
   ]);
@@ -357,10 +330,7 @@ export function PricesPage() {
         id: "aksi",
         header: "",
         enableHiding: false,
-        // Same two actions, same single click each (D6 — no flow change).
-        // Icon-only per the row-action convention: Ubah (✎) and Hapus (🗑️),
-        // each carrying its Indonesian wording in title/aria-label instead of
-        // as visible text.
+        // One pencil opens the single edit dialog; Hapus lives inside it.
         cell: (c) => {
           const p = c.row.original;
           return (
@@ -373,14 +343,6 @@ export function PricesPage() {
               >
                 <PencilIcon />
               </GhostButton>
-              <DangerGhostButton
-                size="sm"
-                title={`Hapus ${p.namaProduk}`}
-                aria-label={`Hapus ${p.namaProduk}`}
-                onClick={() => setDeleting(p)}
-              >
-                <TrashIcon />
-              </DangerGhostButton>
             </div>
           );
         },
@@ -406,10 +368,17 @@ export function PricesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Daftar Harga</h1>
-      <p className="text-faint mb-4">
-        Produk, harga satuan, dan konversi kemasan (mis. 1 box = 12 unit).
-      </p>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold mb-1">Daftar Harga</h1>
+          <p className="text-faint">
+            Produk, harga satuan, dan konversi kemasan (mis. 1 box = 12 unit).
+          </p>
+        </div>
+        <PrimaryButton onClick={() => setCreating(true)}>
+          <PlusIcon /> Tambah Produk
+        </PrimaryButton>
+      </div>
 
       <Panel flush className="-mx-4 md:mx-0">
         <div className="px-4 md:px-0">
@@ -425,20 +394,36 @@ export function PricesPage() {
             }
             actions={
               <>
-                <PrimaryButton onClick={() => setCreating(true)}>
-                  + Tambah Produk
-                </PrimaryButton>
                 <Button
                   onClick={() => setCatalogOpen(true)}
                   disabled={products.length === 0}
                 >
                   Ekspor Katalog
                 </Button>
-                <ColumnToggle
-                  columns={TOGGLE_COLUMNS}
-                  visible={visible}
-                  onToggle={toggleColumn}
-                />
+                <Button
+                  className="md:!hidden"
+                  onClick={() =>
+                    setExpanded(
+                      expanded.size > 0
+                        ? new Set()
+                        : new Set(
+                            table.getRowModel().rows.map((r) => r.original.id),
+                          ),
+                    )
+                  }
+                >
+                  <ChevronDownIcon
+                    className={expanded.size > 0 ? "rotate-180" : undefined}
+                  />
+                  {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+                </Button>
+                <div className="hidden md:block">
+                  <ColumnToggle
+                    columns={TOGGLE_COLUMNS}
+                    visible={visible}
+                    onToggle={toggleColumn}
+                  />
+                </div>
               </>
             }
           />
@@ -446,7 +431,15 @@ export function PricesPage() {
 
         <DataTable
           table={table}
-          mobile={<MobilePriceTable table={table} visible={visible} />}
+          mobile={table.getRowModel().rows.map((row) => (
+            <PhoneRow
+              key={row.id}
+              p={row.original}
+              open={expanded.has(row.original.id)}
+              onToggleOpen={() => toggleExpanded(row.original.id)}
+              onEdit={() => setEditing(row.original)}
+            />
+          ))}
           empty={
             // Two different situations wearing one message until now. "Belum
             // ada produk" is a setup problem and wants the add button; a search
@@ -489,6 +482,14 @@ export function PricesPage() {
           product={editing}
           types={types}
           onSave={upsert}
+          onDelete={
+            editing
+              ? () => {
+                  setDeleting(editing);
+                  setEditing(null);
+                }
+              : undefined
+          }
           onClose={() => {
             setEditing(null);
             setCreating(false);
@@ -513,8 +514,8 @@ export function PricesPage() {
           onClose={() => setDeleting(null)}
         >
           <p>
-            <strong>{deleting.namaProduk}</strong> akan hilang dari daftar
-            harga. Tidak bisa dibatalkan.
+            <strong>1 produk</strong> ({deleting.namaProduk}) akan hilang
+            dari daftar harga. Tidak bisa dibatalkan.
           </p>
           <p>
             Pesanan, pembelian, dan stok yang sudah tercatat tidak ikut

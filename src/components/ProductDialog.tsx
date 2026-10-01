@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Product, Conversion } from "../lib/types";
 import { uid, nowISO, formatRupiah } from "../lib/format";
 import { addType } from "../lib/store";
-import { Button, PrimaryButton, DangerGhostButton } from "./Button";
+import { Button, PrimaryButton, DangerButton, DangerGhostButton } from "./Button";
 import { Input } from "./Input";
 import { Field } from "./Field";
 import { TypeSelect } from "./TypeSelect";
@@ -14,9 +14,17 @@ interface Props {
   types: string[]; // existing type names for the dropdown
   onSave: (p: Product) => void;
   onClose: () => void;
+  // Editing only: delete lives here, behind the page's confirm dialog.
+  onDelete?: () => void;
 }
 
-export function ProductDialog({ product, types, onSave, onClose }: Props) {
+export function ProductDialog({
+  product,
+  types,
+  onSave,
+  onClose,
+  onDelete,
+}: Props) {
   const [namaProduk, setNama] = useState(product?.namaProduk ?? "");
   const [tipe, setTipe] = useState(product?.tipe ?? "Bar");
   const [ukuran, setUkuran] = useState(
@@ -89,7 +97,8 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
   return (
     <Modal
       onClose={onClose}
-      className="bg-surface p-5 w-full max-w-xl overflow-auto"
+      closeOnOverlay={false}
+      className="bg-surface p-4 md:p-5 w-full max-w-xl overflow-auto"
     >
         <h2 className="text-xl font-bold mb-4">
           {product ? "Ubah Produk" : "Tambah Produk"}
@@ -245,7 +254,13 @@ export function ProductDialog({ product, types, onSave, onClose }: Props) {
           </div>
         ))}
 
-        <div className="flex gap-3 justify-end mt-5">
+        <div className="flex flex-wrap items-center gap-2 mt-5">
+          {product && onDelete && (
+            <DangerButton onClick={onDelete}>
+              <TrashIcon /> Hapus
+            </DangerButton>
+          )}
+          <span className="flex-1" />
           <Button onClick={onClose}>Batal</Button>
           <PrimaryButton onClick={submit}>Simpan</PrimaryButton>
         </div>
