@@ -14,18 +14,18 @@ import type {
   Product,
   PurchaseItem,
 } from "../lib/types";
-import { modalCostFor } from "../lib/purchaseFromOrder";
+import { modalCostFor, purchaseFromOrderItem } from "../lib/purchaseFromOrder";
 import {
   useProducts,
   useOrders,
   useBuyers,
   addOrder,
-  deleteOrder,
+  deleteOrders,
+  updateOrder,
   setOrderStatus,
   setOrdersStatus,
   addPurchase,
   linkOrderProduct,
-  setOrderBuyer,
   setOrdersBuyer,
   upsertBuyer,
   useBuyerBackfillPending,
@@ -46,32 +46,31 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCells, ByHeaders, MobileBy } from "../components/Attribution";
+import { ByCell, ByCells, ByHeaders } from "../components/Attribution";
 import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
-import { AddItemForm } from "../components/AddItemForm";
+import {
+  AddOrderDialog,
+  EditOrderDialog,
+  type NewOrder,
+} from "../components/OrderDialog";
+import { DeleteOrdersDialog } from "../components/DeleteOrdersDialog";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
 import { LinkProductDialog } from "../components/LinkProductDialog";
 import { BuyerBackfillDialog } from "../components/BuyerBackfillDialog";
 import { BuyerSelect } from "../components/BuyerSelect";
-import { Button, DangerGhostButton, GhostButton } from "../components/Button";
+import { Button, GhostButton, PrimaryButton } from "../components/Button";
 import { FilterBar } from "../components/FilterBar";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
-import {
-  MobileField,
-  MobileList,
-  MobileRow,
-  qtyTimesHarga,
-} from "../components/MobileList";
 import { thClass, tdClass } from "../components/DataTable";
 import {
-  TrashIcon,
+  PlusIcon,
+  ChevronDownIcon,
   PencilIcon,
   EyeIcon,
   EyeOffIcon,
-  CloseIcon,
   AlertIcon,
 } from "../components/icons";
 
@@ -321,19 +320,27 @@ export function OrdersPage() {
 
   const filter = useOrderFilter(orders, products);
   const { filtered, hasFilter } = filter;
-  // The slice of orders open in the "Beli stok dari pesanan" dialog. Scoped by
-  // buyer as well as date whenever the table is split per pembeli — otherwise
-  // the button under "Andi · 5 Agustus" would open Budi's items for the same
-  // day too, and the whole point of splitting is that you are looking at one
-  // buyer at a time.
-  const [buying, setBuying] = useState<{
-    tanggal: string;
-    buyerId: string | null;
-  } | null>(null);
+  // "Beli stok" now works on the ticked rows (the bulk bar), so it is just open
+  // or closed: the dialog reads `chosen` for its items.
+  const [buying, setBuying] = useState(false);
+  const [adding, setAdding] = useState(false);
+  // The buyer survives the Add dialog closing: consecutive orders for one buyer
+  // are the common case, and clearing it forces a re-pick on every save.
+  const [addBuyerId, setAddBuyerId] = useState("");
+  const [editing, setEditing] = useState<OrderItem | null>(null);
+  const [deleting, setDeleting] = useState<Set<string> | null>(null);
+  // Phone rows opened into their detail card.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   // The unlinked order row whose "Tautkan Produk" dialog is open.
   const [linking, setLinking] = useState<OrderItem | null>(null);
-  // The order row whose buyer cell is currently showing the picker.
-  const [assigning, setAssigning] = useState<string | null>(null);
   // Rows ticked for a bulk edit. Kept as raw ids, never pruned on filter
   // change: narrowing the filter and widening it again should give you your
   // selection back. Every read goes through `chosen` below instead.
@@ -399,16 +406,29 @@ export function OrdersPage() {
     [products],
   );
 
-  function createBuyerFor(orderId: string, nama: string) {
-    const row = newBuyer(nama);
-    upsertBuyer(row);
-    setOrderBuyer(orderId, row.id);
-    setAssigning(null);
+  function addItems(items: NewOrder[]) {
+    for (const { order, buyStock } of items) {
+      addOrder(order);
+      if (!buyStock) continue;
+      // "Beli stok": the Beli Stok button's job, in the same step. Buy at Harga
+      // Dasar, then the offsetting sale for this order.
+      addPurchase(
+        purchaseFromOrderItem(
+          order,
+          productById.get(order.productId),
+        ),
+        "pembelian dari pesanan langsung untuk stok (by order)",
+        order,
+      );
+    }
   }
-
-  function addItems(items: OrderItem[]) {
-    for (const item of items) addOrder(item);
-  }
+  // The dialog's heading names one date when every ticked row shares it.
+  const buyingDate = useMemo(() => {
+    const dates = new Set(
+      orders.filter((o) => chosen.has(o.id)).map((o) => o.tanggal),
+    );
+    return dates.size === 1 ? [...dates][0] : "";
+  }, [orders, chosen]);
   function commitPurchases(
     items: { purchase: PurchaseItem; order: OrderItem }[],
   ) {
@@ -419,9 +439,6 @@ export function OrdersPage() {
         item.order,
       );
     // Dialog stays open to show its success view; it closes itself via onClose.
-  }
-  function removeItem(id: string) {
-    deleteOrder(id);
   }
   const sections = useMemo<BuyerSection[]>(() => {
     const sectionOf = (
@@ -487,17 +504,24 @@ export function OrdersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Pesanan</h1>
-      <p className="text-faint mb-4">
-        Tambah item dari daftar harga, lihat riwayat per tanggal.
-      </p>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold mb-1">Pesanan</h1>
+          <p className="text-faint">
+            Tambah item dari daftar harga, lihat riwayat per tanggal.
+          </p>
+        </div>
+        {products.length > 0 && (
+          <PrimaryButton onClick={() => setAdding(true)}>
+            <PlusIcon /> Tambah
+          </PrimaryButton>
+        )}
+      </div>
 
-      {products.length === 0 ? (
+      {products.length === 0 && (
         <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
-      ) : (
-        <AddItemForm products={products} onAdd={addItems} />
       )}
 
       <FilterBar filter={filter} className="flex gap-3 flex-wrap items-end">
@@ -536,7 +560,27 @@ export function OrdersPage() {
             {hiddenCount > 0 && ` (${hiddenCount} disembunyikan)`}
           </span>
           <span className="flex-1" />
-          <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+          {/* Phone: one switch for every row's detail card. Desktop keeps the
+              Kolom menu instead, since its rows are columns, not cards. */}
+          <Button
+            size="sm"
+            className="md:!hidden"
+            onClick={() =>
+              setExpanded(
+                expanded.size > 0
+                  ? new Set()
+                  : new Set(filtered.map((o) => o.id)),
+              )
+            }
+          >
+            <ChevronDownIcon
+              className={expanded.size > 0 ? "rotate-180" : undefined}
+            />
+            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+          </Button>
+          <div className="hidden md:block">
+            <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+          </div>
         </div>
 
         {chosen.size > 0 && (
@@ -546,6 +590,7 @@ export function OrdersPage() {
             onStatus={bulkStatus}
             onBuyer={bulkBuyer}
             onCreateBuyer={bulkCreateBuyer}
+            onBuy={() => setBuying(true)}
             onClear={clearSelection}
           />
         )}
@@ -559,246 +604,66 @@ export function OrdersPage() {
         ) : (
           <>
             {/* The phone layout. Nine-plus columns do not fit on 390px, so
-                below `md` the row collapses to what it IS on the left and
-                what it is WORTH on the right — same shape as Beli Stock and
-                Harga. The leading select-all/select checkboxes and the
-                trailing hide/delete actions have nowhere else to go on a
-                phone, so they ride along on the product side; status and
-                pembeli stay their full interactive selves (the badge-styled
-                dropdown and the buyer picker) rather than flattening to
-                plain text, since neither the phone layout nor the desktop
-                one should be able to do something the other can't. The Kolom
-                toggle applies here as on the wide table: each column switched
-                on restacks into the row, each switched off leaves it. Only the
-                product name stays regardless — it holds the checkbox and the
-                link, so it is the row. */}
+                below `md` a row is name, status and price, and tapping it opens
+                a label / value card with everything else. There is no Kolom
+                menu here: the collapsed row is fixed, and the card is where the
+                detail lives. */}
             <div className="md:hidden">
-              <MobileList
-                left="Produk"
-                right={visible.totalHarga !== false ? "Total" : ""}
-              >
-                {sections.map((s) => (
-                  <Fragment key={s.key}>
-                    {s.label !== null && (
-                      <tr className="bg-brand-soft border-t-2 border-brand-line">
-                        <td className={tdClass}>
-                          <div className="flex items-center gap-2">
-                            <SelectAllBox
-                              ids={s.items.map((i) => i.id)}
-                              selected={chosen}
-                              onToggle={toggleAll}
-                              title={`Pilih semua item ${s.label}`}
-                            />
-                            <span className="font-bold text-brand-strong">
-                              {s.label}
-                              <span className="ml-1 font-normal text-brand-edge">
-                                · {s.items.length} item
-                              </span>
-                            </span>
-                          </div>
-                        </td>
-                        <td
-                          className={`${tdClass} text-right font-bold tabular-nums text-brand-strong`}
-                        >
-                          {formatRupiah(s.total)}
-                        </td>
-                      </tr>
-                    )}
-                    {s.dates.map((g) => (
-                      <Fragment key={g.tanggal}>
-                        {/* Scrolling a long day, the one thing you lose
-                            first is which day you are looking at — the
-                            amounts below stop meaning anything without it.
-                            The date row pins under the fixed app bar
-                            (`top-14`) and carries its own background, since
-                            a `<tr>`'s paint does not travel with a stuck
-                            `<td>`. "Beli stok" rides along inside it instead
-                            of costing a row of its own. */}
-                        <tr className="font-bold">
-                          <td
-                            className={`${tdClass} sticky top-14 z-10 bg-surface-hover`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <SelectAllBox
-                                ids={g.items.map((i) => i.id)}
-                                selected={chosen}
-                                onToggle={toggleAll}
-                                title={`Pilih semua item ${formatTanggalID(g.tanggal)}`}
-                              />
-                              {formatTanggalID(g.tanggal)}
-                            </div>
-                          </td>
-                          <td
-                            className={`${tdClass} sticky top-14 z-10 bg-surface-hover text-right font-bold tabular-nums`}
-                          >
-                            <div className="flex items-center justify-end gap-2">
-                              {formatRupiah(g.total)}
-                              <Button
-                                size="sm"
-                                className="min-h-9 min-w-0 px-2 py-1 text-xs font-semibold"
-                                onClick={() =>
-                                  setBuying({
-                                    tanggal: g.tanggal,
-                                    buyerId: s.buyerId,
-                                  })
-                                }
-                                title="Catat pembelian stok untuk tanggal ini"
-                              >
-                                Beli stok
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                        {g.items.map((it) => (
-                          <MobileRow
-                            key={it.id}
-                            // Same row-state paint as the desktop `<tr>`: a
-                            // line excluded from the total reads dimmed, a
-                            // selected one reads tinted.
-                            className={`${hidden.has(it.id) ? "opacity-40" : ""} ${chosen.has(it.id) ? "bg-brand-soft" : ""}`}
-                            title={
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  className="accent-brand shrink-0"
-                                  checked={chosen.has(it.id)}
-                                  onChange={() => toggleSelected(it.id)}
-                                  aria-label={`Pilih ${it.namaProduk}`}
-                                />
-                                {it.productId ? (
-                                  <Link
-                                    to="/produk/$id"
-                                    params={{ id: it.productId }}
-                                    className="text-brand hover:underline font-medium"
-                                  >
-                                    {it.namaProduk}
-                                  </Link>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
-                                    title="Belum tertaut ke produk — klik untuk menautkan"
-                                    onClick={() => setLinking(it)}
-                                  >
-                                    <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
-                                  </button>
-                                )}
-                              </div>
-                            }
-                            meta={
-                              <>
-                                {visible.satuan !== false && (
-                                  <span>{it.satuan}</span>
-                                )}
-                                {visible.status !== false && (
-                                  <Select
-                                    className={`w-auto py-0.5 text-xs ${statusSelectClass(it.status)}`}
-                                    value={it.status}
-                                    onChange={(e) =>
-                                      setOrderStatus(
-                                        it.id,
-                                        e.target.value as OrderStatus,
-                                      )
-                                    }
-                                  >
-                                    <option value="pending">Pending</option>
-                                    <option value="paid">Paid</option>
-                                  </Select>
-                                )}
-                                {visible.buyer !== false && (
-                                <BuyerCell
-                                  item={it}
-                                  buyers={buyers}
-                                  buyerById={buyerById}
-                                  picking={assigning === it.id}
-                                  onPick={() => setAssigning(it.id)}
-                                  onChange={(buyerId) => {
-                                    setOrderBuyer(it.id, buyerId);
-                                    setAssigning(null);
-                                  }}
-                                  onCreate={(nama) =>
-                                    createBuyerFor(it.id, nama)
-                                  }
-                                  onCancel={() => setAssigning(null)}
-                                />
-                                )}
-                                {visible.modalSatuan !== false && (
-                                  <MobileField label="Dasar">
-                                    <ModalValue
-                                      modal={orderModal(
-                                        it,
-                                        productById,
-                                        productByName,
-                                      )}
-                                    />
-                                  </MobileField>
-                                )}
-                                {visible.createdAt !== false && (
-                                  <MobileField label="Dibuat">
-                                    {formatDateTimeID(it.createdAt)}
-                                  </MobileField>
-                                )}
-                                {visible.updatedAt !== false && (
-                                  <MobileField label="Diperbarui">
-                                    {formatDateTimeID(it.updatedAt)}
-                                  </MobileField>
-                                )}
-                                <MobileBy show={byVisible} row={it} />
-                                {/* No `w-full` wrapper: forcing the two row
-                                    actions onto a line of their own cost a
-                                    full 44px band of empty space under every
-                                    item. They wrap with the rest of the meta
-                                    now, and fill the tail of whichever line
-                                    they land on. */}
-                                <span className="ml-auto flex items-center gap-0.5">
-                                  <GhostButton
-                                    size="sm"
-                                    onClick={() => toggleHidden(it.id)}
-                                    title={
-                                      hidden.has(it.id)
-                                        ? "Tampilkan & hitung di total"
-                                        : "Sembunyikan dari total"
-                                    }
-                                    aria-label={
-                                      hidden.has(it.id)
-                                        ? "Tampilkan & hitung di total"
-                                        : "Sembunyikan dari total"
-                                    }
-                                  >
-                                    {hidden.has(it.id) ? (
-                                      <EyeOffIcon />
-                                    ) : (
-                                      <EyeIcon />
-                                    )}
-                                  </GhostButton>
-                                  <DangerGhostButton
-                                    size="sm"
-                                    onClick={() => removeItem(it.id)}
-                                    title={`Hapus "${it.namaProduk}"`}
-                                    aria-label={`Hapus "${it.namaProduk}"`}
-                                  >
-                                    <TrashIcon />
-                                  </DangerGhostButton>
-                                </span>
-                              </>
-                            }
-                            value={
-                              visible.totalHarga !== false
-                                ? formatRupiah(it.totalHarga)
-                                : null
-                            }
-                            note={qtyTimesHarga(
-                              visible,
-                              it.kuantitas,
-                              it.hargaSatuan,
-                            )}
-                          />
-                        ))}
-                      </Fragment>
-                    ))}
-                  </Fragment>
-                ))}
-              </MobileList>
+              {sections.map((s) => (
+                <Fragment key={s.key}>
+                  {s.label !== null && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-brand-soft border-t-2 border-brand-line font-bold text-brand-strong">
+                      <SelectAllBox
+                        ids={s.items.map((i) => i.id)}
+                        selected={chosen}
+                        onToggle={toggleAll}
+                        title={`Pilih semua item ${s.label}`}
+                      />
+                      <span className="flex-1 min-w-0 break-words">
+                        {s.label}
+                        <span className="ml-1 font-normal text-brand-edge">
+                          · {s.items.length} item
+                        </span>
+                      </span>
+                      <span className="tabular-nums">{formatRupiah(s.total)}</span>
+                    </div>
+                  )}
+                  {s.dates.map((g) => (
+                    <Fragment key={g.tanggal}>
+                      {/* The date pins under the fixed app bar (`top-14`) and
+                          carries its own background. Scrolling a long day, the
+                          first thing you lose is which day you are on. */}
+                      <div className="sticky top-14 z-10 flex items-center gap-2 px-3 py-1.5 bg-surface-hover border-b border-line text-sm font-bold">
+                        <SelectAllBox
+                          ids={g.items.map((i) => i.id)}
+                          selected={chosen}
+                          onToggle={toggleAll}
+                          title={`Pilih semua item ${formatTanggalID(g.tanggal)}`}
+                        />
+                        <span className="flex-1">{formatTanggalID(g.tanggal)}</span>
+                        <span className="tabular-nums">{formatRupiah(g.total)}</span>
+                      </div>
+                      {g.items.map((it) => (
+                        <PhoneRow
+                          key={it.id}
+                          item={it}
+                          open={expanded.has(it.id)}
+                          onToggleOpen={() => toggleExpanded(it.id)}
+                          selected={chosen.has(it.id)}
+                          onSelect={() => toggleSelected(it.id)}
+                          dimmed={hidden.has(it.id)}
+                          onToggleHidden={() => toggleHidden(it.id)}
+                          onEdit={() => setEditing(it)}
+                          onLink={() => setLinking(it)}
+                          onStatus={(st) => setOrderStatus(it.id, st)}
+                          buyerById={buyerById}
+                          modal={orderModal(it, productById, productByName)}
+                        />
+                      ))}
+                    </Fragment>
+                  ))}
+                </Fragment>
+              ))}
             </div>
 
             <div className="overflow-x-auto hidden md:block">
@@ -888,24 +753,12 @@ export function OrdersPage() {
                           group={g}
                           visible={visible}
                           hidden={hidden}
-                          onToggleHidden={toggleHidden}
-                          onRemove={removeItem}
+                          onEdit={setEditing}
                           onSetStatus={setOrderStatus}
-                          onBuy={() =>
-                            setBuying({
-                              tanggal: g.tanggal,
-                              buyerId: s.buyerId,
-                            })
-                          }
                           onLink={setLinking}
                           productById={productById}
                           productByName={productByName}
-                          buyers={buyers}
                           buyerById={buyerById}
-                          assigning={assigning}
-                          onAssign={setAssigning}
-                          onSetBuyer={setOrderBuyer}
-                          onCreateBuyer={createBuyerFor}
                           selected={chosen}
                           onToggleSelected={toggleSelected}
                           onToggleAll={toggleAll}
@@ -920,17 +773,58 @@ export function OrdersPage() {
         )}
       </Panel>
 
+      {adding && (
+        <AddOrderDialog
+          products={products}
+          buyerId={addBuyerId}
+          onBuyerChange={setAddBuyerId}
+          onSave={addItems}
+          onClose={() => setAdding(false)}
+        />
+      )}
+
+      {editing && (
+        <EditOrderDialog
+          order={editing}
+          products={products}
+          hidden={hidden.has(editing.id)}
+          onSave={(edit, hide) => {
+            updateOrder(editing.id, edit);
+            if (hide !== hidden.has(editing.id)) toggleHidden(editing.id);
+          }}
+          onDelete={() => {
+            setDeleting(new Set([editing.id]));
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {deleting && (
+        <DeleteOrdersDialog
+          ids={deleting}
+          onConfirm={(opts) => {
+            deleteOrders(deleting, opts);
+            setSelected((prev) => {
+              const next = new Set(prev);
+              for (const id of deleting) next.delete(id);
+              return next;
+            });
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+
       {buying && (
         <BuyFromOrderDialog
-          tanggal={buying.tanggal}
-          items={orders.filter(
-            (o) =>
-              o.tanggal === buying.tanggal &&
-              (buying.buyerId === null || o.buyerId === buying.buyerId),
-          )}
+          tanggal={buyingDate}
+          items={orders.filter((o) => chosen.has(o.id))}
           products={products}
           onConfirm={commitPurchases}
-          onClose={() => setBuying(null)}
+          onClose={() => {
+            setBuying(false);
+            clearSelection();
+          }}
         />
       )}
 
@@ -956,23 +850,225 @@ export function OrdersPage() {
   );
 }
 
+// One-tap status. The badge IS the control: tapping flips pending/paid, the same
+// single write the old inline dropdown made, without a menu in between.
+function StatusBadge({
+  status,
+  onToggle,
+}: {
+  status: OrderStatus;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      title={status === "paid" ? "Paid — ketuk untuk jadikan Pending" : "Pending — ketuk untuk jadikan Paid"}
+      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs cursor-pointer whitespace-nowrap ${statusSelectClass(status)}`}
+    >
+      {status === "paid" ? "Paid" : "Pending"}
+    </button>
+  );
+}
+
+function ProductLink({
+  item,
+  onLink,
+}: {
+  item: OrderItem;
+  onLink: (item: OrderItem) => void;
+}) {
+  return item.productId ? (
+    <Link
+      to="/produk/$id"
+      params={{ id: item.productId }}
+      className="text-brand hover:underline font-medium"
+    >
+      {item.namaProduk}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
+      title="Belum tertaut ke produk — klik untuk menautkan"
+      onClick={() => onLink(item)}
+    >
+      <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {item.namaProduk}
+    </button>
+  );
+}
+
+// A row with no buyer gets a grey chip, not the amber one an unlinked product
+// gets: an unlinked product is a data defect, a buyerless order is very often
+// just the truth. Changing the buyer now happens in the Edit dialog.
+function BuyerName({
+  item,
+  buyerById,
+}: {
+  item: OrderItem;
+  buyerById: Map<string, Buyer>;
+}) {
+  if (!item.buyerId) return <span className="text-faint">— tanpa pembeli —</span>;
+  const buyer = buyerById.get(item.buyerId);
+  // deleteBuyer does not cascade, so a live order can point at a tombstoned
+  // buyer. Say so instead of rendering a link that lands on a not-found page.
+  return buyer ? (
+    <Link
+      to="/pembeli/$id"
+      params={{ id: buyer.id }}
+      className="text-brand hover:underline font-medium whitespace-nowrap"
+    >
+      {buyer.nama}
+    </Link>
+  ) : (
+    <span className="text-faint italic">(pembeli dihapus)</span>
+  );
+}
+
+// Profit on a line when a Harga Dasar exists to compute it from.
+function untung(
+  it: OrderItem,
+  modal: { value: number; estimate: boolean } | null,
+): { value: number; estimate: boolean } | null {
+  return modal
+    ? {
+        value: (it.hargaSatuan - modal.value) * it.kuantitas,
+        estimate: modal.estimate,
+      }
+    : null;
+}
+
+function PhoneRow({
+  item: it,
+  open,
+  onToggleOpen,
+  selected,
+  onSelect,
+  dimmed,
+  onToggleHidden,
+  onEdit,
+  onLink,
+  onStatus,
+  buyerById,
+  modal,
+}: {
+  item: OrderItem;
+  open: boolean;
+  onToggleOpen: () => void;
+  selected: boolean;
+  onSelect: () => void;
+  dimmed: boolean;
+  onToggleHidden: () => void;
+  onEdit: () => void;
+  onLink: () => void;
+  onStatus: (status: OrderStatus) => void;
+  buyerById: Map<string, Buyer>;
+  modal: { value: number; estimate: boolean } | null;
+}) {
+  const profit = untung(it, modal);
+  const kv: [string, React.ReactNode][] = [
+    ["Satuan", it.satuan],
+    ["Qty", formatAngka(it.kuantitas)],
+    ["Harga satuan", formatRupiah(it.hargaSatuan)],
+    ["Harga dasar", <ModalValue key="m" modal={modal} />],
+    [
+      "Untung",
+      profit ? (
+        <span className={profit.value < 0 ? "text-danger" : "text-ok"}>
+          {profit.estimate && "≈ "}
+          {profit.value < 0 ? "− " : "+ "}
+          {formatRupiah(Math.abs(profit.value))}
+        </span>
+      ) : (
+        <span className="text-faint">—</span>
+      ),
+    ],
+    ["Pembeli", <BuyerName key="b" item={it} buyerById={buyerById} />],
+    ["Dibuat", formatDateTimeID(it.createdAt)],
+    ["Diperbarui", formatDateTimeID(it.updatedAt)],
+    ["Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
+    ["Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
+  ];
+
+  return (
+    <div
+      className={`border-b border-line ${dimmed ? "opacity-40" : ""} ${selected ? "bg-brand-soft" : ""}`}
+    >
+      <div
+        className="flex items-center gap-2 pl-3 pr-2 min-h-11 cursor-pointer"
+        onClick={onToggleOpen}
+      >
+        <input
+          type="checkbox"
+          className="accent-brand shrink-0"
+          checked={selected}
+          onClick={(e) => e.stopPropagation()}
+          onChange={onSelect}
+          aria-label={`Pilih ${it.namaProduk}`}
+        />
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex-1 min-w-0 text-left font-medium break-words py-1"
+        >
+          {!it.productId && (
+            <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5 mr-1 text-warn" />
+          )}
+          {it.namaProduk}
+        </button>
+        <StatusBadge status={it.status} onToggle={() => onStatus(it.status === "paid" ? "pending" : "paid")} />
+        <span className="tabular-nums font-medium whitespace-nowrap">
+          {formatRupiah(it.totalHarga)}
+        </span>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+        />
+      </div>
+
+      {open && (
+        <div className="bg-surface-sunken border-t border-line px-3 py-3 text-sm">
+          <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+            <dt className="text-faint">Produk</dt>
+            <dd className="text-right">
+              <ProductLink item={it} onLink={onLink} />
+            </dd>
+            {kv.map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-faint">{label}</dt>
+                <dd className="text-right tabular-nums font-medium break-words">
+                  {value}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="flex justify-end gap-2 mt-3">
+            <Button size="sm" onClick={onToggleHidden}>
+              {dimmed ? <EyeOffIcon /> : <EyeIcon />}
+              {dimmed ? "Hitung lagi" : "Sembunyikan"}
+            </Button>
+            <Button size="sm" onClick={onEdit}>
+              <PencilIcon /> Edit
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroupRows({
   group,
   visible,
   hidden,
-  onToggleHidden,
-  onRemove,
+  onEdit,
   onSetStatus,
-  onBuy,
   onLink,
   productById,
   productByName,
-  buyers,
   buyerById,
-  assigning,
-  onAssign,
-  onSetBuyer,
-  onCreateBuyer,
   selected,
   onToggleSelected,
   onToggleAll,
@@ -980,19 +1076,12 @@ function GroupRows({
   group: DateGroup;
   visible: Record<string, boolean>;
   hidden: Set<string>;
-  onToggleHidden: (id: string) => void;
-  onRemove: (id: string) => void;
+  onEdit: (item: OrderItem) => void;
   onSetStatus: (id: string, status: OrderStatus) => void;
-  onBuy: () => void;
   onLink: (item: OrderItem) => void;
   productById: Map<string, Product>;
   productByName: Map<string, Product>;
-  buyers: Buyer[];
   buyerById: Map<string, Buyer>;
-  assigning: string | null;
-  onAssign: (id: string | null) => void;
-  onSetBuyer: (id: string, buyerId: string) => void;
-  onCreateBuyer: (orderId: string, nama: string) => void;
   selected: Set<string>;
   onToggleSelected: (id: string) => void;
   onToggleAll: (ids: string[]) => void;
@@ -1028,15 +1117,7 @@ function GroupRows({
             {formatRupiah(group.total)}
           </td>
         )}
-        <td className={`${tdClass} text-right`} colSpan={afterCount}>
-          <Button
-            size="sm"
-            onClick={onBuy}
-            title="Catat pembelian stok untuk tanggal ini"
-          >
-            Beli stok
-          </Button>
-        </td>
+        <td className={tdClass} colSpan={afterCount} />
       </tr>
       {group.items.map((it) => (
         <tr
@@ -1056,24 +1137,7 @@ function GroupRows({
           </td>
           {visible.namaProduk !== false && (
             <td className={tdClass}>
-              {it.productId ? (
-                <Link
-                  to="/produk/$id"
-                  params={{ id: it.productId }}
-                  className="text-brand hover:underline font-medium"
-                >
-                  {it.namaProduk}
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
-                  title="Belum tertaut ke produk — klik untuk menautkan"
-                  onClick={() => onLink(it)}
-                >
-                  <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
-                </button>
-              )}
+              <ProductLink item={it} onLink={onLink} />
             </td>
           )}
           {visible.satuan !== false && <td className={tdClass}>{it.satuan}</td>}
@@ -1101,33 +1165,17 @@ function GroupRows({
           )}
           {visible.status !== false && (
             <td className={tdClass}>
-              <Select
-                className={`w-auto py-1 ${statusSelectClass(it.status)}`}
-                value={it.status}
-                onChange={(e) =>
-                  onSetStatus(it.id, e.target.value as OrderStatus)
+              <StatusBadge
+                status={it.status}
+                onToggle={() =>
+                  onSetStatus(it.id, it.status === "paid" ? "pending" : "paid")
                 }
-              >
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-              </Select>
+              />
             </td>
           )}
           {visible.buyer !== false && (
             <td className={tdClass}>
-              <BuyerCell
-                item={it}
-                buyers={buyers}
-                buyerById={buyerById}
-                picking={assigning === it.id}
-                onPick={() => onAssign(it.id)}
-                onChange={(buyerId) => {
-                  onSetBuyer(it.id, buyerId);
-                  onAssign(null);
-                }}
-                onCreate={(nama) => onCreateBuyer(it.id, nama)}
-                onCancel={() => onAssign(null)}
-              />
+              <BuyerName item={it} buyerById={buyerById} />
             </td>
           )}
           {visible.createdAt !== false && (
@@ -1151,29 +1199,12 @@ function GroupRows({
           <td className={`${tdClass} text-right whitespace-nowrap`}>
             <GhostButton
               size="sm"
-              className="mr-1"
-              onClick={() => onToggleHidden(it.id)}
-              title={
-                hidden.has(it.id)
-                  ? "Tampilkan & hitung di total"
-                  : "Sembunyikan dari total"
-              }
-              aria-label={
-                hidden.has(it.id)
-                  ? "Tampilkan & hitung di total"
-                  : "Sembunyikan dari total"
-              }
+              onClick={() => onEdit(it)}
+              title={`Ubah "${it.namaProduk}"`}
+              aria-label={`Ubah "${it.namaProduk}"`}
             >
-              {hidden.has(it.id) ? <EyeOffIcon /> : <EyeIcon />}
+              <PencilIcon />
             </GhostButton>
-            <DangerGhostButton
-              size="sm"
-              onClick={() => onRemove(it.id)}
-              title={`Hapus "${it.namaProduk}"`}
-              aria-label={`Hapus "${it.namaProduk}"`}
-            >
-              <TrashIcon />
-            </DangerGhostButton>
           </td>
         </tr>
       ))}
@@ -1226,6 +1257,7 @@ function BulkBar({
   onStatus,
   onBuyer,
   onCreateBuyer,
+  onBuy,
   onClear,
 }: {
   count: number;
@@ -1233,6 +1265,7 @@ function BulkBar({
   onStatus: (status: OrderStatus) => void;
   onBuyer: (buyerId: string) => void;
   onCreateBuyer: (nama: string) => void;
+  onBuy: () => void;
   onClear: () => void;
 }) {
   return (
@@ -1262,106 +1295,12 @@ function BulkBar({
           onCreate={onCreateBuyer}
         />
       </div>
+      <Button size="sm" onClick={onBuy} title="Catat pembelian stok untuk item terpilih">
+        Beli stok ({count})
+      </Button>
       <GhostButton size="sm" onClick={onClear}>
         Batal pilih
       </GhostButton>
     </div>
-  );
-}
-
-// Three states, and the middle one is the point: a row with no buyer gets a
-// grey chip, not the amber one an unlinked product gets. An unlinked product is
-// a data defect; a buyerless order is very often just the truth.
-//
-// All three reach the picker, including the two that already name a buyer: an
-// order handed to the wrong pembeli is an ordinary mistake, and the name is the
-// one field on the row that cannot be corrected any other way (deleting and
-// re-adding the order would lose its stock links). The reassign affordance is a
-// separate ✎ button rather than making the name itself clickable, because the
-// name has to stay a link to the buyer's page — that is how you check you are
-// about to correct the right row.
-function BuyerCell({
-  item,
-  buyers,
-  buyerById,
-  picking,
-  onPick,
-  onChange,
-  onCreate,
-  onCancel,
-}: {
-  item: OrderItem;
-  buyers: Buyer[];
-  buyerById: Map<string, Buyer>;
-  picking: boolean;
-  onPick: () => void;
-  onChange: (buyerId: string) => void;
-  onCreate: (nama: string) => void;
-  onCancel: () => void;
-}) {
-  if (picking)
-    return (
-      <div className="flex items-center gap-1">
-        <div className="w-52">
-          <BuyerSelect
-            value={item.buyerId}
-            options={buyers}
-            onChange={onChange}
-            onCreate={onCreate}
-          />
-        </div>
-        {/* Without this the cell is a one-way door: BuyerSelect closes its own
-            dropdown but never unsets `assigning`, so a user who opens the picker
-            on an already-assigned row and changes their mind would have to pick
-            the same buyer again to get the name back. */}
-        <GhostButton
-          size="sm"
-          onClick={onCancel}
-          title="Batal"
-          aria-label="Batal"
-        >
-          <CloseIcon />
-        </GhostButton>
-      </div>
-    );
-
-  if (!item.buyerId)
-    return (
-      <button
-        type="button"
-        className="text-faint bg-surface-sunken border border-line rounded px-1.5 py-0.5 font-medium whitespace-nowrap hover:bg-surface-hover"
-        title="Belum ada pembeli — klik untuk memilih"
-        onClick={onPick}
-      >
-        — tanpa pembeli —
-      </button>
-    );
-
-  const buyer = buyerById.get(item.buyerId);
-  // deleteBuyer does not cascade, so a live order can point at a tombstoned
-  // buyer. Say so instead of rendering a link that lands on a not-found page —
-  // and keep the ✎, since this is the state that most needs repairing.
-  return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      {buyer ? (
-        <Link
-          to="/pembeli/$id"
-          params={{ id: buyer.id }}
-          className="text-brand hover:underline font-medium"
-        >
-          {buyer.nama}
-        </Link>
-      ) : (
-        <span className="text-faint italic">(pembeli dihapus)</span>
-      )}
-      <GhostButton
-        size="sm"
-        onClick={onPick}
-        title="Ganti pembeli"
-        aria-label="Ganti pembeli"
-      >
-        <PencilIcon />
-      </GhostButton>
-    </span>
   );
 }

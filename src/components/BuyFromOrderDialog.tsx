@@ -7,7 +7,7 @@ import { Button, PrimaryButton, DangerButton } from "./Button";
 import { Modal } from "./Modal";
 
 interface Props {
-  tanggal: string; // the order date the items belong to
+  tanggal: string; // the shared order date, or "" when the items span several days
   items: OrderItem[]; // order items on that date
   products: Product[];
   onConfirm: (
@@ -151,8 +151,8 @@ export function BuyFromOrderDialog({
           <SuccessCheck />
           <h2 className="text-xl font-bold mb-1">Tersimpan</h2>
           <p className="text-muted mb-5">
-            {savedCount} item dicatat sebagai pembelian stok dari pesanan{" "}
-            {formatTanggalID(tanggal)}.
+            {savedCount} item dicatat sebagai pembelian stok dari{" "}
+            {tanggal ? `pesanan ${formatTanggalID(tanggal)}` : "pesanan terpilih"}.
           </p>
           <div className="flex justify-center gap-3">
             <Button onClick={onClose}>Tutup</Button>
@@ -176,7 +176,7 @@ export function BuyFromOrderDialog({
     >
         <h2 className="text-xl font-bold mb-1">Beli Stok dari Pesanan</h2>
         <p className="text-faint mb-4">
-          Pesanan {formatTanggalID(tanggal)} — pilih barang yang akan dibeli.
+          {tanggal ? `Pesanan ${formatTanggalID(tanggal)}` : "Pesanan terpilih"} — pilih barang yang akan dibeli.
           Semua terpilih otomatis; hilangkan centang bila tak jadi dibeli.
         </p>
 
