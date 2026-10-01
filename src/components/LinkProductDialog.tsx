@@ -4,6 +4,7 @@ import { formatRupiah } from "../lib/format";
 import { Input } from "./Input";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 
 // Picks the product a legacy row (productId "") should point at. The row's own
 // name is shown as a read-only label, never as the search text: pre-filling the
@@ -35,7 +36,7 @@ export function LinkProductDialog({
 
   return (
     <Modal onClose={onClose}>
-        <h2 className="text-xl font-bold mb-2">Tautkan Produk</h2>
+        <DialogHeader onClose={onClose} className="text-xl">Tautkan Produk</DialogHeader>
 
         <div className="mb-3">
           <span className="inline-block rounded-md bg-ok-soft text-ok-text border border-ok-line px-2 py-1 text-sm font-medium">

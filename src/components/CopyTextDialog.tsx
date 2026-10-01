@@ -3,6 +3,7 @@ import type { LineItem } from "../lib/types";
 import { buildOrdersText } from "../lib/orderText";
 import { Button, PrimaryButton } from "./Button";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 
 interface Props {
   items: LineItem[];
@@ -52,7 +53,7 @@ export function CopyTextDialog({
       onClose={onClose}
       className="bg-surface rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
     >
-        <h2 className="text-xl font-bold mb-1">Salin Teks</h2>
+        <DialogHeader onClose={onClose} className="text-xl">Salin Teks</DialogHeader>
         <p className="text-faint mb-4">
           Pratinjau teks yang akan disalin — {items.length} item.
         </p>

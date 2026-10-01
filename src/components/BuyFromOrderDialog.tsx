@@ -5,6 +5,7 @@ import { formatRupiah, formatAngka, formatTanggalID } from "../lib/format";
 import { modalCostFor, purchaseFromOrderItem } from "../lib/purchaseFromOrder";
 import { Button, PrimaryButton, DangerButton } from "./Button";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 
 interface Props {
   tanggal: string; // the shared order date, or "" when the items span several days
@@ -174,7 +175,7 @@ export function BuyFromOrderDialog({
       onClose={onClose}
       className="bg-surface rounded-xl p-5 w-full max-w-2xl max-h-[90vh] overflow-auto"
     >
-        <h2 className="text-xl font-bold mb-1">Beli Stok dari Pesanan</h2>
+        <DialogHeader onClose={onClose} className="text-xl">Beli Stok dari Pesanan</DialogHeader>
         <p className="text-faint mb-4">
           {tanggal ? `Pesanan ${formatTanggalID(tanggal)}` : "Pesanan terpilih"} — pilih barang yang akan dibeli.
           Semua terpilih otomatis; hilangkan centang bila tak jadi dibeli.

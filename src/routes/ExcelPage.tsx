@@ -157,8 +157,8 @@ export function ExcelPage() {
       <Panel>
         <div className="flex gap-2 flex-wrap items-center">
           <span className="flex-1" />
-          <Button onClick={appendFiltered}>Tambah sesuai filter ({filter.filtered.length})</Button>
-          <Button onClick={replaceFiltered}>Ganti semua</Button>
+          <Button size="sm" onClick={appendFiltered}>Tambah sesuai filter ({filter.filtered.length})</Button>
+          <Button size="sm" onClick={replaceFiltered}>Ganti semua</Button>
         </div>
       </Panel>
 
@@ -184,20 +184,20 @@ export function ExcelPage() {
             />
             Tampilkan harga
           </label>
-          <DangerButton onClick={removeSelected} disabled={selected.size === 0}>
+          <DangerButton size="sm" onClick={removeSelected} disabled={selected.size === 0}>
             Hapus terpilih
           </DangerButton>
-          <Button onClick={() => setTextOpen(true)} disabled={staged.length === 0}>
+          <Button size="sm" onClick={() => setTextOpen(true)} disabled={staged.length === 0}>
             Salin teks
           </Button>
-          <Button onClick={copyImage} disabled={staged.length === 0}>
+          <Button size="sm" onClick={copyImage} disabled={staged.length === 0}>
             {copyState === "copied"
               ? "✓ Tersalin"
               : copyState === "error"
                 ? "Gagal menyalin"
                 : "Salin gambar"}
           </Button>
-          <Button
+          <Button size="sm"
             onClick={() =>
               downloadOrdersImage(stagedSorted, {
                 filename: `${labels.filename}.png`,
@@ -208,7 +208,7 @@ export function ExcelPage() {
           >
             Unduh gambar
           </Button>
-          <PrimaryButton
+          <PrimaryButton size="sm"
             onClick={() =>
               downloadOrdersXLSX(stagedSorted, {
                 sheetName: labels.sheetName,

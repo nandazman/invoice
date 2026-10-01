@@ -2,6 +2,7 @@ import { orderDeleteImpact, type DeleteOrderOptions } from "../lib/store";
 import { formatRupiah } from "../lib/format";
 import { Button, DangerButton } from "./Button";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 
 // Delete used to be one tap with no question. It now says how many rows go, and
 // when the orders were tied to Beli Stok purchases it asks what to do with them,
@@ -27,7 +28,7 @@ export function DeleteOrdersDialog({
 
   return (
     <Modal onClose={onClose} className="bg-surface p-5 w-full max-w-md overflow-auto">
-      <h2 className="text-lg font-bold mb-2">Hapus {n} pesanan?</h2>
+      <DialogHeader onClose={onClose}>Hapus {n} pesanan?</DialogHeader>
       <p className="text-sm text-muted mb-1">
         {impact.movements > 0
           ? `${impact.movements} catatan stok dari pesanan ini ikut dihapus, jadi stok kembali.`

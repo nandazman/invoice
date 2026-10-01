@@ -10,6 +10,7 @@ import {
 import { Button, PrimaryButton } from "./Button";
 import { Field } from "./Field";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 import { BuyerSelect } from "./BuyerSelect";
 
 // Asked once per installation, on /pesanan, with the orders it is asking about
@@ -46,7 +47,7 @@ export function BuyerBackfillDialog({
 
   return (
     <Modal onClose={onClose} className="bg-surface p-4 md:p-5 w-full max-w-md overflow-auto">
-      <h2 className="text-lg font-bold mb-2">Pembeli untuk pesanan lama</h2>
+      <DialogHeader onClose={onClose}>Pembeli untuk pesanan lama</DialogHeader>
 
       <p className="text-sm text-muted mb-3">
         Ada <b>{count} pesanan lama</b> yang belum punya pembeli. Pilih satu

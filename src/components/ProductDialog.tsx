@@ -108,7 +108,7 @@ export function ProductDialog({
             onClick={onClose}
             aria-label="Tutup"
             title="Tutup"
-            className="hover:!bg-surface-hover hover:!text-body"
+            className="!text-muted hover:!bg-surface-hover hover:!text-body"
           >
             <CloseIcon />
           </DangerGhostButton>

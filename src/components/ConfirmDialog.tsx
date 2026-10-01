@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { Button, PrimaryButton, DangerButton } from "./Button";
 import { Modal } from "./Modal";
+import { DialogHeader } from "./DialogHeader";
 
 // The one confirmation dialog. It exists to replace `window.confirm()`, which
 // freezes the whole page (no re-render, no sync tick, no scrolling the warning
@@ -44,12 +45,14 @@ export function ConfirmDialog({
       }`}
     >
       <div role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <h2
+        <DialogHeader
           id={titleId}
-          className={`text-lg font-bold mb-2 ${danger ? "text-danger-text" : ""}`}
+          onClose={onClose}
+          disabled={busy}
+          className={`text-lg ${danger ? "text-danger-text" : ""}`}
         >
           {title}
-        </h2>
+        </DialogHeader>
         <div className="text-sm text-muted space-y-2 mb-5">{children}</div>
         <div className="flex justify-end gap-2">
           {/* Focus starts inside the dialog so the keyboard works immediately.
