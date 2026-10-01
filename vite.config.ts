@@ -105,7 +105,7 @@ function pwaPlugin() {
       // up favicon-*.png and apple-touch-icon.png — 36 KB for a shell that is
       // complete offline, tab icon included, instead of one that goes blank in
       // the tab strip the moment the network drops.
-      globPatterns: ["**/*.{js,css,html,png}"],
+      globPatterns: ["**/*.{js,css,html,png,woff2}"],
       // exceljs is large and lands in one chunk; the default 2MB cap would drop
       // it from the precache silently, and the Excel page would then be the one
       // route that does not work offline.
