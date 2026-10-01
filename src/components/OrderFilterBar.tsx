@@ -25,11 +25,15 @@ export function OrderFilterBar({
   filter,
   perBuyer,
   onPerBuyer,
+  showStatus = true,
 }: {
   filter: OrderFilter<FilterableRow>;
   // A view switch, not a filter: it lives in the panel but Reset leaves it alone.
-  perBuyer: boolean;
-  onPerBuyer: (next: boolean) => void;
+  // Only Pesanan has one; the other pages leave both out.
+  perBuyer?: boolean;
+  onPerBuyer?: (next: boolean) => void;
+  // Beli Stok rows have no paid/pending state, so that page hides the control.
+  showStatus?: boolean;
 }) {
   const { values, set, preset, filtered, clear, hasFilter } = filter;
   const [open, setOpen] = useState(false);
@@ -64,7 +68,7 @@ export function OrderFilterBar({
       clear: () => set({ pembeli: "" }),
     });
   }
-  if (values.status !== "semua")
+  if (showStatus && values.status !== "semua")
     chips.push({
       key: "status",
       label: values.status === "paid" ? "Sudah dibayar" : "Belum dibayar",
@@ -208,35 +212,41 @@ export function OrderFilterBar({
                 ))}
               </Select>
             </Field>
-            <Field label="Status" className="col-span-2">
-              <Select
-                value={values.status}
-                onChange={(e) =>
-                  set({ status: e.target.value as typeof values.status })
-                }
-              >
-                <option value="semua">Semua</option>
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-              </Select>
-            </Field>
+            {showStatus && (
+              <Field label="Status" className="col-span-2">
+                <Select
+                  value={values.status}
+                  onChange={(e) =>
+                    set({ status: e.target.value as typeof values.status })
+                  }
+                >
+                  <option value="semua">Semua</option>
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                </Select>
+              </Field>
+            )}
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-muted cursor-pointer mt-3">
-            <input
-              type="checkbox"
-              checked={perBuyer}
-              onChange={(e) => onPerBuyer(e.target.checked)}
-              className="w-4 h-4 accent-brand cursor-pointer"
-            />
-            Pisahkan per pembeli
-          </label>
+          {onPerBuyer && (
+            <label className="flex items-center gap-2 text-sm text-muted cursor-pointer mt-3">
+              <input
+                type="checkbox"
+                checked={!!perBuyer}
+                onChange={(e) => onPerBuyer(e.target.checked)}
+                className="w-4 h-4 accent-brand cursor-pointer"
+              />
+              Pisahkan per pembeli
+            </label>
+          )}
 
           <div className="flex items-center gap-2 mt-4">
             <span className="text-sm text-faint">{filtered.length} cocok</span>
             <span className="flex-1" />
             {hasFilter && <Button onClick={clear}>Reset</Button>}
-            <PrimaryButton onClick={() => setOpen(false)}>Selesai</PrimaryButton>
+            <PrimaryButton onClick={() => setOpen(false)}>
+              Selesai
+            </PrimaryButton>
           </div>
         </Modal>
       )}

@@ -6,9 +6,9 @@ import { fieldKey } from "../lib/template-types";
 import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
 import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
-import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
+import { useOrderFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
-import { FilterBar } from "../components/FilterBar";
+import { OrderFilterBar } from "../components/OrderFilterBar";
 import { CopyTextDialog } from "../components/CopyTextDialog";
 import { Panel } from "../components/Panel";
 import { Input } from "../components/Input";
@@ -188,30 +188,13 @@ export function InvoicePage() {
             )}
           </Panel>
 
-          <FilterBar
-            filter={filter}
-            className="flex flex-col gap-2"
-            fieldClassName="w-full"
-          >
-            <Field label="Status">
-              <Select
-                value={filter.values.status}
-                onChange={(e) =>
-                  filter.set({ status: e.target.value as StatusFilter })
-                }
-              >
-                <option value="semua">Semua</option>
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-              </Select>
-            </Field>
-          </FilterBar>
+          <OrderFilterBar filter={filter} />
 
           <Panel>
             <h3 className="font-bold text-sm text-body mb-2">Pilih Item Pesanan</h3>
             <div className="flex gap-2">
               <Button size="sm" onClick={appendFiltered} className="flex-1">
-                Tambah (sesuai filter)
+                Tambah sesuai filter ({filter.filtered.length})
               </Button>
               <Button size="sm" onClick={replaceFiltered} className="flex-1">
                 Ganti semua

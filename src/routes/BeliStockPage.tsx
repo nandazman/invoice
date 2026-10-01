@@ -25,7 +25,7 @@ import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
 import { DangerGhostButton } from "../components/Button";
 import { Panel } from "../components/Panel";
-import { FilterBar } from "../components/FilterBar";
+import { OrderFilterBar } from "../components/OrderFilterBar";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { LinkProductDialog } from "../components/LinkProductDialog";
 import {
@@ -136,7 +136,7 @@ export function BeliStockPage() {
 
       {/* No children: purchases carry no status, and the hook's status
           predicate skips rows without one. */}
-      <FilterBar filter={filter} />
+      <OrderFilterBar filter={filter} showStatus={false} />
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">

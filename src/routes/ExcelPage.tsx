@@ -6,7 +6,6 @@ import { copyOrdersImage, downloadOrdersImage } from "../lib/orderImage";
 import {
   useOrderFilter,
   type FilterableRow,
-  type StatusFilter,
 } from "../lib/useOrderFilter";
 import {
   Button,
@@ -17,7 +16,7 @@ import {
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
-import { FilterBar } from "../components/FilterBar";
+import { OrderFilterBar } from "../components/OrderFilterBar";
 import { CopyTextDialog } from "../components/CopyTextDialog";
 import { MobileList, MobileRow } from "../components/MobileList";
 import { thClass, tdClass } from "../components/DataTable";
@@ -137,7 +136,7 @@ export function ExcelPage() {
         <b>{labels.filename}.xlsx</b>.
       </p>
 
-      <FilterBar filter={filter}>
+      <Panel>
         <Field label="Sumber" className="w-36">
           <Select
             value={source}
@@ -147,26 +146,14 @@ export function ExcelPage() {
             <option value="beli">Beli Stock</option>
           </Select>
         </Field>
-        {source === "order" ? (
-          <Field label="Status" className="w-36">
-            <Select
-              value={filter.values.status}
-              onChange={(e) =>
-                filter.set({ status: e.target.value as StatusFilter })
-              }
-            >
-              <option value="semua">Semua</option>
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-            </Select>
-          </Field>
-        ) : null}
-      </FilterBar>
+      </Panel>
+
+      <OrderFilterBar filter={filter} showStatus={source === "order"} />
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center">
           <span className="flex-1" />
-          <Button onClick={appendFiltered}>Tambah (sesuai filter)</Button>
+          <Button onClick={appendFiltered}>Tambah sesuai filter ({filter.filtered.length})</Button>
           <Button onClick={replaceFiltered}>Ganti semua</Button>
         </div>
       </Panel>
