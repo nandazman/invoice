@@ -126,6 +126,9 @@ const COLUMNS = [
   ...ATTRIBUTION_COLUMNS,
 ];
 
+// Always on the collapsed phone row, so the phone Kolom menu leaves them out.
+const PHONE_FIXED = ["namaProduk", "totalHarga", "status"];
+
 // createdAt/updatedAt are hidden by default; users can re-enable them. Pembeli
 // is NOT: it is mandatory on new orders, so hiding it would hide a field the
 // form insists on. No storage-key bump needed: usePersistentVisibility merges
@@ -542,25 +545,36 @@ export function OrdersPage() {
             · {counted.length} item
             {hiddenCount > 0 && ` (${hiddenCount} disembunyikan)`}
           </span>
-          <span className="flex-1" />
-          {/* Phone: one switch for every row's detail card. Desktop keeps the
+          <span className="flex-1 max-md:hidden" />
+          <div className="flex items-center gap-2 max-md:ml-auto md:contents">
+            {/* Phone: one switch for every row's detail card. Desktop keeps the
               Kolom menu instead, since its rows are columns, not cards. */}
-          <Button
-            size="sm"
-            className="md:!hidden"
-            onClick={() =>
-              setExpanded(
-                expanded.size > 0
-                  ? new Set()
-                  : new Set(filtered.map((o) => o.id)),
-              )
-            }
-          >
-            <ChevronDownIcon
-              className={expanded.size > 0 ? "rotate-180" : undefined}
-            />
-            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
-          </Button>
+            <Button
+              size="sm"
+              className="md:!hidden"
+              onClick={() =>
+                setExpanded(
+                  expanded.size > 0
+                    ? new Set()
+                    : new Set(filtered.map((o) => o.id)),
+                )
+              }
+            >
+              <ChevronDownIcon
+                className={expanded.size > 0 ? "rotate-180" : undefined}
+              />
+              {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+            </Button>
+            {/* Phone: the same Kolom state, limited to the lines the card shows
+              (the name, status and total on the collapsed row are fixed). */}
+            <div className="md:hidden">
+              <ColumnToggle
+                columns={COLUMNS.filter((c) => !PHONE_FIXED.includes(c.id))}
+                visible={visible}
+                onToggle={toggle}
+              />
+            </div>
+          </div>
           <div className="hidden md:flex items-center gap-2">
             <span className="text-xs text-faint">Pisahkan per pembeli</span>
             <div
@@ -619,9 +633,8 @@ export function OrdersPage() {
           <>
             {/* The phone layout. Nine-plus columns do not fit on 390px, so
                 below `md` a row is name, status and price, and tapping it opens
-                a label / value card with everything else. There is no Kolom
-                menu here: the collapsed row is fixed, and the card is where the
-                detail lives. */}
+                a label / value card with everything else, and the Kolom menu
+                in the toolbar chooses which lines the card shows. */}
             <div className="md:hidden">
               {sections.map((s) => (
                 <Fragment key={s.key}>
@@ -678,6 +691,7 @@ export function OrdersPage() {
                           onStatus={(st) => setOrderStatus(it.id, st)}
                           buyerById={buyerById}
                           modal={orderModal(it, productById, productByName)}
+                          visible={visible}
                         />
                       ))}
                     </Fragment>
@@ -995,8 +1009,10 @@ function PhoneRow({
   onStatus,
   buyerById,
   modal,
+  visible,
 }: {
   item: OrderItem;
+  visible: Record<string, boolean>;
   open: boolean;
   onToggleOpen: () => void;
   selected: boolean;
@@ -1010,12 +1026,22 @@ function PhoneRow({
   modal: { value: number; estimate: boolean } | null;
 }) {
   const profit = untung(it, modal);
-  const kv: [string, React.ReactNode][] = [
-    ["Satuan", it.satuan],
-    ["Qty", formatAngka(it.kuantitas)],
-    ["Harga satuan", formatRupiah(it.hargaSatuan)],
-    ["Harga dasar", <ModalValue key="m" modal={modal} />],
+  // The same Kolom state as the desktop table decides which lines the card
+  // shows. Untung has no column of its own; it rides with Harga dasar.
+  const all: [string, string, React.ReactNode][] = [
+    ["satuan", "Satuan", it.satuan],
     [
+      "kuantitas",
+      "Qty",
+      // Folded in ("4 karung") while the Satuan line is switched off.
+      visible.satuan === false
+        ? `${formatAngka(it.kuantitas)} ${it.satuan}`
+        : formatAngka(it.kuantitas),
+    ],
+    ["hargaSatuan", "Harga satuan", formatRupiah(it.hargaSatuan)],
+    ["modalSatuan", "Harga dasar", <ModalValue key="m" modal={modal} />],
+    [
+      "modalSatuan",
       "Untung",
       profit ? (
         <span className={profit.value < 0 ? "text-danger" : "text-ok"}>
@@ -1027,12 +1053,15 @@ function PhoneRow({
         <span className="text-faint">—</span>
       ),
     ],
-    ["Pembeli", <BuyerName key="b" item={it} buyerById={buyerById} />],
-    ["Dibuat", formatDateTimeID(it.createdAt)],
-    ["Diperbarui", formatDateTimeID(it.updatedAt)],
-    ["Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
-    ["Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
+    ["buyer", "Pembeli", <BuyerName key="b" item={it} buyerById={buyerById} />],
+    ["createdAt", "Dibuat", formatDateTimeID(it.createdAt)],
+    ["updatedAt", "Diperbarui", formatDateTimeID(it.updatedAt)],
+    ["createdBy", "Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
+    ["updatedBy", "Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
   ];
+  const kv: [string, React.ReactNode][] = all
+    .filter(([id]) => visible[id] !== false)
+    .map(([, label, value]) => [label, value]);
 
   return (
     <div
