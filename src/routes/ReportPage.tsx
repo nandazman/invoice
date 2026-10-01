@@ -40,7 +40,7 @@ import {
   periodeLabel,
   todayISO,
 } from "../lib/format";
-import { FilterBar } from "../components/FilterBar";
+import { OrderFilterBar } from "../components/OrderFilterBar";
 import { Chip } from "../components/Chip";
 import { Field } from "../components/Field";
 import { Panel } from "../components/Panel";
@@ -258,9 +258,7 @@ export function ReportPage() {
     return (
       <div>
         <Header />
-        <FilterBar filter={filter}>
-          <StatusField filter={filter} />
-        </FilterBar>
+        <OrderFilterBar filter={filter} />
         <Panel className="text-center text-faint py-8">
           {filter.hasFilter
             ? "Tidak ada pesanan yang cocok dengan filter ini."
@@ -274,9 +272,7 @@ export function ReportPage() {
     <div>
       <Header />
 
-      <FilterBar filter={filter}>
-        <StatusField filter={filter} />
-      </FilterBar>
+      <OrderFilterBar filter={filter} />
 
       {/* 0. Integrity. Above everything, outside every filter, and rendered
           only when something is actually wrong — so it is an alarm rather than
@@ -1053,29 +1049,6 @@ function Band({ title, sub }: { title: string; sub: string }) {
       </div>
       <div className="flex-1 border-t border-line" />
     </div>
-  );
-}
-
-// Status belongs on this page for the same reason it belongs on Pesanan: "laba
-// dari yang sudah dibayar" is a different question from "laba dari semua yang
-// keluar", and both docs assumed it was here. It rides in as FilterBar children
-// exactly as OrdersPage does it.
-function StatusField({
-  filter,
-}: {
-  filter: { values: { status: StatusFilter }; set: (p: { status: StatusFilter }) => void };
-}) {
-  return (
-    <Field label="Status" className="w-36">
-      <Select
-        value={filter.values.status}
-        onChange={(e) => filter.set({ status: e.target.value as StatusFilter })}
-      >
-        <option value="semua">Semua</option>
-        <option value="pending">Pending</option>
-        <option value="paid">Paid</option>
-      </Select>
-    </Field>
   );
 }
 
