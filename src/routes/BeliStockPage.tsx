@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { PurchaseItem } from "../lib/types";
 import {
@@ -20,22 +20,22 @@ import {
   ATTRIBUTION_COLUMN_IDS,
   usePersistentVisibility,
 } from "../lib/columns";
-import { ByCells, ByHeaders, MobileBy } from "../components/Attribution";
+import { ByCell, ByCells, ByHeaders } from "../components/Attribution";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { AddPurchaseForm } from "../components/AddPurchaseForm";
-import { DangerGhostButton } from "../components/Button";
+import { Button, GhostButton, PrimaryButton } from "../components/Button";
 import { Panel } from "../components/Panel";
 import { OrderFilterBar } from "../components/OrderFilterBar";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { LinkProductDialog } from "../components/LinkProductDialog";
-import {
-  MobileField,
-  MobileList,
-  MobileRow,
-  qtyTimesHarga,
-} from "../components/MobileList";
+import { PurchaseDialog } from "../components/PurchaseDialog";
 import { thClass, tdClass } from "../components/DataTable";
-import { TrashIcon, AlertIcon } from "../components/icons";
+import {
+  AlertIcon,
+  ChevronDownIcon,
+  PencilIcon,
+  PlusIcon,
+} from "../components/icons";
 
 interface DateGroup {
   tanggal: string;
@@ -90,6 +90,18 @@ export function BeliStockPage() {
   const { filtered, hasFilter } = filter;
   // The unlinked purchase row whose "Tautkan Produk" dialog is open.
   const [linking, setLinking] = useState<PurchaseItem | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<PurchaseItem | null>(null);
+  // Phone rows whose detail card is open.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   function addItems(items: PurchaseItem[]) {
     for (const item of items) addPurchase(item);
@@ -121,17 +133,24 @@ export function BeliStockPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Beli Stock</h1>
-      <p className="text-faint mb-4">
-        Catat pembelian stok; setiap baris menambah stok otomatis.
-      </p>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold mb-1">Beli Stock</h1>
+          <p className="text-faint">
+            Catat pembelian stok; setiap baris menambah stok otomatis.
+          </p>
+        </div>
+        {products.length > 0 && (
+          <PrimaryButton onClick={() => setAdding(true)}>
+            <PlusIcon /> Tambah
+          </PrimaryButton>
+        )}
+      </div>
 
-      {products.length === 0 ? (
+      {products.length === 0 && (
         <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
-      ) : (
-        <AddPurchaseForm products={products} onAdd={addItems} />
       )}
 
       {/* No children: purchases carry no status, and the hook's status
@@ -145,7 +164,25 @@ export function BeliStockPage() {
           </span>
           <span className="text-faint">· {filtered.length} item</span>
           <span className="flex-1" />
-          <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+          {/* Phone: one switch for every row's detail card. Desktop keeps
+              the Kolom menu instead. */}
+          <Button
+            size="sm"
+            className="md:!hidden"
+            onClick={() =>
+              setExpanded(
+                expanded.size > 0 ? new Set() : new Set(filtered.map((o) => o.id)),
+              )
+            }
+          >
+            <ChevronDownIcon
+              className={expanded.size > 0 ? "rotate-180" : undefined}
+            />
+            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+          </Button>
+          <div className="hidden md:block">
+            <ColumnToggle columns={COLUMNS} visible={visible} onToggle={toggle} />
+          </div>
         </div>
 
         {groups.length === 0 ? (
@@ -156,103 +193,28 @@ export function BeliStockPage() {
           </div>
         ) : (
           <>
-            {/* The phone layout. Nine columns do not fit on 390px, so below
-                `md` the row collapses to what it IS on the left and what it is
-                WORTH on the right: satuan, the Dibuat stamp and the delete
-                action restack under the product; the arithmetic behind the
-                money restacks under the total. The Kolom toggle applies here
-                too: every column switched on restacks into the row, every
-                column switched off leaves it. The product name stays as the
-                row's anchor (it carries the link) whatever the toggle says. */}
+            {/* The phone layout. Below `md` a row is product and total;
+                tapping it opens a label / value card with the rest and Edit.
+                No Kolom menu here: the collapsed row is fixed. */}
             <div className="md:hidden">
-              <MobileList
-                left="Produk"
-                right={visible.totalHarga !== false ? "Total" : ""}
-              >
-                {groups.map((g) => (
-                  <Fragment key={g.tanggal}>
-                    <tr className="bg-surface-hover font-bold">
-                      <td className={`${tdClass} font-bold`}>
-                        {formatTanggalID(g.tanggal)}
-                      </td>
-                      <td
-                        className={`${tdClass} text-right font-bold tabular-nums`}
-                      >
-                        {formatRupiah(g.total)}
-                      </td>
-                    </tr>
-                    {g.items.map((it) => (
-                      <MobileRow
-                        key={it.id}
-                        title={
-                          it.productId ? (
-                            <Link
-                              to="/produk/$id"
-                              params={{ id: it.productId }}
-                              className="text-brand hover:underline font-medium"
-                            >
-                              {it.namaProduk}
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium hover:bg-warn-soft-strong"
-                              title="Belum tertaut ke produk — klik untuk menautkan"
-                              onClick={() => setLinking(it)}
-                            >
-                              <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> {it.namaProduk}
-                            </button>
-                          )
-                        }
-                        meta={
-                          <>
-                            {visible.satuan !== false && (
-                              <span>{it.satuan}</span>
-                            )}
-                            {visible.createdAt !== false && (
-                              <MobileField label="Dibuat">
-                                {formatDateTimeID(it.createdAt)}
-                              </MobileField>
-                            )}
-                            {visible.updatedAt !== false && (
-                              <MobileField label="Diperbarui">
-                                {formatDateTimeID(it.updatedAt)}
-                              </MobileField>
-                            )}
-                            <MobileBy
-                              show={{
-                                created: visible.createdBy !== false,
-                                updated: visible.updatedBy !== false,
-                              }}
-                              row={it}
-                            />
-                            {/* The trailing action column has nowhere else to
-                                go on a phone, so it rides along here. */}
-                            <DangerGhostButton
-                              size="sm"
-                              onClick={() => removeItem(it.id)}
-                              title={`Hapus "${it.namaProduk}"`}
-                              aria-label={`Hapus "${it.namaProduk}"`}
-                            >
-                              <TrashIcon />
-                            </DangerGhostButton>
-                          </>
-                        }
-                        value={
-                          visible.totalHarga !== false
-                            ? formatRupiah(it.totalHarga)
-                            : null
-                        }
-                        note={qtyTimesHarga(
-                          visible,
-                          it.kuantitas,
-                          it.hargaSatuan,
-                        )}
-                      />
-                    ))}
-                  </Fragment>
-                ))}
-              </MobileList>
+              {groups.map((g) => (
+                <Fragment key={g.tanggal}>
+                  <div className="sticky top-14 z-10 flex items-center gap-2 px-3 py-1.5 bg-surface-hover border-b border-line text-sm font-bold">
+                    <span className="flex-1">{formatTanggalID(g.tanggal)}</span>
+                    <span className="tabular-nums">{formatRupiah(g.total)}</span>
+                  </div>
+                  {g.items.map((it) => (
+                    <PhoneRow
+                      key={it.id}
+                      item={it}
+                      open={expanded.has(it.id)}
+                      onToggleOpen={() => toggleExpanded(it.id)}
+                      onEdit={() => setEditing(it)}
+                      onLink={() => setLinking(it)}
+                    />
+                  ))}
+                </Fragment>
+              ))}
             </div>
 
             <div className="overflow-x-auto hidden md:block">
@@ -296,7 +258,7 @@ export function BeliStockPage() {
                     key={g.tanggal}
                     group={g}
                     visible={visible}
-                    onRemove={removeItem}
+                    onEdit={setEditing}
                     onLink={setLinking}
                   />
                 ))}
@@ -307,6 +269,23 @@ export function BeliStockPage() {
         )}
       </Panel>
 
+      {adding && (
+        <AddPurchaseForm
+          products={products}
+          onAdd={addItems}
+          onClose={() => setAdding(false)}
+        />
+      )}
+
+      {editing && !linking && (
+        <PurchaseDialog
+          item={editing}
+          onLink={() => setLinking(editing)}
+          onDelete={() => removeItem(editing.id)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
       {linking && (
         <LinkProductDialog
           namaProduk={linking.namaProduk}
@@ -314,6 +293,7 @@ export function BeliStockPage() {
           onPick={(productId) => {
             linkPurchaseProduct(linking.id, productId);
             setLinking(null);
+            setEditing(null);
           }}
           onClose={() => setLinking(null)}
         />
@@ -325,12 +305,12 @@ export function BeliStockPage() {
 function GroupRows({
   group,
   visible,
-  onRemove,
+  onEdit,
   onLink,
 }: {
   group: DateGroup;
   visible: Record<string, boolean>;
-  onRemove: (id: string) => void;
+  onEdit: (item: PurchaseItem) => void;
   onLink: (item: PurchaseItem) => void;
 }) {
   // Date label spans every visible column left of "Total".
@@ -415,18 +395,108 @@ function GroupRows({
             row={it}
             className={tdClass}
           />
-          <td className={`${tdClass} text-right`}>
-            <DangerGhostButton
+          <td className={`${tdClass} text-right whitespace-nowrap`}>
+            <GhostButton
               size="sm"
-              onClick={() => onRemove(it.id)}
-              title={`Hapus "${it.namaProduk}"`}
-              aria-label={`Hapus "${it.namaProduk}"`}
+              onClick={() => onEdit(it)}
+              title={`Ubah "${it.namaProduk}"`}
+              aria-label={`Ubah "${it.namaProduk}"`}
             >
-              <TrashIcon />
-            </DangerGhostButton>
+              <PencilIcon />
+            </GhostButton>
           </td>
         </tr>
       ))}
     </>
+  );
+}
+
+// One phone row: product and total collapsed; label / value card when open.
+function PhoneRow({
+  item: it,
+  open,
+  onToggleOpen,
+  onEdit,
+  onLink,
+}: {
+  item: PurchaseItem;
+  open: boolean;
+  onToggleOpen: () => void;
+  onEdit: () => void;
+  onLink: () => void;
+}) {
+  const kv: [string, React.ReactNode][] = [
+    ["Satuan", it.satuan],
+    ["Qty", formatAngka(it.kuantitas)],
+    ["Harga satuan", formatRupiah(it.hargaSatuan)],
+    ["Dibuat", formatDateTimeID(it.createdAt)],
+    ["Diperbarui", formatDateTimeID(it.updatedAt)],
+    ["Dibuat oleh", <ByCell key="c" email={it.createdBy} />],
+    ["Diperbarui oleh", <ByCell key="u" email={it.updatedBy} />],
+  ];
+  return (
+    <div className="border-b border-line">
+      <div
+        className="flex items-center gap-2 px-3 min-h-11 cursor-pointer"
+        onClick={onToggleOpen}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex-1 min-w-0 text-left font-medium break-words py-1"
+        >
+          {!it.productId && (
+            <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5 mr-1 text-warn" />
+          )}
+          {it.namaProduk}
+        </button>
+        <span className="tabular-nums font-medium whitespace-nowrap">
+          {formatRupiah(it.totalHarga)}
+        </span>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+        />
+      </div>
+
+      {open && (
+        <div className="bg-surface-sunken border-t border-line px-3 py-3 text-sm">
+          <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+            <dt className="text-faint">Produk</dt>
+            <dd className="text-right">
+              {it.productId ? (
+                <Link
+                  to="/produk/$id"
+                  params={{ id: it.productId }}
+                  className="text-brand hover:underline font-medium"
+                >
+                  {it.namaProduk}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="text-warn bg-warn-soft border border-warn-line rounded px-1.5 py-0.5 font-medium"
+                  onClick={onLink}
+                >
+                  Tautkan produk
+                </button>
+              )}
+            </dd>
+            {kv.map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-faint">{label}</dt>
+                <dd className="text-right tabular-nums font-medium break-words">
+                  {value}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="flex justify-end mt-3">
+            <Button size="sm" onClick={onEdit}>
+              <PencilIcon /> Edit
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

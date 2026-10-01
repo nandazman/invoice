@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Product, StockMovement } from "../lib/types";
 import {
@@ -7,22 +7,22 @@ import {
   addMovement,
 } from "../lib/store";
 import { computeFifo } from "../lib/stock";
-import { formatRupiah, formatAngka } from "../lib/format";
+import { formatRupiah, formatAngka, formatDateTimeID } from "../lib/format";
 import { usePersistentAttribution } from "../lib/columns";
 import {
   AttributionToggle,
-  MobileBy,
+  ByCell,
   ByCells,
   ByHeaders,
   bothBy,
 } from "../components/Attribution";
 import { AddMovementForm } from "../components/AddMovementForm";
+import { Button, PrimaryButton } from "../components/Button";
 import { Input } from "../components/Input";
 import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { thClass, tdClass } from "../components/DataTable";
-import { MobileList, MobileRow } from "../components/MobileList";
-import { AlertIcon } from "../components/icons";
+import { AlertIcon, ChevronDownIcon, PlusIcon } from "../components/icons";
 
 
 interface Row {
@@ -33,10 +33,31 @@ interface Row {
   low: boolean;
 }
 
+// The status a Stok row can carry: running low. Same pill as Pesanan's badges,
+// shown only when it applies so the table stays quiet.
+function LowBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-xs font-semibold text-warn whitespace-nowrap">
+      <AlertIcon className="h-3 w-3" /> menipis
+    </span>
+  );
+}
+
 export function StockPage() {
   const products = useProducts();
   const stock = useStock();
   const [cari, setCari] = useState("");
+  const [adding, setAdding] = useState(false);
+  // Phone rows whose detail card is open.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   // The row here IS a product — the stock figures are derived — so the
   // attribution shown is the product's, not the movements'.
   const [showBy, setShowBy] = usePersistentAttribution("invoice.stok.by.v1");
@@ -80,17 +101,24 @@ export function StockPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Stok</h1>
-      <p className="text-faint mb-4">
-        Catat stok masuk & keluar, pantau stok menipis, dan nilai persediaan.
-      </p>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold mb-1">Stok</h1>
+          <p className="text-faint">
+            Catat stok masuk & keluar, pantau stok menipis, dan nilai persediaan.
+          </p>
+        </div>
+        {products.length > 0 && (
+          <PrimaryButton onClick={() => setAdding(true)}>
+            <PlusIcon /> Tambah
+          </PrimaryButton>
+        )}
+      </div>
 
-      {products.length === 0 ? (
+      {products.length === 0 && (
         <Panel className="text-center text-faint py-8">
           Belum ada produk. Tambahkan produk di halaman <b>Harga</b> dulu.
         </Panel>
-      ) : (
-        <AddMovementForm products={products} onAdd={addMovements} />
       )}
 
       <Panel>
@@ -104,8 +132,28 @@ export function StockPage() {
             </span>
           )}
           <span className="flex-1" />
-          <AttributionToggle show={showBy} onChange={setShowBy} />
-          <Field label="" className="w-48">
+          {/* Phone: one switch for every row's detail card. Desktop keeps the
+              attribution toggle instead. */}
+          <Button
+            size="sm"
+            className="md:!hidden"
+            onClick={() =>
+              setExpanded(
+                expanded.size > 0
+                  ? new Set()
+                  : new Set(rows.map((r) => r.product.id)),
+              )
+            }
+          >
+            <ChevronDownIcon
+              className={expanded.size > 0 ? "rotate-180" : undefined}
+            />
+            {expanded.size > 0 ? "Tutup semua" : "Buka semua"}
+          </Button>
+          <div className="hidden md:block">
+            <AttributionToggle show={showBy} onChange={setShowBy} />
+          </div>
+          <Field label="" className="w-full md:w-48">
             <Input
               value={cari}
               onChange={(e) => setCari(e.target.value)}
@@ -120,63 +168,17 @@ export function StockPage() {
           </div>
         ) : (
           <>
-            {/* The phone layout: six columns will not fit on 390px, so the row
-                collapses to what the product IS on the left and what its stock
-                is WORTH on the right. Stok, min, and satuan restack under the
-                name; modal/satuan sits under the value. The attribution
-                toggle above restacks under the name too. */}
+            {/* The phone layout: a row is product, low-stock badge and value;
+                tapping it opens a label / value card with the rest. */}
             <div className="md:hidden">
-              <MobileList left="Produk" right="Nilai">
-                {rows.map((r) => {
-                  const satuan = r.product.satuan ?? "satuan";
-                  return (
-                    <MobileRow
-                      key={r.product.id}
-                      title={
-                        <Link
-                          to="/produk/$id"
-                          params={{ id: r.product.id }}
-                          className="flex items-center w-full min-h-9 -my-1 text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-                        >
-                          {r.product.namaProduk}
-                        </Link>
-                      }
-                      meta={
-                        <>
-                          <span
-                            className={`tabular-nums font-semibold ${
-                              r.qty < 0
-                                ? "text-danger"
-                                : r.low
-                                  ? "text-warn"
-                                  : "text-body"
-                            }`}
-                          >
-                            {formatAngka(r.qty)} {satuan}
-                          </span>
-                          {r.product.stokMin > 0 && (
-                            <span className="tabular-nums">
-                              min {formatAngka(r.product.stokMin)}
-                            </span>
-                          )}
-                          {r.low && (
-                            <span className="font-semibold text-warn">
-                              <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> menipis
-                            </span>
-                          )}
-                          <MobileBy show={bothBy(showBy)} row={r.product} />
-                        </>
-                      }
-                      value={formatRupiah(r.value)}
-                      note={
-                        r.qty > 0
-                          ? `${formatRupiah(r.unitCost)}/${satuan}`
-                          : `—/${satuan}`
-                      }
-                    />
-                  );
-                })}
-              </MobileList>
+              {rows.map((r) => (
+                <PhoneRow
+                  key={r.product.id}
+                  row={r}
+                  open={expanded.has(r.product.id)}
+                  onToggleOpen={() => toggleExpanded(r.product.id)}
+                />
+              ))}
             </div>
 
             <div className="overflow-x-auto hidden md:block">
@@ -196,10 +198,7 @@ export function StockPage() {
                 {rows.map((r) => {
                   const satuan = r.product.satuan ?? "satuan";
                   return (
-                    <tr
-                      key={r.product.id}
-                      className={`hover:bg-surface-sunken ${r.low ? "bg-warn-soft" : ""}`}
-                    >
+                    <tr key={r.product.id} className="hover:bg-surface-sunken">
                       <td className={tdClass}>
                         <Link
                           to="/produk/$id"
@@ -209,8 +208,8 @@ export function StockPage() {
                           {r.product.namaProduk}
                         </Link>
                         {r.low && (
-                          <span className="ml-2 text-xs font-semibold text-warn">
-                            <AlertIcon className="inline h-3.5 w-3.5 -mt-0.5" /> menipis
+                          <span className="ml-2">
+                            <LowBadge />
                           </span>
                         )}
                       </td>
@@ -249,6 +248,89 @@ export function StockPage() {
           </>
         )}
       </Panel>
+
+      {adding && (
+        <AddMovementForm
+          products={products}
+          onAdd={addMovements}
+          onClose={() => setAdding(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// One phone row. A Stok row is a product with derived figures, so there is
+// nothing to edit here (movements are added from Tambah); the card ends in a
+// link to the product instead of Edit.
+function PhoneRow({
+  row: r,
+  open,
+  onToggleOpen,
+}: {
+  row: Row;
+  open: boolean;
+  onToggleOpen: () => void;
+}) {
+  const satuan = r.product.satuan ?? "satuan";
+  const kv: [string, React.ReactNode][] = [
+    [
+      "Stok",
+      <span key="s" className={r.qty < 0 ? "text-danger" : r.low ? "text-warn" : ""}>
+        {formatAngka(r.qty)} {satuan}
+      </span>,
+    ],
+    ["Min", r.product.stokMin > 0 ? formatAngka(r.product.stokMin) : "—"],
+    ["Modal/satuan", r.qty > 0 ? formatRupiah(r.unitCost) : "—"],
+    ["Nilai", formatRupiah(r.value)],
+    ["Dibuat", formatDateTimeID(r.product.createdAt)],
+    ["Diperbarui", formatDateTimeID(r.product.updatedAt)],
+    ["Dibuat oleh", <ByCell key="c" email={r.product.createdBy} />],
+    ["Diperbarui oleh", <ByCell key="u" email={r.product.updatedBy} />],
+  ];
+  return (
+    <div className="border-b border-line">
+      <div
+        className="flex items-center gap-2 px-3 min-h-11 cursor-pointer"
+        onClick={onToggleOpen}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex-1 min-w-0 text-left font-medium break-words py-1"
+        >
+          {r.product.namaProduk}
+        </button>
+        {r.low && <LowBadge />}
+        <span className="tabular-nums font-medium whitespace-nowrap">
+          {formatRupiah(r.value)}
+        </span>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`}
+        />
+      </div>
+
+      {open && (
+        <div className="bg-surface-sunken border-t border-line px-3 py-3 text-sm">
+          <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1.5">
+            {kv.map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-faint">{label}</dt>
+                <dd className="text-right tabular-nums font-medium break-words">
+                  {value}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="flex justify-end mt-3">
+            <Link to="/produk/$id" params={{ id: r.product.id }}>
+              <Button size="sm" tabIndex={-1}>
+                Buka produk
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
