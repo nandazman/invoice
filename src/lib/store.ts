@@ -11,6 +11,7 @@ import type {
 import { nowISO, uid } from "./format";
 import { logAudit, diff, auditRow } from "./audit";
 import { modalCostFor } from "./purchaseFromOrder";
+import { planOrderEdit, type OrderEdit, type OrderEditPlan } from "./orderEdit";
 import { db, persist, touch, fresh, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
 
 // In-memory mirror of the LIVE rows (deletedAt === null). Filled once by
@@ -452,6 +453,69 @@ export function addOrder(item: OrderItem): void {
   );
 }
 
+// Preview of what saving an edit would move in stock, for the confirm dialog.
+export function previewOrderEdit(
+  id: string,
+  edit: Partial<OrderEdit>,
+): OrderEditPlan | null {
+  const prev = orders.find((o) => o.id === id);
+  return prev ? planOrderEdit(prev, edit, products, stock) : null;
+}
+
+// Edit every field of one order. The order, its sale movements and the audit
+// entries commit in ONE transaction, for the same reason addOrder does: an
+// order whose qty changed but whose movement did not would silently skew stock.
+export function updateOrder(id: string, edit: Partial<OrderEdit>): void {
+  const now = nowISO();
+  const prev = orders.find((o) => o.id === id);
+  if (!prev) return;
+  // An unknown buyerId would render as "(pembeli dihapus)" forever.
+  if (
+    edit.buyerId !== undefined &&
+    edit.buyerId !== "" &&
+    !buyers.some((b) => b.id === edit.buyerId)
+  ) {
+    return;
+  }
+  const plan = planOrderEdit(prev, edit, products, stock);
+  if (plan.changes.length === 0) return;
+
+  const row = touch(plan.next, now);
+  orders = orders.map((o) => (o.id === id ? row : o));
+  const moved = plan.moves.map((m) => touch(m.next, now));
+  if (moved.length > 0) {
+    const byId = new Map(moved.map((m) => [m.id, m] as const));
+    stock = stock.map((m) => byId.get(m.id) ?? m);
+  }
+  emit();
+
+  const entries = [
+    logAudit({
+      entity: "order",
+      entityId: id,
+      action: "update",
+      label: `${prev.namaProduk}: diubah (${plan.changes.map((c) => c.field).join(", ")})`,
+      changes: plan.changes,
+    }),
+    ...plan.moves.map((m) =>
+      logAudit({
+        entity: "stock",
+        entityId: m.prev.id,
+        action: "update",
+        label: `Stok ${prev.namaProduk}: ${m.prev.qty} → ${m.next.qty} (ikut ubah pesanan)`,
+        changes: diff(m.prev, m.next, ["tanggal", "productId", "qty", "satuan"]),
+      }),
+    ),
+  ];
+  persist("updateOrder", () =>
+    db.transaction("rw", db.orders, db.stock, db.audit, async () => {
+      await db.orders.put(row);
+      if (moved.length > 0) await db.stock.bulkPut(moved);
+      await db.audit.bulkPut(entries);
+    }),
+  );
+}
+
 export function setOrderStatus(id: string, status: OrderStatus): void {
   setOrdersStatus(new Set([id]), status);
 }
@@ -652,41 +716,97 @@ export function linkPurchaseProduct(id: string, productId: string): void {
   );
 }
 
-export function deleteOrder(id: string): void {
-  deleteOrders(new Set([id]));
+export function deleteOrder(id: string, opts?: DeleteOrderOptions): void {
+  deleteOrders(new Set([id]), opts);
+}
+
+export interface DeleteOrderOptions {
+  // Also cancel the Beli Stok purchases that were bought FOR these orders (and
+  // the stock they added). Off by default: the purchase is a real buy that
+  // happened, so deleting only the order must leave it standing.
+  cancelPurchases?: boolean;
+}
+
+// What deleting these orders would touch, for the confirm dialog. Purchases are
+// only listed when every order linked to them is in `ids`; a purchase that also
+// feeds a surviving order is never cancelled.
+export function orderDeleteImpact(ids: Set<string>): {
+  orders: number;
+  movements: number;
+  purchases: PurchaseItem[];
+} {
+  const doomedOrders = orders.filter((o) => ids.has(o.id));
+  const saleMoves = stock.filter((m) => m.orderId && ids.has(m.orderId));
+  const linked = new Set(
+    saleMoves.map((m) => m.purchaseId).filter((p): p is string => !!p),
+  );
+  const shared = new Set(
+    stock
+      .filter((m) => m.purchaseId && m.orderId && !ids.has(m.orderId))
+      .map((m) => m.purchaseId as string),
+  );
+  return {
+    orders: doomedOrders.length,
+    movements: saleMoves.length,
+    purchases: purchases.filter((p) => linked.has(p.id) && !shared.has(p.id)),
+  };
 }
 
 // Soft-delete orders and cascade to the stock movements they generated, in one
 // transaction. The cascade is why this must be atomic: a half-applied delete
 // leaves orphaned movements that silently corrupt every stock aggregate.
-export function deleteOrders(ids: Set<string>): void {
+export function deleteOrders(ids: Set<string>, opts: DeleteOrderOptions = {}): void {
   const now = nowISO();
   const doomedOrders = orders.filter((o) => ids.has(o.id));
   if (doomedOrders.length === 0) return;
-  const doomedStock = stock.filter((m) => m.orderId && ids.has(m.orderId));
+  const doomedPurchases = opts.cancelPurchases
+    ? orderDeleteImpact(ids).purchases
+    : [];
+  const purchaseIds = new Set(doomedPurchases.map((p) => p.id));
+  const doomedStock = stock.filter(
+    (m) =>
+      (m.orderId && ids.has(m.orderId)) ||
+      (m.purchaseId && purchaseIds.has(m.purchaseId)),
+  );
+  const doomedStockIds = new Set(doomedStock.map((m) => m.id));
 
   const orderRows = doomedOrders.map((o) => tombstone(o, now));
+  const purchaseRows = doomedPurchases.map((p) => tombstone(p, now));
   const stockRows = doomedStock.map((m) => tombstone(m, now));
 
   orders = orders.filter((o) => !ids.has(o.id));
+  if (purchaseIds.size > 0) {
+    purchases = purchases.filter((p) => !purchaseIds.has(p.id));
+  }
   if (doomedStock.length > 0) {
-    stock = stock.filter((m) => !(m.orderId && ids.has(m.orderId)));
+    stock = stock.filter((m) => !doomedStockIds.has(m.id));
   }
   emit();
 
   const bulk = doomedOrders.length > 1;
-  const entries = doomedOrders.map((o) =>
-    logAudit({
-      entity: "order",
-      entityId: o.id,
-      action: "delete",
-      label: bulk ? `Pesanan dihapus (massal)` : `Pesanan ${o.namaProduk} dihapus`,
-    }),
-  );
+  const entries = [
+    ...doomedOrders.map((o) =>
+      logAudit({
+        entity: "order",
+        entityId: o.id,
+        action: "delete",
+        label: bulk ? `Pesanan dihapus (massal)` : `Pesanan ${o.namaProduk} dihapus`,
+      }),
+    ),
+    ...doomedPurchases.map((p) =>
+      logAudit({
+        entity: "purchase",
+        entityId: p.id,
+        action: "delete",
+        label: `Beli Stok ${p.namaProduk} dibatalkan bersama pesanan`,
+      }),
+    ),
+  ];
 
   persist("deleteOrders", () =>
-    db.transaction("rw", db.orders, db.stock, db.audit, async () => {
+    db.transaction("rw", db.orders, db.purchases, db.stock, db.audit, async () => {
       await db.orders.bulkPut(orderRows);
+      if (purchaseRows.length > 0) await db.purchases.bulkPut(purchaseRows);
       if (stockRows.length > 0) await db.stock.bulkPut(stockRows);
       await db.audit.bulkPut(entries);
     }),

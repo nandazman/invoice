@@ -15,6 +15,9 @@ import {
   setOrderBuyer,
   setOrdersStatus,
   setOrdersBuyer,
+  updateOrder,
+  previewOrderEdit,
+  orderDeleteImpact,
   backfillOrderBuyer,
   getProducts,
   getOrders,
@@ -780,5 +783,190 @@ describe("local writes clear stale attribution", () => {
     const row = await db.orders.get("o2");
     expect(row?.createdBy).toBeNull();
     expect(row?.updatedBy).toBeNull();
+  });
+});
+
+describe("updateOrder", () => {
+  beforeEach(() => reset({ products: [product], buyers: [buyer()] }));
+
+  it("edits every field, recomputes the total and logs a field diff", async () => {
+    addOrder(order());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    updateOrder("o1", {
+      tanggal: "2026-07-20",
+      buyerId: "b1",
+      satuan: "box",
+      kuantitas: 2,
+      hargaSatuan: 55000,
+      modalSatuan: 24000,
+      status: "paid",
+    });
+    await flushWrites();
+
+    const row = await db.orders.get("o1");
+    expect(row).toMatchObject({
+      tanggal: "2026-07-20",
+      buyerId: "b1",
+      satuan: "box",
+      kuantitas: 2,
+      hargaSatuan: 55000,
+      totalHarga: 110000,
+      modalSatuan: 24000,
+      status: "paid",
+    });
+    expect(await db.audit.count()).toBe(before + 1);
+    const entry = (await db.audit.toArray()).find((e) => e.action === "update");
+    expect(entry?.changes?.map((c) => c.field)).toContain("hargaSatuan");
+  });
+
+  it("is a no-op when nothing changed", async () => {
+    addOrder(order());
+    await flushWrites();
+    const before = await db.audit.count();
+
+    updateOrder("o1", { kuantitas: 5, status: "pending" });
+    await flushWrites();
+
+    expect(await db.audit.count()).toBe(before);
+  });
+
+  it("rejects an unknown buyer", async () => {
+    addOrder(order());
+    updateOrder("o1", { buyerId: "nope" });
+    await flushWrites();
+    expect((await db.orders.get("o1"))?.buyerId).toBe("");
+  });
+
+  it("resyncs the sale movement in base units when qty and unit change", async () => {
+    addOrder(order({ affectsStock: true }));
+    await flushWrites();
+    expect(getStock()[0].qty).toBe(-5);
+
+    updateOrder("o1", { satuan: "box", kuantitas: 2, tanggal: "2026-07-22" });
+    await flushWrites();
+
+    const [m] = await db.stock.toArray();
+    expect(m.qty).toBe(-24); // 2 box × 12 pcs
+    expect(m.tanggal).toBe("2026-07-22");
+    expect(await db.stock.count()).toBe(1);
+  });
+
+  it("previewOrderEdit lists the movements that would change, writing nothing", async () => {
+    addOrder(order({ affectsStock: true }));
+    await flushWrites();
+
+    const plan = previewOrderEdit("o1", { kuantitas: 8 });
+    expect(plan?.moves).toHaveLength(1);
+    expect(plan?.moves[0].next.qty).toBe(-8);
+    expect(getStock()[0].qty).toBe(-5);
+
+    expect(previewOrderEdit("o1", { hargaSatuan: 9000 })?.moves).toHaveLength(0);
+  });
+
+  it("leaves a linked Beli Stok purchase alone", async () => {
+    const o = order({ affectsStock: false });
+    addOrder(o);
+    addPurchase(
+      {
+        id: "pu1",
+        tanggal: "2026-07-15",
+        productId: "p1",
+        namaProduk: "Almond Kacang",
+        satuan: "pcs",
+        kuantitas: 5,
+        hargaSatuan: 2000,
+        totalHarga: 10000,
+        createdAt: "x",
+        updatedAt: "x",
+        deletedAt: null,
+      },
+      "dari beli stok",
+      o,
+    );
+    await flushWrites();
+
+    updateOrder("o1", { kuantitas: 7 });
+    await flushWrites();
+
+    const moves = await db.stock.toArray();
+    expect(moves.find((m) => m.reason === "purchase")?.qty).toBe(5);
+    expect(moves.find((m) => m.reason === "sale")?.qty).toBe(-7);
+  });
+});
+
+describe("deleteOrders with a linked purchase", () => {
+  const setup = async () => {
+    await reset({ products: [product] });
+    const o = order({ id: "o1" });
+    addOrder(o);
+    addPurchase(
+      {
+        id: "pu1",
+        tanggal: "2026-07-15",
+        productId: "p1",
+        namaProduk: "Almond Kacang",
+        satuan: "pcs",
+        kuantitas: 5,
+        hargaSatuan: 2000,
+        totalHarga: 10000,
+        createdAt: "x",
+        updatedAt: "x",
+        deletedAt: null,
+      },
+      "dari beli stok",
+      o,
+    );
+    await flushWrites();
+  };
+
+  it("reports the movements and purchases a delete would touch", async () => {
+    await setup();
+    const impact = orderDeleteImpact(new Set(["o1"]));
+    expect(impact.orders).toBe(1);
+    expect(impact.movements).toBe(1);
+    expect(impact.purchases.map((p) => p.id)).toEqual(["pu1"]);
+  });
+
+  it("default delete removes the order and its sale but keeps the purchase", async () => {
+    await setup();
+    deleteOrder("o1");
+    await flushWrites();
+
+    expect(getOrders()).toHaveLength(0);
+    expect(getPurchases()).toHaveLength(1);
+    expect(getStock().map((m) => m.reason)).toEqual(["purchase"]); // stock restored
+    expect((await db.purchases.get("pu1"))?.deletedAt).toBeNull();
+  });
+
+  it("cancelPurchases also tombstones the purchase and its movement, atomically", async () => {
+    await setup();
+    deleteOrder("o1", { cancelPurchases: true });
+    await flushWrites();
+
+    expect(getOrders()).toHaveLength(0);
+    expect(getPurchases()).toHaveLength(0);
+    expect(getStock()).toHaveLength(0);
+    expect((await db.purchases.get("pu1"))?.deletedAt).not.toBeNull();
+    const rows = await db.stock.toArray();
+    expect(rows.every((m) => m.deletedAt !== null)).toBe(true);
+  });
+
+  it("never cancels a purchase that also feeds a surviving order", async () => {
+    await setup();
+    addOrder(order({ id: "o2" }));
+    // second order linked to the same purchase
+    const stockRow = getStock().find((m) => m.reason === "sale")!;
+    await db.stock.put({ ...stockRow, id: "mx", orderId: "o2" });
+    hydrateStores({
+      ...empty,
+      products: [product],
+      orders: getOrders(),
+      purchases: getPurchases(),
+      stock: [...getStock(), { ...stockRow, id: "mx", orderId: "o2" }],
+    });
+
+    expect(orderDeleteImpact(new Set(["o1"])).purchases).toHaveLength(0);
   });
 });
