@@ -47,7 +47,7 @@ import {
   usePersistentVisibility,
 } from "../lib/columns";
 import { ByCell, ByCells, ByHeaders } from "../components/Attribution";
-import { useOrderFilter, type StatusFilter } from "../lib/useOrderFilter";
+import { useOrderFilter } from "../lib/useOrderFilter";
 import {
   AddOrderDialog,
   EditOrderDialog,
@@ -59,10 +59,9 @@ import { LinkProductDialog } from "../components/LinkProductDialog";
 import { BuyerBackfillDialog } from "../components/BuyerBackfillDialog";
 import { BuyerSelect } from "../components/BuyerSelect";
 import { Button, GhostButton, PrimaryButton } from "../components/Button";
-import { FilterBar } from "../components/FilterBar";
+import { OrderFilterBar } from "../components/OrderFilterBar";
 import { Select } from "../components/Select";
 import { Panel } from "../components/Panel";
-import { Field } from "../components/Field";
 import { ColumnToggle } from "../components/ColumnToggle";
 import { thClass, tdClass } from "../components/DataTable";
 import {
@@ -524,31 +523,11 @@ export function OrdersPage() {
         </Panel>
       )}
 
-      <FilterBar filter={filter} className="flex gap-3 flex-wrap items-end">
-        <Field label="Status" className="w-36">
-          <Select
-            value={filter.values.status}
-            onChange={(e) =>
-              filter.set({ status: e.target.value as StatusFilter })
-            }
-          >
-            <option value="semua">Semua</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-          </Select>
-        </Field>
-        {/* A view switch, not a filter — so it sits here rather than in
-            FilterBar's own row, and Reset deliberately leaves it alone. */}
-        <label className="flex items-center gap-2 text-sm text-muted cursor-pointer h-9 shrink-0">
-          <input
-            type="checkbox"
-            checked={perBuyer}
-            onChange={(e) => setPerBuyer(e.target.checked)}
-            className="w-4 h-4 accent-brand cursor-pointer"
-          />
-          Pisahkan per pembeli
-        </label>
-      </FilterBar>
+      <OrderFilterBar
+        filter={filter}
+        perBuyer={perBuyer}
+        onPerBuyer={setPerBuyer}
+      />
 
       <Panel>
         <div className="flex gap-3 flex-wrap items-center mb-3">
