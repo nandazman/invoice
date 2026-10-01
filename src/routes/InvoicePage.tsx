@@ -6,6 +6,7 @@ import { fieldKey } from "../lib/template-types";
 import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
 import { formatRupiah, formatAngka, formatTanggalID, sumRupiah } from "../lib/format";
+import { useStagedHandoff } from "../lib/stageHandoff";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
 import { OrderFilterBar } from "../components/OrderFilterBar";
@@ -59,6 +60,8 @@ export function InvoicePage() {
   const [showPrice, setShowPrice] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
   const exp = useExpandAll(staged.map((s) => s.id));
+
+  useStagedHandoff(orders, setStaged);
 
   function appendFiltered() {
     setStaged((prev) => {

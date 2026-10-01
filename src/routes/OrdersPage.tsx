@@ -6,7 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { handOffToStaging } from "../lib/stageHandoff";
 import type {
   Buyer,
   OrderItem,
@@ -362,6 +363,13 @@ export function OrdersPage() {
     return new Set([...selected].filter((id) => onScreen.has(id)));
   }, [selected, filtered]);
 
+  const navigate = useNavigate();
+  // Stages exactly the ticked, on-screen rows on the destination page.
+  function sendTo(to: "/excel" | "/invoice") {
+    handOffToStaging(chosen);
+    navigate({ to });
+  }
+
   const toggleSelected = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -619,6 +627,8 @@ export function OrdersPage() {
             onBuyer={bulkBuyer}
             onCreateBuyer={bulkCreateBuyer}
             onBuy={() => setBuying(true)}
+            onExport={() => sendTo("/excel")}
+            onInvoice={() => sendTo("/invoice")}
             onClear={clearSelection}
           />
         )}
@@ -1350,6 +1360,8 @@ function BulkBar({
   onBuyer,
   onCreateBuyer,
   onBuy,
+  onExport,
+  onInvoice,
   onClear,
 }: {
   count: number;
@@ -1358,6 +1370,8 @@ function BulkBar({
   onBuyer: (buyerId: string) => void;
   onCreateBuyer: (nama: string) => void;
   onBuy: () => void;
+  onExport: () => void;
+  onInvoice: () => void;
   onClear: () => void;
 }) {
   return (
@@ -1396,6 +1410,12 @@ function BulkBar({
         title="Catat pembelian stok untuk item terpilih"
       >
         Beli stok ({count})
+      </Button>
+      <Button size="sm" onClick={onExport}>
+        Ekspor Excel
+      </Button>
+      <Button size="sm" onClick={onInvoice}>
+        Buat Invoice
       </Button>
       <span className="flex-1" />
       <Button size="sm" onClick={onClear}>

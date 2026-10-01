@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useOrders, useProducts, usePurchases } from "../lib/store";
 import { formatRupiah, formatAngka, formatTanggalID } from "../lib/format";
+import { useStagedHandoff } from "../lib/stageHandoff";
 import { downloadOrdersXLSX } from "../lib/excel";
 import { copyOrdersImage, downloadOrdersImage } from "../lib/orderImage";
 import {
@@ -62,6 +63,11 @@ export function ExcelPage() {
 
   const filter = useOrderFilter(dataset, products);
   const filtered = filter.filtered;
+
+  useStagedHandoff(orders, (picked) => {
+    setSource("order");
+    setStaged(picked);
+  });
 
   // Switching source starts fresh: no filters (purchases have no status) and no
   // staging/selection so the two sources never mix in a single export.
