@@ -18,7 +18,11 @@ import { Panel } from "../components/Panel";
 import { Field } from "../components/Field";
 import { OrderFilterBar } from "../components/OrderFilterBar";
 import { CopyTextDialog } from "../components/CopyTextDialog";
-import { MobileList, MobileRow } from "../components/MobileList";
+import {
+  StagedPhoneList,
+  ExpandAllButton,
+  useExpandAll,
+} from "./stagedRows";
 import { thClass, tdClass } from "../components/DataTable";
 import { TrashIcon } from "../components/icons";
 
@@ -127,17 +131,13 @@ export function ExcelPage() {
 
   const grandTotal = staged.reduce((s, i) => s + i.totalHarga, 0);
   const allChecked = staged.length > 0 && selected.size === staged.length;
+  const exp = useExpandAll(staged.map((s) => s.id));
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Ekspor Excel</h1>
-      <p className="text-faint mb-4">
-        Pilih item ke area staging, lalu ekspor ke berkas{" "}
-        <b>{labels.filename}.xlsx</b>.
-      </p>
-
-      <Panel>
-        <Field label="Sumber" className="w-36">
+      <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3 mb-1">
+        <h1 className="text-2xl font-bold sm:mr-auto">Ekspor Excel</h1>
+        <Field label="Sumber" className="w-full sm:w-36">
           <Select
             value={source}
             onChange={(e) => changeSource(e.target.value as Source)}
@@ -146,12 +146,16 @@ export function ExcelPage() {
             <option value="beli">Beli Stock</option>
           </Select>
         </Field>
-      </Panel>
+      </div>
+      <p className="text-faint mb-4">
+        Pilih item ke area staging, lalu ekspor ke berkas{" "}
+        <b>{labels.filename}.xlsx</b>.
+      </p>
 
       <OrderFilterBar filter={filter} showStatus={source === "order"} />
 
       <Panel>
-        <div className="flex gap-3 flex-wrap items-center">
+        <div className="flex gap-2 flex-wrap items-center">
           <span className="flex-1" />
           <Button onClick={appendFiltered}>Tambah sesuai filter ({filter.filtered.length})</Button>
           <Button onClick={replaceFiltered}>Ganti semua</Button>
@@ -166,8 +170,12 @@ export function ExcelPage() {
             </span>
           )}
           <span className="text-faint">· {staged.length} item</span>
+          <span className="flex-1" />
+          {staged.length > 0 && (
+            <ExpandAllButton anyOpen={exp.open.size > 0} onClick={exp.toggleAll} />
+          )}
         </div>
-        <div className="flex gap-3 flex-wrap items-center justify-end mb-3">
+        <div className="flex gap-2 flex-wrap items-center justify-end mb-3">
           <label className="flex items-center gap-1.5 text-sm text-muted select-none cursor-pointer mr-auto">
             <input
               type="checkbox"
@@ -220,77 +228,30 @@ export function ExcelPage() {
           </div>
         ) : (
           <>
-            {/* The phone layout. Seven-plus columns do not fit on 390px, so
-                below `md` the row collapses to what it IS on the left and what
-                it is WORTH on the right. Tanggal and the row's delete action
-                restack under the product; the per-row checkbox rides along
-                with the title since the header has no room for a select-all
-                on the phone. When Harga is hidden, Kuantitas takes over the
-                right side and its own arithmetic note is dropped since it
-                would just repeat the value already shown there. */}
-            <div className="md:hidden">
-              <MobileList
-                // Select-all is the difference between exporting a filtered
-                // set and ticking forty rows by hand, so it rides in the phone
-                // header rather than staying a desktop-only affordance.
-                left={
-                  <span className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="accent-brand"
-                      checked={allChecked}
-                      onChange={toggleAll}
-                      aria-label="Pilih semua baris"
-                    />
-                    Nama Produk
-                  </span>
-                }
-                right={showPrice ? "Total" : "Kuantitas"}
-              >
-                {stagedSorted.map((it) => (
-                  <MobileRow
-                    key={it.id}
-                    title={
-                      <span className="flex items-center gap-2 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(it.id)}
-                          onChange={() => toggleRow(it.id)}
-                        />
-                        <span className="truncate">{it.namaProduk}</span>
-                      </span>
-                    }
-                    meta={
-                      <>
-                        <span>{formatTanggalID(it.tanggal)}</span>
-                        {/* The trailing action column has nowhere else to go
-                            on a phone, so it rides along here. */}
-                        <DangerGhostButton
-                          size="sm"
-                          onClick={() => removeRow(it.id)}
-                          title="Hapus dari staging"
-                          aria-label="Hapus dari staging"
-                        >
-                          <TrashIcon />
-                        </DangerGhostButton>
-                      </>
-                    }
-                    value={
-                      showPrice
-                        ? formatRupiah(it.totalHarga)
-                        : formatAngka(it.kuantitas)
-                    }
-                    note={
-                      showPrice
-                        ? `${formatAngka(it.kuantitas)} × ${formatRupiah(
-                            it.hargaSatuan,
-                          )}`
-                        : undefined
-                    }
-                  />
-                ))}
-              </MobileList>
-            </div>
+            <StagedPhoneList
+              className="-mx-4"
+              rows={stagedSorted}
+              selected={selected}
+              open={exp.open}
+              onToggleSelected={toggleRow}
+              onToggleOpen={exp.toggle}
+              onToggleAll={toggleAll}
+              details={(it) => [
+                ["Tanggal", formatTanggalID(it.tanggal)],
+                ["Kuantitas", formatAngka(it.kuantitas)],
+                ["Harga Satuan", formatRupiah(it.hargaSatuan)],
+                ["Total", formatRupiah(it.totalHarga)],
+              ]}
+              actions={(it) => (
+                <DangerGhostButton
+                  size="sm"
+                  onClick={() => removeRow(it.id)}
+                  aria-label="Hapus dari staging"
+                >
+                  <TrashIcon /> Hapus dari staging
+                </DangerGhostButton>
+              )}
+            />
 
           <div className="overflow-x-auto hidden md:block">
             <table className="w-full border-collapse">

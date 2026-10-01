@@ -5,7 +5,7 @@ import type { InvoiceData, FieldType } from "../lib/template-types";
 import { fieldKey } from "../lib/template-types";
 import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
-import { formatRupiah, formatAngka, sumRupiah } from "../lib/format";
+import { formatRupiah, formatAngka, formatTanggalID, sumRupiah } from "../lib/format";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
 import { OrderFilterBar } from "../components/OrderFilterBar";
@@ -16,7 +16,11 @@ import { Select } from "../components/Select";
 import { Field } from "../components/Field";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { thClass, tdClass } from "../components/DataTable";
-import { MobileList, MobileRow } from "../components/MobileList";
+import {
+  StagedPhoneList,
+  ExpandAllButton,
+  useExpandAll,
+} from "./stagedRows";
 
 
 export function InvoicePage() {
@@ -54,6 +58,7 @@ export function InvoicePage() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [showPrice, setShowPrice] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
+  const exp = useExpandAll(staged.map((s) => s.id));
 
   function appendFiltered() {
     setStaged((prev) => {
@@ -208,7 +213,7 @@ export function InvoicePage() {
               <span className="text-xs text-faint">{staged.length} item</span>
             </div>
             {staged.length > 0 && (
-              <div className="mb-2">
+              <div className="mb-2 flex items-center gap-2">
                 <DangerButton
                   size="sm"
                   onClick={removeSelected}
@@ -216,49 +221,32 @@ export function InvoicePage() {
                 >
                   Hapus terpilih ({selectedRows.size})
                 </DangerButton>
+                <span className="flex-1" />
+                <ExpandAllButton
+                  anyOpen={exp.open.size > 0}
+                  onClick={exp.toggleAll}
+                />
               </div>
             )}
             {staged.length === 0 ? (
               <p className="text-xs text-faint text-center py-3">Belum ada item.</p>
             ) : (
               <>
-              <div className="md:hidden max-h-72 overflow-y-auto">
-                <MobileList
-                  left={
-                    <span className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="accent-brand"
-                        checked={selectedRows.size === staged.length}
-                        onChange={toggleAll}
-                        aria-label="Pilih semua item"
-                      />
-                      Produk
-                    </span>
-                  }
-                  right="Total"
-                >
-                  {stagedSorted.map((it) => (
-                    <MobileRow
-                      key={it.id}
-                      title={
-                        <span className="inline-flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            className="accent-brand shrink-0"
-                            checked={selectedRows.has(it.id)}
-                            onChange={() => toggleRow(it.id)}
-                            aria-label={`Pilih ${it.namaProduk}`}
-                          />
-                          {it.namaProduk}
-                        </span>
-                      }
-                      value={formatRupiah(it.totalHarga)}
-                      note={`Qty ${formatAngka(it.kuantitas)}`}
-                    />
-                  ))}
-                </MobileList>
-              </div>
+              <StagedPhoneList
+                className="-mx-4 max-h-96 overflow-y-auto"
+                rows={stagedSorted}
+                selected={selectedRows}
+                open={exp.open}
+                onToggleSelected={toggleRow}
+                onToggleOpen={exp.toggle}
+                onToggleAll={toggleAll}
+                details={(it) => [
+                  ["Tanggal", formatTanggalID(it.tanggal)],
+                  ["Kuantitas", formatAngka(it.kuantitas)],
+                  ["Harga Satuan", formatRupiah(it.hargaSatuan)],
+                  ["Total", formatRupiah(it.totalHarga)],
+                ]}
+              />
               <div className="overflow-x-auto max-h-72 overflow-y-auto hidden md:block">
                 <table className="w-full border-collapse">
                   <thead>

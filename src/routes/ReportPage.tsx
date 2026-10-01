@@ -1041,13 +1041,13 @@ function PanelHead({
 function Band({ title, sub }: { title: string; sub: string }) {
   return (
     <div className="flex items-center gap-3 mt-6 mb-3">
-      <div className="shrink-0">
+      <div className="min-w-0">
         <div className="text-xs text-faint font-semibold">
           {title}
         </div>
         <div className="text-sm text-faint">{sub}</div>
       </div>
-      <div className="flex-1 border-t border-line" />
+      <div className="flex-1 min-w-6 border-t border-line" />
     </div>
   );
 }
