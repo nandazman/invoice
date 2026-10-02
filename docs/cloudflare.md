@@ -10,10 +10,10 @@ Aplikasi ini hidup di dua tempat sekaligus:
 > Cloudflare menyajikan situs di root domain, bukan di `/invoice/`, jadi build-nya
 > pakai `VITE_BASE=/`. Build GitHub Pages tidak berubah sama sekali.
 
-> **Data tidak ikut pindah.** Dexie menyimpan semuanya di IndexedDB yang ter-scope
-> per origin. Tiap hostname punya database sendiri: `invoice.xutopia.my.id` mulai
-> kosong dan datanya terpisah total dari situs GitHub Pages. Aplikasi yang sama,
-> dua database berbeda.
+> **Salinan GitHub Pages tidak lagi berfungsi.** Sejak 2026-10-02 data hanya ada di
+> D1 (`docs/2026-10-02/d1-only-plan.md`), dan GitHub Pages tidak punya server:
+> aplikasinya menampilkan "Server tidak tersedia". Yang dipakai hanya
+> `invoice.xutopia.my.id`.
 
 ---
 
@@ -94,6 +94,28 @@ https://dash.cloudflare.com/profile/api-tokens dengan permission:
 | Account | Workers Scripts | Edit |
 | Zone | Workers Routes | Edit |
 | Zone | DNS | Edit |
+
+---
+
+## Cadangan dan pemulihan
+
+Data hanya ada di D1, jadi cadangan adalah tugas operator, bukan tombol di
+aplikasi. Urutannya tidak boleh dibalik:
+
+1. `bun run d1:export` — menulis `d1-export.sql`. Pindahkan ke `backup/` dengan
+   tanggal (`backup/d1-export-2026-10-02.sql`) dan pastikan ukurannya bukan nol.
+2. Kalau ada migrasi baru: terapkan **sebelum** men-deploy klien yang memakai
+   kolom itu (`bun run d1:migrate`; `migrations/0004_order_modal.sql` menjelaskan
+   alasannya).
+3. `bun run deploy:cf`.
+
+Ambil cadangan **sebelum setiap deploy yang mengubah skema atau jalur tulis**,
+dan sebelum SQL tulisan tangan apa pun ke D1 remote.
+
+Pemulihan: D1 menyimpan riwayat 30 hari (`wrangler d1 time-travel info invoice`,
+lalu `wrangler d1 time-travel restore invoice --timestamp=...`). Untuk kembali ke
+berkas `.sql`, buat database kosong lalu `wrangler d1 execute <db> --remote
+--file backup/<berkas>.sql`.
 
 ---
 

@@ -1,14 +1,8 @@
 // Vitest global setup.
 //
-// Two browser APIs the storage layer depends on do not exist in the node test
-// environment, and both must be installed BEFORE any module that touches them
-// is imported — db.ts constructs its Dexie instance at module load.
+// Browser APIs that do not exist in the node test environment.
 
-// In-memory IndexedDB. Patches the globals (indexedDB, IDBKeyRange, ...).
-import "fake-indexeddb/auto";
-
-// Minimal localStorage. Only the migration reads it, and only via
-// getItem/setItem/removeItem — no need for a full Storage implementation.
+// Minimal localStorage, for the few UI preferences kept there.
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
 

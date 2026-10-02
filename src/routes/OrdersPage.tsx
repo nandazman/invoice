@@ -29,9 +29,6 @@ import {
   linkOrderProduct,
   setOrdersBuyer,
   upsertBuyer,
-  useBuyerBackfillPending,
-  dismissBuyerBackfill,
-  needsBuyer,
 } from "../lib/store";
 import {
   formatRupiah,
@@ -57,7 +54,6 @@ import {
 import { DeleteOrdersDialog } from "../components/DeleteOrdersDialog";
 import { BuyFromOrderDialog } from "../components/BuyFromOrderDialog";
 import { LinkProductDialog } from "../components/LinkProductDialog";
-import { BuyerBackfillDialog } from "../components/BuyerBackfillDialog";
 import { BuyerSelect } from "../components/BuyerSelect";
 import { Button, GhostButton, PrimaryButton } from "../components/Button";
 import { OrderFilterBar } from "../components/OrderFilterBar";
@@ -294,22 +290,6 @@ export function OrdersPage() {
   const products = useProducts();
   const orders = useOrders();
   const buyers = useBuyers();
-
-  const backfillPending = useBuyerBackfillPending();
-  // Escape / click-outside on the prompt must write nothing, so "closed" is
-  // session state here, not a stored answer: the prompt returns next visit.
-  const [backfillClosed, setBackfillClosed] = useState(false);
-  // Gate on the rows the backfill would actually touch, not on `orders.length`:
-  // an install with no orders and one where every order already has a buyer are
-  // the same question — "nothing to ask about" — and both must answer silently
-  // rather than offer to stamp zero rows.
-  const withoutBuyer = useMemo(
-    () => orders.filter(needsBuyer).length,
-    [orders],
-  );
-  useEffect(() => {
-    if (backfillPending && withoutBuyer === 0) dismissBuyerBackfill();
-  }, [backfillPending, withoutBuyer]);
 
   const [visible, toggle] = usePersistentVisibility(
     "invoice.pesanan.cols.v2",
@@ -897,13 +877,6 @@ export function OrdersPage() {
             setLinking(null);
           }}
           onClose={() => setLinking(null)}
-        />
-      )}
-
-      {backfillPending && !backfillClosed && withoutBuyer > 0 && (
-        <BuyerBackfillDialog
-          count={withoutBuyer}
-          onClose={() => setBackfillClosed(true)}
         />
       )}
     </div>

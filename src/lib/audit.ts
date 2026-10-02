@@ -1,14 +1,10 @@
 import { useSyncExternalStore } from "react";
 import type { AuditEntry, Product, StockMovement } from "./types";
 import { uid, nowISO } from "./format";
-import { db, persist, type Snapshot } from "./db";
+import type { Snapshot } from "./db";
 
 // The global audit log. Append-only: entries are never updated or deleted, so
 // this is the one store with no `deletedAt`.
-//
-// It is also the hottest write path in the app — every mutation appends here.
-// Under localStorage each append rewrote the ENTIRE log (O(n) stringify + write
-// per entry, on the biggest and fastest-growing table). Now it is one row.
 let entries: AuditEntry[] = [];
 
 export function hydrateAudit(snap: Snapshot): void {
@@ -35,24 +31,12 @@ export function getAudit(): AuditEntry[] {
   return entries;
 }
 
-// Replace the whole log (used by Restore). No id regeneration.
-export function setAudit(next: AuditEntry[]): void {
-  entries = next;
-  emit();
-  persist("setAudit", () =>
-    db.transaction("rw", db.audit, async () => {
-      await db.audit.clear();
-      await db.audit.bulkPut(next);
-    }),
-  );
-}
-
 // Stamp an entry, append it to the in-memory log, and RETURN it.
 //
-// IMPORTANT: this does NOT write to IndexedDB. The caller must put the returned
-// entry inside its own transaction — an audit entry always accompanies a data
-// mutation, and the two must commit together or not at all. Logging separately
-// would reintroduce exactly the torn-write problem that transactions fix.
+// IMPORTANT: this does NOT write to D1. The caller must put the returned entry
+// in the same `persist()` batch as the change it describes — an audit entry
+// always accompanies a data mutation, and the two must land together or not at
+// all.
 export function logAudit(entry: Omit<AuditEntry, "id" | "timestamp">): AuditEntry {
   const full: AuditEntry = { ...entry, id: uid(), timestamp: nowISO() };
   entries = [...entries, full];

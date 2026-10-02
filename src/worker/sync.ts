@@ -23,12 +23,13 @@ import { HttpError, json } from "./http";
 // it and a user who cannot.
 const MAX_ROW_BYTES = 1_900_000;
 
-// A batch is one transaction, so the whole push cannot go in one: a first sync
-// carries thousands of rows and an unbounded transaction is a lock held for as
-// long as it takes. Chunking gives up all-or-nothing across the push, which is
-// safe because every statement is an idempotent upsert — a client that retries
-// after a partial failure simply re-sends rows that already landed.
-const BATCH_SIZE = 50;
+// One push is one D1 transaction: the order, its stock movements and its audit
+// entries land together or not at all. That is the whole point of sending a
+// mutation as a single request, so the batch is large enough that no ordinary
+// edit is ever split. A request bigger than this (never an ordinary edit)
+// old device, which chunks on the client) is cut up; each cut is still an
+// idempotent upsert, so a retry just re-sends rows that already landed.
+const BATCH_SIZE = 1000;
 
 const now = () => new Date().toISOString();
 
@@ -36,13 +37,17 @@ const now = () => new Date().toISOString();
 
 export async function handlePull(db: D1Database, url: URL): Promise<Response> {
   const since = parseSince(url.searchParams.get("since"));
+  // Taken BEFORE the queries: a row committed while they run is stamped later
+  // than this, so the client's next `since` (this value, minus a margin) can
+  // never skip past it.
+  const serverTime = now();
   const tables: Record<string, Row[]> = {};
 
   for (const spec of TABLES) {
     tables[spec.name] = await pullTable(db, spec, since[spec.name] ?? null);
   }
 
-  return json({ serverTime: now(), tables });
+  return json({ serverTime, tables });
 }
 
 function parseSince(raw: string | null): Record<string, unknown> {
@@ -86,6 +91,12 @@ export async function handlePush(
   const statements: D1PreparedStatement[] = [];
   const applied: Record<string, number> = {};
 
+  // Every row's cursor is stamped with the SERVER's clock, not the device's.
+  // Pull asks "what is newer than my last pull", and a phone whose clock runs
+  // behind would otherwise write rows that every other device has already
+  // looked past.
+  const stamp = now();
+
   for (const [name, rows] of Object.entries(payload)) {
     if (!rows) continue;
     const spec = TABLE_BY_NAME.get(name);
@@ -94,15 +105,11 @@ export async function handlePush(
       throw new HttpError(400, "bad_rows", `Isi tabel "${name}" bukan array.`);
     }
 
-    // `types` has no cursor, so there is no way to tell a removed name from one
-    // that was never sent. Replacing the table wholesale is the only correct
-    // read of the payload — and it is a handful of rows.
-    if (spec.cursor === null) {
-      statements.push(db.prepare(`DELETE FROM ${spec.name}`));
-    }
-
+    // `types` has no cursor and nothing ever removes a type, so a push only
+    // ever adds names. (It used to replace the table, which would let two people
+    // adding a type at the same moment erase each other's.)
     for (const row of rows) {
-      statements.push(buildUpsert(db, spec, row as Row, email));
+      statements.push(buildUpsert(db, spec, row as Row, email, stamp));
     }
     applied[name] = rows.length;
   }
@@ -131,8 +138,10 @@ function buildUpsert(
   spec: TableSpec,
   row: Row,
   email: string,
+  stamp: string | null,
 ): D1PreparedStatement {
   const stored = toStorage(spec, row);
+  if (stamp !== null && spec.cursor !== null) stored[spec.cursor] = stamp;
 
   const key = stored[spec.key];
   if (key === null || key === undefined || key === "") {

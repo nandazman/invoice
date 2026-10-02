@@ -1,5 +1,11 @@
 # Aturan data: jangan sampai kejadian 7 September terulang
 
+> **Sebagian besar sudah tidak berlaku (2026-10-02).** D1 kini satu-satunya
+> salinan data (`docs/2026-10-02/d1-only-plan.md`): tidak ada lagi IndexedDB,
+> `clear()` tabel lokal, atau baris yang belum terkirim. Yang masih berlaku:
+> konfirmasi destruktif harus menyebut jumlah baris, dan `bun run d1:export`
+> sebelum SQL tulisan tangan ke D1 remote.
+
 Ditulis 2026-09-23, setelah enam pesanan tanggal 2026-09-07 hilang tanpa jejak.
 
 ## Apa yang terjadi

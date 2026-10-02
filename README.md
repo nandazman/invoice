@@ -1,19 +1,19 @@
 # Invoice & Pesanan
 
-Aplikasi web **lokal sepenuhnya (offline, tanpa jaringan)** untuk mengelola harga
-produk dan menghitung pesanan secara otomatis. Dibangun dengan **Vite + React +
-TypeScript + TanStack**, di-style dengan **Tailwind CSS**, dan di-deploy ke
-**GitHub Pages** lewat GitHub Actions.
+Aplikasi web untuk mengelola harga produk dan menghitung pesanan secara
+otomatis. Dibangun dengan **Vite + React + TypeScript + TanStack**, di-style
+dengan **Tailwind CSS**, dan berjalan di **Cloudflare Workers** (data di **D1**,
+login lewat **Cloudflare Access**).
 
-Semua data disimpan di **IndexedDB browser** (via Dexie) dan dapat di-**ekspor/
-impor sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
+**D1 adalah satu-satunya tempat data disimpan.** Browser hanya menyimpan salinan
+di memori selama tab terbuka: data diambil penuh saat dibuka, lalu diperbarui
+tiap menit dan saat tab kembali aktif. Setiap perubahan langsung tampil lalu
+dikirim ke server; kalau server menolaknya, tampilan dikembalikan dan pesan
+kesalahan muncul. Tidak ada mode offline. Rancangannya ada di
+`docs/2026-10-02/d1-only-plan.md`.
 
-> **Migrasi penyimpanan (2026-07-17):** data lama otomatis dipindahkan dari
-> localStorage ke IndexedDB saat aplikasi pertama kali dibuka — tanpa tindakan
-> apa pun dari pengguna. Kunci localStorage lama **tidak dihapus** (jalur
-> rollback; dihapus pada rilis berikutnya). File **cadangan lama (v2) tetap bisa
-> dipulihkan**. Preferensi tampilan (sidebar, kolom) tetap di localStorage.
-> Lihat `docs/2026-07-17/plan.md`.
+> **Cadangan:** lewat CLI, bukan dari aplikasi — `bun run d1:export` lalu simpan
+> berkasnya di `backup/`. Lihat `docs/cloudflare.md`.
 
 > **Status:** Delapan halaman sudah **selesai** — Harga, Pesanan, Stok, Beli
 > Stock, Ekspor Excel, Desain Template, Buat Invoice, dan Riwayat. Setiap produk
@@ -21,11 +21,8 @@ impor sebagai JSON**. Tidak ada server, tidak ada permintaan jaringan.
 > **Data** (Harga, Pesanan, Stok, Beli Stock, Riwayat) dan **Alat** (Ekspor
 > Excel, Desain Template, Buat Invoice).
 
-> **Cadangan data:** Gunakan **Backup semua / Pulihkan** di footer sidebar untuk
-> mencadangkan/memulihkan SELURUH data dengan **ID dipertahankan**. Ekspor/impor
-> JSON per-halaman adalah format **pertukaran** — ia me-*regenerasi* ID, jadi
-> **bukan** cadangan yang aman (memutus tautan stok ↔ produk). Untuk round-trip
-> yang aman, pakai Backup semua.
+> **Impor/ekspor JSON** per-halaman adalah format **pertukaran** — ia
+> me-*regenerasi* ID, jadi bukan cadangan.
 
 ---
 
@@ -258,7 +255,7 @@ src/
   lib/
     types.ts            # tipe data (termasuk AuditEntry) + konvensi deletedAt
     format.ts           # rupiah, tanggal Indonesia, uid
-    db.ts               # IndexedDB (Dexie): skema per-baris, readAll, migrasi, persist
+    db.ts               # jalur tulis: persist() mengirim perubahan ke D1, rollback bila ditolak
     bootstrap.ts        # urutan boot: migrasi -> readAll -> hydrate (dipanggil main.tsx)
     storage.ts          # LEGACY: pembaca localStorage, hanya sumber migrasi
     store.ts            # state global (useSyncExternalStore) + mutasi + hook audit
@@ -270,7 +267,7 @@ src/
     columns.ts          # definisi & toggle kolom tabel
     excel.ts            # ekspor order.xlsx (exceljs)
     template-types.ts   # tipe template, elemen, & data invoice
-    template-store.ts   # state template (IndexedDB) + create/duplicate/save
+    template-store.ts   # state template (cache memori dari D1) + create/duplicate/save
     image.ts            # downscale gambar & baca dimensi
     snap.ts             # snapping drag/resize di kanvas
   components/

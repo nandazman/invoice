@@ -289,8 +289,8 @@ export function ReportPage() {
             Ada baris stok yang menunjuk ke pesanan atau pembelian yang sudah
             tidak ada. Ini tidak bisa terjadi lewat tombol hapus biasa — menghapus
             pesanan ikut menghapus baris stoknya — jadi induknya hilang lewat
-            jalan lain: tabel yang terhapus sebelum tersinkron, atau pemulihan
-            cadangan yang setengah jalan.
+            jalan lain — biasanya data lama yang hilang sebelum database di
+            cloud menjadi satu-satunya salinan (7 September 2026).
           </p>
           <ul className="text-sm space-y-2">
             {integrity.findings.map((f) => (

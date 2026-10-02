@@ -9,14 +9,7 @@ import {
 } from "./template-types";
 import { el } from "./template-seed";
 import { uid, nowISO } from "./format";
-import { db, persist, touch, fresh, type Snapshot } from "./db";
-
-// Templates were the store that actually hit the 5MB localStorage cap: logos and
-// image elements are base64 data URLs (~33% larger than the bytes they encode),
-// embedded in a JSON string, in an origin-wide 5MB budget shared with every
-// other store. The QuotaExceededError alert that used to live here is gone —
-// the bug it reported is what moving to IndexedDB fixes.
-
+import { persist, touch, fresh, type Snapshot } from "./db";
 
 // Ensure older templates (saved before the logo feature) have a logo image and
 // a logo box on the canvas, so there is always somewhere to manage the logo.
@@ -73,29 +66,11 @@ function migrate(list: Template[]): { list: Template[]; changed: boolean } {
 
 let templates: Template[] = [];
 
-// Fill from the boot snapshot, running `migrate()` to fix up older template
-// shapes (missing logo, legacy `bind` fields). It persists only when it
-// actually changed something.
-//
-// It deliberately does NOT seed an example template into an empty store any
-// more. That used to live here and was the same bug as the product catalogue,
-// only worse: this function runs on every `rehydrate()` — after a pull, after a
-// cross-tab broadcast — not just at boot, so "the table is empty" was answered
-// over and over, each time with a fresh `uid()`. Two consequences, both of
-// which people hit:
-//
-//   - a new device seeded its own "Template Contoh" before the first pull
-//     arrived, so it ended up beside the cloud's copy instead of merging with
-//     it — and then pushed, adding one per device, forever;
-//   - deleting your last template resurrected it on the very next pull, and
-//     published the resurrection.
-//
-// The seed is now deferred to `resolveSeed()` in db.ts, which runs once the
-// cloud's answer is actually known. See SEED_PENDING_KEY there.
+// Fill from a snapshot, running `migrate()` to fix up older template shapes
+// (missing logo, legacy `bind` fields). The fix-up is display-time only: it is
+// not written back, and lands in D1 the next time someone saves the template.
 export function hydrateTemplates(snap: Snapshot): void {
-  const { list, changed } = migrate(snap.templates);
-  templates = list;
-  if (changed) persist("migrateTemplates", () => db.templates.bulkPut(list));
+  templates = migrate(snap.templates).list;
   emit();
 }
 
@@ -118,25 +93,6 @@ export function getTemplates(): Template[] {
   return templates;
 }
 
-// Whole-table replace. Only correct for Restore, where the caller is replacing
-// the entire dataset; `clear()` drops tombstones because a restore is an
-// authoritative replacement, not a merge. Every other mutation writes one row.
-//
-// `fresh` for the same reason store.ts's bulk setters use it: the backup file
-// carries whatever the server had stamped at export time, and replaying it is a
-// local write the server has not seen. See the block above those setters.
-export function setTemplates(next: Template[]): void {
-  const rows = next.map(fresh);
-  templates = rows;
-  emit();
-  persist("setTemplates", () =>
-    db.transaction("rw", db.templates, async () => {
-      await db.templates.clear();
-      await db.templates.bulkPut(rows);
-    }),
-  );
-}
-
 // Insert-or-update ONE template.
 function putTemplate(t: Template): void {
   const exists = templates.some((x) => x.id === t.id);
@@ -144,7 +100,7 @@ function putTemplate(t: Template): void {
     ? templates.map((x) => (x.id === t.id ? t : x))
     : [...templates, t];
   emit();
-  persist("putTemplate", () => db.templates.put(t));
+  persist("putTemplate", (b) => b.put("templates", t));
 }
 
 export function createTemplate(): Template {
@@ -200,7 +156,7 @@ export function saveTemplate(t: Template): void {
   putTemplate(touch({ ...t, createdAt: prev.createdAt, deletedAt: null }, nowISO()));
 }
 
-// Soft delete: the row stays in IndexedDB with a `deletedAt` and only leaves the
+// Soft delete: the row stays in D1 with a `deletedAt` and only leaves the
 // in-memory list.
 export function deleteTemplate(id: string): void {
   const prev = templates.find((t) => t.id === id);
@@ -209,5 +165,5 @@ export function deleteTemplate(id: string): void {
   const row: Template = touch({ ...prev, deletedAt: now }, now);
   templates = templates.filter((t) => t.id !== id);
   emit();
-  persist("deleteTemplate", () => db.templates.put(row));
+  persist("deleteTemplate", (b) => b.put("templates", row));
 }

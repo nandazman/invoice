@@ -254,20 +254,19 @@ export function AdminPage() {
     <div>
       <h1 className="hidden md:block text-2xl font-bold mb-1">Sinkronisasi</h1>
       <p className="hidden md:block text-faint mb-4">
-        Siapa Anda, apa yang sudah tersimpan di cloud, dan apa yang masih
-        tertinggal di perangkat ini.
+        Siapa Anda, siapa saja yang boleh memakai aplikasi, dan isi database
+        di cloud.
       </p>
 
       {status.available ? (
         <AdminSections status={status} />
       ) : (
         <Panel>
-          <h2 className="text-lg font-bold mb-1">Salinan tanpa cloud</h2>
+          <h2 className="text-lg font-bold mb-1">Tidak terhubung ke server</h2>
           <p className="text-sm text-faint">
-            Salinan aplikasi ini tidak terhubung ke server, jadi tidak ada
-            sinkronisasi. Semua data tersimpan di browser perangkat ini saja —
-            aplikasinya tetap berjalan penuh. Gunakan tombol “Backup semua” di
-            bawah menu kiri kalau ingin menyalin datanya keluar.
+            Halaman ini tidak bisa menjangkau server, jadi daftar peran dan isi
+            database tidak tersedia. Data aplikasi tersimpan di server, bukan di
+            browser ini.
           </p>
         </Panel>
       )}
@@ -448,12 +447,12 @@ type RoleAction =
   | { kind: "push"; row: RoleRow; next: boolean }
   | { kind: "remove"; row: RoleRow };
 
-// What turning "Kirim ke cloud" on or off actually does, in consequences. Same
+// What turning "Boleh mengubah data" on or off actually does, in consequences. Same
 // job as ROLE_EFFECT: a dialog that only repeats the switch's own label has
 // told the reader nothing.
 const PUSH_EFFECT: Record<"on" | "off", string> = {
-  on: "Mulai sekarang setiap catatannya dikirim ke cloud dan terlihat oleh semua orang — termasuk yang sudah dia catat selama tombol ini mati, karena semuanya masih tersimpan di perangkatnya dan ikut terkirim pada sinkronisasi berikutnya.",
-  off: "Mulai sekarang catatannya berhenti di perangkatnya sendiri: aplikasinya tetap jalan penuh dan dia tetap menerima data terbaru dari cloud, tapi tidak ada lagi yang dia kirim ke sana. Server menolak pengirimannya, jadi ini berlaku walaupun aplikasinya sedang terbuka.",
+  on: "Mulai sekarang dia bisa mencatat dan mengubah data. Setiap perubahannya langsung tersimpan di server dan terlihat oleh semua orang.",
+  off: "Mulai sekarang dia hanya bisa melihat: semua data tetap tampil dan diperbarui, tapi setiap upaya menyimpan perubahan ditolak. Server yang menolaknya, jadi ini berlaku walaupun aplikasinya sedang terbuka.",
 };
 
 // The only thing left to choose per person. Being on the list already grants
@@ -610,8 +609,8 @@ function RolesPanel() {
       <p className="text-sm text-faint mb-3">
         Siapa saja yang boleh memakai aplikasi ini. Ada di daftar berarti bisa
         memakainya sepenuhnya — melihat, mencatat, dan mengubah. Centang Admin
-        kalau orangnya juga boleh membuka halaman ini, dan matikan “Kirim ke
-        cloud” kalau catatannya cukup tersimpan di perangkatnya sendiri.
+        kalau orangnya juga boleh membuka halaman ini, dan matikan “Boleh
+        mengubah data” kalau orangnya cukup melihat saja.
       </p>
 
       <div className="flex gap-3 flex-wrap items-end mb-2">
@@ -639,7 +638,7 @@ function RolesPanel() {
             checked={canPush}
             onChange={(e) => setCanPush(e.target.checked)}
           />
-          Kirim ke cloud
+          Boleh mengubah data
         </label>
         <PrimaryButton onClick={askAdd} disabled={busy || email.trim() === ""}>
           + Tambah / Ubah
@@ -662,7 +661,7 @@ function RolesPanel() {
                 <th className={thClass}>Email</th>
                 <th className={thClass}>Peran</th>
                 <th className={thClass}>Admin</th>
-                <th className={thClass}>Kirim ke cloud</th>
+                <th className={thClass}>Boleh mengubah</th>
                 <th className={thClass}>Ditambahkan</th>
                 <th className={thClass}>Oleh</th>
                 <th className={thClass}></th>
@@ -695,20 +694,19 @@ function RolesPanel() {
                   <td className={tdClass}>
                     {/* Off is a real state worth seeing at a glance, not just
                         an empty box: an unchecked box reads as "nothing set
-                        here", and this one means "this person's data never
-                        leaves their laptop". */}
+                        here", and this one means "this person can only look". */}
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         className="accent-brand"
-                        aria-label={`Kirim perubahan ${r.email} ke cloud`}
+                        aria-label={`Izinkan ${r.email} mengubah data`}
                         checked={r.canPush}
                         disabled={busy}
                         onChange={(e) => askPush(r, e.target.checked)}
                       />
                       {!r.canPush && (
                         <span className="inline-block px-2 py-0.5 text-xs font-semibold rounded-md border bg-surface-sunken text-muted border-line">
-                          Lokal saja
+                          Hanya melihat
                         </span>
                       )}
                     </div>
@@ -786,17 +784,17 @@ function RolesPanel() {
           <p>{ROLE_EFFECT[pending.next]}</p>
           <p>
             Berlaku seketika — server memeriksa ulang peran setiap kali ada
-            pengiriman data, jadi orangnya tidak perlu masuk ulang. Data yang
-            sudah pernah dia kirim tetap ada dan tidak berubah.
+            permintaan, jadi orangnya tidak perlu masuk ulang. Data yang
+            sudah pernah dia catat tetap ada dan tidak berubah.
           </p>
-          {/* Otherwise a promotion looks like it failed: the new admin's data
-              still never appears in the cloud, and nothing on this page said
-              the two settings were separate. */}
+          {/* Otherwise a promotion looks like it failed: the new admin still
+              cannot change anything, and nothing on this page said the two
+              settings were separate. */}
           {!pending.row.canPush && (
             <p>
-              Perlu diingat: “Kirim ke cloud” untuk orang ini tetap mati, jadi
-              catatannya masih berhenti di perangkatnya sendiri. Peran dan
-              pengiriman diatur terpisah.
+              Perlu diingat: “Boleh mengubah data” untuk orang ini tetap mati, jadi
+              dia masih hanya bisa melihat. Peran dan izin mengubah diatur
+              terpisah.
             </p>
           )}
           {pending.next === "admin" && <AdminAccessWarning />}
@@ -810,10 +808,10 @@ function RolesPanel() {
           danger={!pending.next}
           title={
             pending.next
-              ? "Mulai kirim perubahan orang ini ke cloud?"
-              : "Setop pengiriman ke cloud untuk orang ini?"
+              ? "Izinkan orang ini mengubah data?"
+              : "Jadikan orang ini hanya bisa melihat?"
           }
-          confirmLabel={pending.next ? "Ya, kirim ke cloud" : "Ya, simpan lokal saja"}
+          confirmLabel={pending.next ? "Ya, izinkan mengubah" : "Ya, hanya boleh melihat"}
           busy={busy}
           onConfirm={confirmed}
           onClose={() => setPending(null)}
@@ -821,21 +819,13 @@ function RolesPanel() {
           <p>
             <strong>{pending.row.email}</strong>{" "}
             {pending.next
-              ? "akan mengirim perubahannya ke cloud."
-              : "berhenti mengirim perubahannya ke cloud."}
+              ? "akan bisa mengubah data."
+              : "berubah menjadi hanya bisa melihat."}
           </p>
           <p>{PUSH_EFFECT[pending.next ? "on" : "off"]}</p>
-          {!pending.next && (
-            <p className="font-semibold text-danger-text">
-              Risikonya ada di orangnya: tanpa salinan di cloud, catatan yang
-              hanya ada di perangkatnya akan hilang kalau riwayat browser
-              dibersihkan atau perangkatnya diganti. Ingatkan dia untuk memakai
-              “Backup semua” secara berkala.
-            </p>
-          )}
           <p>
-            Perannya tidak berubah, dan data yang sudah pernah dia kirim tetap
-            ada di cloud.
+            Perannya tidak berubah, dan data yang sudah pernah dia catat tetap
+            ada.
           </p>
         </ConfirmDialog>
       )}
@@ -850,18 +840,13 @@ function RolesPanel() {
           onClose={() => setPending(null)}
         >
           <p className="font-semibold text-danger-text">
-            <strong>{pending.row.email}</strong> tidak akan bisa lagi mengambil
-            data dari cloud maupun mengirim perubahan ke sana. Permintaan
-            berikutnya dari dia langsung ditolak server.
+            <strong>{pending.row.email}</strong> tidak akan bisa lagi melihat
+            maupun mengubah data. Permintaan berikutnya dari dia langsung
+            ditolak server.
           </p>
           <p>
-            Data yang sudah pernah dia kirim tetap ada di cloud — tidak ada
-            satu baris pun yang ikut terhapus.
-          </p>
-          <p>
-            Yang tidak bisa ditarik: salinan data yang sudah terlanjur
-            tersimpan di browser perangkatnya. Mencabut akses menutup pintu ke
-            depan, bukan menghapus yang sudah lewat.
+            Data yang sudah pernah dia catat tetap ada — tidak ada satu baris
+            pun yang ikut terhapus.
           </p>
           <p>Aksesnya bisa diberikan lagi kapan saja lewat form di atas.</p>
         </ConfirmDialog>

@@ -1,8 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "invoice",
+  // Pins every wrangler command (deploy, d1 export, migrations) to the
+  // Nandazmann account. Without it wrangler stops and asks, because the login
+  // can see two accounts. An account id is an identifier, not a secret.
+  "account_id": "cfcf768d4aa53e2ddb6e4f317ab1eed8",
   "compatibility_date": "2026-08-11",
-  // The sync API. This was a static-assets-only Worker with no script, so that
+  // The data API. This was a static-assets-only Worker with no script, so that
   // requests never counted as Worker invocations; adding `main` ends that for
   // /api/* only. Every other path is still served straight from the uploaded
   // files and still bypasses the script entirely — see `run_worker_first`.
@@ -22,7 +26,7 @@
     // index.html and the API would silently never run.
     "run_worker_first": ["/api/*"],
   },
-  // The mirror of IndexedDB. Schema lives in migrations/, described by
+  // The only copy of the data. Schema lives in migrations/, described by
   // src/lib/sync/tables.ts.
   "d1_databases": [
     {

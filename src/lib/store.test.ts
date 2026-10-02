@@ -18,7 +18,6 @@ import {
   updateOrder,
   previewOrderEdit,
   orderDeleteImpact,
-  backfillOrderBuyer,
   getProducts,
   getOrders,
   getPurchases,
@@ -26,14 +25,42 @@ import {
   getBuyers,
 } from "./store";
 import { hydrateAudit, getAudit } from "./audit";
-import { db, flushWrites, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
+import { flushWrites, setPersistHooks, __resetPersistForTests, type Snapshot } from "./db";
 import type { Product, OrderItem, PurchaseItem, Buyer } from "./types";
 
-// These tests exist to prove the write path actually reaches IndexedDB. The
+// These tests exist to prove the write path actually reaches the server. The
 // store API is synchronous and optimistic — memory updates and emits before the
 // write lands — so asserting on in-memory state alone would pass even if every
 // write silently failed. Everything here goes through `flushWrites()` and then
-// reads the database back.
+// reads back what the fake server received.
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const server = new Map<string, Map<string, any>>();
+
+function tableOf(name: string) {
+  const rows = () => {
+    let t = server.get(name);
+    if (!t) server.set(name, (t = new Map()));
+    return t;
+  };
+  return {
+    get: async (id: string): Promise<any> => rows().get(id),
+    count: async (): Promise<number> => rows().size,
+    toArray: async (): Promise<any[]> => [...rows().values()],
+    clear: async (): Promise<void> => rows().clear(),
+  };
+}
+
+// The server side of `persist()`: upsert by key, like the Worker does.
+const db = {
+  products: tableOf("products"),
+  orders: tableOf("orders"),
+  purchases: tableOf("purchases"),
+  stock: tableOf("stock"),
+  audit: tableOf("audit"),
+  types: tableOf("types"),
+  buyers: tableOf("buyers"),
+};
 
 const product: Product = {
   id: "p1",
@@ -94,27 +121,27 @@ const empty: Snapshot = {
   audit: [],
   types: [],
   buyers: [],
-  needsBuyerBackfill: false,
 };
 
 async function reset(seed: Partial<Snapshot> = {}) {
-  await db.open();
-  await Promise.all([
-    db.products.clear(),
-    db.orders.clear(),
-    db.purchases.clear(),
-    db.stock.clear(),
-    db.audit.clear(),
-    db.types.clear(),
-    db.buyers.clear(),
-    db.meta.clear(),
-  ]);
+  __resetPersistForTests();
+  server.clear();
+  setPersistHooks({
+    commit: async (writes) => {
+      for (const [name, rows] of Object.entries(writes)) {
+        const t = server.get(name) ?? new Map();
+        server.set(name, t);
+        for (const row of rows ?? []) t.set(String((row as any).id ?? (row as any).nama), row);
+      }
+    },
+    revert: async () => {},
+  });
   const snap = { ...empty, ...seed };
   hydrateStores(snap);
   hydrateAudit(snap);
 }
 
-describe("writes reach IndexedDB", () => {
+describe("writes reach the server", () => {
   beforeEach(() => reset());
 
   it("persists a new product as its own row", async () => {
@@ -250,7 +277,7 @@ describe("linkPurchaseProduct", () => {
 describe("soft delete", () => {
   beforeEach(() => reset({ products: [product] }));
 
-  it("keeps the row in IndexedDB and stamps deletedAt", async () => {
+  it("keeps the row on the server and stamps deletedAt", async () => {
     deleteProduct("p1");
     await flushWrites();
 
@@ -636,93 +663,6 @@ describe("bulk order edits", () => {
   });
 });
 
-describe("backfillOrderBuyer", () => {
-  beforeEach(() =>
-    reset({ products: [product], buyers: [buyer()], needsBuyerBackfill: true }),
-  );
-
-  it("writes every blank order, ONE audit entry, and the meta flag", async () => {
-    addOrder(order({ id: "o1" }));
-    addOrder(order({ id: "o2" }));
-    addOrder(order({ id: "o3" }));
-    await flushWrites();
-    const before = await db.audit.count();
-
-    backfillOrderBuyer("b1");
-    await flushWrites();
-
-    const rows = await db.orders.toArray();
-    expect(rows.map((o) => o.buyerId)).toEqual(["b1", "b1", "b1"]);
-    // Every row keeps its own trace of having changed, since the audit entry is
-    // a summary and not a per-row record.
-    expect(rows.every((o) => o.updatedAt !== "2026-07-15T00:00:00.000Z")).toBe(true);
-
-    // The point of the whole function: 3 orders, ONE entry — not 3. The audit
-    // log is the fastest-growing table and a 340-row backfill must not put 340
-    // rows in Riwayat.
-    expect(await db.audit.count()).toBe(before + 1);
-    const buyerEntries = (await db.audit.toArray()).filter((a) => a.entity === "buyer");
-    expect(buyerEntries).toHaveLength(1);
-    expect(buyerEntries[0]).toMatchObject({ entityId: "b1", action: "update" });
-    expect(buyerEntries[0].label).toContain("3 pesanan lama");
-
-    expect((await db.meta.get(BUYER_BACKFILL_KEY))?.value).toBe(true);
-  });
-
-  it("fills blanks only and never overwrites an existing buyer", async () => {
-    await reset({
-      products: [product],
-      buyers: [buyer(), buyer({ id: "b2", nama: "Pak Budi" })],
-      needsBuyerBackfill: true,
-    });
-    addOrder(order({ id: "o1" }));
-    addOrder(order({ id: "o2", buyerId: "b2" }));
-    await flushWrites();
-
-    backfillOrderBuyer("b1");
-    await flushWrites();
-
-    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
-    expect((await db.orders.get("o2"))?.buyerId).toBe("b2");
-    expect((await db.orders.get("o2"))?.updatedAt).toBe("2026-07-15T00:00:00.000Z");
-  });
-
-  it("ignores an unknown buyer id", async () => {
-    addOrder(order());
-    await flushWrites();
-    const before = await db.audit.count();
-
-    backfillOrderBuyer("nope");
-    await flushWrites();
-
-    expect((await db.orders.get("o1"))?.buyerId).toBe("");
-    expect(await db.audit.count()).toBe(before);
-    expect(await db.meta.get(BUYER_BACKFILL_KEY)).toBeUndefined();
-  });
-
-  it("is a no-op once the flag is already set", async () => {
-    addOrder(order());
-    await flushWrites();
-
-    backfillOrderBuyer("b1");
-    await flushWrites();
-    const before = await db.audit.count();
-
-    // The prompt is the only caller and it is terminal, so a second run has
-    // nothing to answer — it must not append another summary entry. Without the
-    // `buyerBackfillPending` guard this logged "… ke 0 pesanan lama" every time.
-    backfillOrderBuyer("b1");
-    await flushWrites();
-
-    expect(await db.audit.count()).toBe(before);
-    const buyerEntries = (await db.audit.toArray()).filter(
-      (a) => a.entity === "buyer",
-    );
-    expect(buyerEntries).toHaveLength(1);
-    expect((await db.orders.get("o1"))?.buyerId).toBe("b1");
-  });
-});
-
 describe("local writes clear stale attribution", () => {
   beforeEach(() => reset());
 
@@ -818,7 +758,7 @@ describe("updateOrder", () => {
     });
     expect(await db.audit.count()).toBe(before + 1);
     const entry = (await db.audit.toArray()).find((e) => e.action === "update");
-    expect(entry?.changes?.map((c) => c.field)).toContain("hargaSatuan");
+    expect(entry?.changes?.map((c: any) => c.field)).toContain("hargaSatuan");
   });
 
   it("is a no-op when nothing changed", async () => {
@@ -958,7 +898,6 @@ describe("deleteOrders with a linked purchase", () => {
     addOrder(order({ id: "o2" }));
     // second order linked to the same purchase
     const stockRow = getStock().find((m) => m.reason === "sale")!;
-    await db.stock.put({ ...stockRow, id: "mx", orderId: "o2" });
     hydrateStores({
       ...empty,
       products: [product],

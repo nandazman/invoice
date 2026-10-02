@@ -1,5 +1,9 @@
 # D1 sync — design
 
+> **SUPERSEDED 2026-10-02** by `docs/2026-10-02/d1-only-plan.md`: D1 becomes the
+> only source of truth and the local IndexedDB mirror described below is being
+> removed. Kept for history.
+
 Mirror the local IndexedDB database into Cloudflare D1, so the data survives the
 browser it was typed into and a second person can see it.
 

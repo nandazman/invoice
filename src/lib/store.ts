@@ -12,25 +12,22 @@ import { nowISO, uid } from "./format";
 import { logAudit, diff, auditRow } from "./audit";
 import { modalCostFor } from "./purchaseFromOrder";
 import { planOrderEdit, type OrderEdit, type OrderEditPlan } from "./orderEdit";
-import { db, persist, touch, fresh, BUYER_BACKFILL_KEY, type Snapshot } from "./db";
+import { persist, touch, fresh, type Snapshot } from "./db";
 
-// In-memory mirror of the LIVE rows (deletedAt === null). Filled once by
-// `hydrateStores()` at boot; every read below is served from here, so the whole
-// store API stays synchronous even though IndexedDB is async-only.
+// In-memory cache of the LIVE rows (deletedAt === null) held in D1. Filled at
+// boot and refreshed by the poll via `hydrateStores()`; every read below is
+// served from here, so the whole store API stays synchronous even though the
+// data lives behind the network.
 //
-// Writes are per-row: a mutation puts ONE record, never the table. That is the
-// invariant this module exists to hold — write cost tracks the row, not the
-// table size.
+// Nothing here is durable. A mutation updates the array first (so the screen
+// reacts at once) and hands the changed rows to `persist()`, which sends them to
+// D1; if D1 refuses, the arrays are reloaded from the server. See db.ts.
 let products: Product[] = [];
 let orders: OrderItem[] = [];
 let purchases: PurchaseItem[] = [];
 let types: string[] = [];
 let stock: StockMovement[] = [];
 let buyers: Buyer[] = [];
-
-// Whether the one-time "which pembeli owns your existing orders?" prompt still
-// needs answering. Mirrors a `meta` row; see db.ts BUYER_BACKFILL_KEY.
-let buyerBackfillPending = false;
 
 // Fill the in-memory arrays from a boot snapshot. Called once, before render.
 export function hydrateStores(snap: Snapshot): void {
@@ -40,7 +37,6 @@ export function hydrateStores(snap: Snapshot): void {
   types = snap.types;
   stock = snap.stock;
   buyers = snap.buyers;
-  buyerBackfillPending = snap.needsBuyerBackfill;
   emit();
 }
 
@@ -73,13 +69,10 @@ export function useStock(): StockMovement[] {
 export function useBuyers(): Buyer[] {
   return useSyncExternalStore(subscribe, () => buyers);
 }
-export function useBuyerBackfillPending(): boolean {
-  return useSyncExternalStore(subscribe, () => buyerBackfillPending);
-}
 
 // ---------- Soft delete ----------
 
-// Stamp a row as deleted. The row is NOT removed: it stays in IndexedDB with a
+// Stamp a row as deleted. The row is NOT removed: it stays in D1 with a
 // `deletedAt`, and only leaves the in-memory arrays. See types.ts for why.
 // A delete is a write like any other, so it goes through `touch` too: the row
 // the server last saw was the live one, and whoever deleted it is not yet known
@@ -89,90 +82,6 @@ function tombstone<T extends Attribution & { deletedAt: string | null; updatedAt
   now: string,
 ): T {
   return touch({ ...row, deletedAt: now }, now);
-}
-
-// ---------- Bulk replace (JSON import + backup restore) ----------
-//
-// These are the ONLY whole-table writes left, and they are correct here: the
-// caller is replacing the entire dataset, so the cost genuinely is O(table).
-// `clear()` drops tombstones too — a restore is an authoritative replacement,
-// not a merge.
-//
-// Every one of them runs the incoming rows through `fresh`, for the same reason
-// the single-row writers use it: a backup file carries the attribution the
-// SERVER stamped whenever it was exported, and restoring it is a local write
-// the server has not seen. Keeping those names would have the app assert that
-// someone made a change they had no part in — the restore is the one edit here,
-// and it was made by whoever clicked "Pulihkan". "—" until the next pull.
-//
-// `setTypes` is deliberately absent: the types table is bare names with no
-// attribution columns at all.
-
-export function setProducts(next: Product[]): void {
-  const rows = next.map(fresh);
-  products = rows;
-  emit();
-  persist("setProducts", () =>
-    db.transaction("rw", db.products, async () => {
-      await db.products.clear();
-      await db.products.bulkPut(rows);
-    }),
-  );
-}
-export function setOrders(next: OrderItem[]): void {
-  const rows = next.map(fresh);
-  orders = rows;
-  emit();
-  persist("setOrders", () =>
-    db.transaction("rw", db.orders, async () => {
-      await db.orders.clear();
-      await db.orders.bulkPut(rows);
-    }),
-  );
-}
-export function setPurchases(next: PurchaseItem[]): void {
-  const rows = next.map(fresh);
-  purchases = rows;
-  emit();
-  persist("setPurchases", () =>
-    db.transaction("rw", db.purchases, async () => {
-      await db.purchases.clear();
-      await db.purchases.bulkPut(rows);
-    }),
-  );
-}
-export function setStock(next: StockMovement[]): void {
-  const rows = next.map(fresh);
-  stock = rows;
-  emit();
-  persist("setStock", () =>
-    db.transaction("rw", db.stock, async () => {
-      await db.stock.clear();
-      await db.stock.bulkPut(rows);
-    }),
-  );
-}
-export function setBuyers(next: Buyer[]): void {
-  const rows = next.map(fresh);
-  buyers = rows;
-  emit();
-  persist("setBuyers", () =>
-    db.transaction("rw", db.buyers, async () => {
-      await db.buyers.clear();
-      await db.buyers.bulkPut(rows);
-    }),
-  );
-}
-export function setTypes(next: string[]): void {
-  types = [...next].sort((a, b) => a.localeCompare(b));
-  emit();
-  const rows = types.map((nama) => ({ nama }));
-  persist("setTypes", () =>
-    db.transaction("rw", db.types, async () => {
-      await db.types.clear();
-      await db.types.bulkPut(rows);
-    }),
-  );
 }
 
 // Add a type if new, persist, and notify. Returns the trimmed name.
@@ -187,12 +96,10 @@ export function addType(name: string): string {
       action: "create",
       label: `Tipe "${t}" ditambahkan`,
     });
-    persist("addType", () =>
-      db.transaction("rw", db.types, db.audit, async () => {
-        await db.types.put({ nama: t });
-        await db.audit.put(entry);
-      }),
-    );
+    persist("addType", (b) => {
+      b.put("types", { nama: t });
+      b.put("audit", entry);
+    });
   }
   return t;
 }
@@ -234,12 +141,10 @@ export function upsertProduct(p: Product): void {
           })
         : null;
 
-    persist("upsertProduct", () =>
-      db.transaction("rw", db.products, db.audit, async () => {
-        await db.products.put(row);
-        if (entry) await db.audit.put(entry);
-      }),
-    );
+    persist("upsertProduct", (b) => {
+      b.put("products", row);
+      if (entry) b.put("audit", entry);
+    });
   } else {
     const row: Product = fresh({ ...p, createdAt: now, updatedAt: now, deletedAt: null });
     products = [...products, row];
@@ -251,12 +156,10 @@ export function upsertProduct(p: Product): void {
       action: "create",
       label: `Produk "${p.namaProduk}" dibuat`,
     });
-    persist("upsertProduct", () =>
-      db.transaction("rw", db.products, db.audit, async () => {
-        await db.products.put(row);
-        await db.audit.put(entry);
-      }),
-    );
+    persist("upsertProduct", (b) => {
+      b.put("products", row);
+      b.put("audit", entry);
+    });
   }
 }
 
@@ -275,12 +178,10 @@ export function deleteProduct(id: string): void {
     action: "delete",
     label: `Produk "${prev.namaProduk}" dihapus`,
   });
-  persist("deleteProduct", () =>
-    db.transaction("rw", db.products, db.audit, async () => {
-      await db.products.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("deleteProduct", (b) => {
+    b.put("products", row);
+    b.put("audit", entry);
+  });
 }
 
 // ---------- Timestamp-aware buyer mutations ----------
@@ -317,12 +218,10 @@ export function upsertBuyer(b: Buyer): void {
           })
         : null;
 
-    persist("upsertBuyer", () =>
-      db.transaction("rw", db.buyers, db.audit, async () => {
-        await db.buyers.put(row);
-        if (entry) await db.audit.put(entry);
-      }),
-    );
+    persist("upsertBuyer", (b) => {
+      b.put("buyers", row);
+      if (entry) b.put("audit", entry);
+    });
   } else {
     const row: Buyer = fresh({ ...b, createdAt: now, updatedAt: now, deletedAt: null });
     buyers = [...buyers, row];
@@ -334,12 +233,10 @@ export function upsertBuyer(b: Buyer): void {
       action: "create",
       label: `Pembeli "${b.nama}" dibuat`,
     });
-    persist("upsertBuyer", () =>
-      db.transaction("rw", db.buyers, db.audit, async () => {
-        await db.buyers.put(row);
-        await db.audit.put(entry);
-      }),
-    );
+    persist("upsertBuyer", (b) => {
+      b.put("buyers", row);
+      b.put("audit", entry);
+    });
   }
 }
 
@@ -362,12 +259,10 @@ export function deleteBuyer(id: string): void {
     action: "delete",
     label: `Pembeli "${prev.nama}" dihapus`,
   });
-  persist("deleteBuyer", () =>
-    db.transaction("rw", db.buyers, db.audit, async () => {
-      await db.buyers.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("deleteBuyer", (b) => {
+    b.put("buyers", row);
+    b.put("audit", entry);
+  });
 }
 
 // ---------- Timestamp-aware order mutations ----------
@@ -444,13 +339,11 @@ export function addOrder(item: OrderItem): void {
   }
 
   emit();
-  persist("addOrder", () =>
-    db.transaction("rw", db.orders, db.stock, db.audit, async () => {
-      await db.orders.put(filled);
-      if (movement) await db.stock.put(movement);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("addOrder", (b) => {
+    b.put("orders", filled);
+    if (movement) b.put("stock", movement);
+    b.putAll("audit", entries);
+  });
 }
 
 // Preview of what saving an edit would move in stock, for the confirm dialog.
@@ -507,13 +400,11 @@ export function updateOrder(id: string, edit: Partial<OrderEdit>): void {
       }),
     ),
   ];
-  persist("updateOrder", () =>
-    db.transaction("rw", db.orders, db.stock, db.audit, async () => {
-      await db.orders.put(row);
-      if (moved.length > 0) await db.stock.bulkPut(moved);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("updateOrder", (b) => {
+    b.put("orders", row);
+    if (moved.length > 0) b.putAll("stock", moved);
+    b.putAll("audit", entries);
+  });
 }
 
 export function setOrderStatus(id: string, status: OrderStatus): void {
@@ -547,12 +438,10 @@ export function setOrdersStatus(ids: Set<string>, status: OrderStatus): void {
       changes: [{ field: "status", from: prev.status, to: status }],
     }),
   );
-  persist("setOrdersStatus", () =>
-    db.transaction("rw", db.orders, db.audit, async () => {
-      await db.orders.bulkPut(rows);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("setOrdersStatus", (b) => {
+    b.putAll("orders", rows);
+    b.putAll("audit", entries);
+  });
 }
 
 // Attach a legacy order row (productId "") to an existing product. Only the
@@ -577,12 +466,10 @@ export function linkOrderProduct(id: string, productId: string): void {
       { field: "productId", from: prev.productId, to: productId },
     ],
   });
-  persist("linkOrderProduct", () =>
-    db.transaction("rw", db.orders, db.audit, async () => {
-      await db.orders.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("linkOrderProduct", (b) => {
+    b.put("orders", row);
+    b.put("audit", entry);
+  });
 }
 
 // Assign (or clear, with "") the buyer on a single order row. Nothing else
@@ -619,73 +506,10 @@ export function setOrdersBuyer(ids: Set<string>, buyerId: string): void {
       changes: [{ field: "buyerId", from: prev.buyerId, to: buyerId }],
     }),
   );
-  persist("setOrdersBuyer", () =>
-    db.transaction("rw", db.orders, db.audit, async () => {
-      await db.orders.bulkPut(rows);
-      await db.audit.bulkPut(entries);
-    }),
-  );
-}
-
-// The one-time backfill: stamp `buyerId` onto every existing order that has
-// none, and record that the prompt has been answered. See plan.md §3.
-//
-// ONE audit entry, whatever N is — the log is the fastest-growing table and a
-// 340-row backfill must not put 340 rows in Riwayat. `updatedAt` is bumped per
-// row instead, so each row keeps its own trace of having changed.
-// The single definition of "this order still needs a buyer". The backfill and
-// the prompt that counts what it is about to affect both read it, so the rule
-// cannot drift between what the dialog promises and what the write does.
-export function needsBuyer(o: OrderItem): boolean {
-  return !o.buyerId;
-}
-
-export function backfillOrderBuyer(buyerId: string): void {
-  // The prompt is the only caller, and it is asked once. Without this guard a
-  // second call still appends an audit entry ("… ke 0 pesanan lama") and
-  // rewrites the flag, so the operation is not idempotent.
-  if (!buyerBackfillPending) return;
-
-  const buyer = buyers.find((b) => b.id === buyerId);
-  if (!buyer) return;
-
-  const now = nowISO();
-  // Fills blanks only; an order that somehow already has a buyer is left alone.
-  const targets = orders.filter(needsBuyer);
-  const rows = targets.map((o) => touch({ ...o, buyerId }, now));
-
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  orders = orders.map((o) => byId.get(o.id) ?? o);
-  buyerBackfillPending = false;
-  emit();
-
-  const entry = logAudit({
-    entity: "buyer",
-    entityId: buyerId,
-    action: "update",
-    label: `Pembeli "${buyer.nama}" diterapkan ke ${rows.length} pesanan lama`,
+  persist("setOrdersBuyer", (b) => {
+    b.putAll("orders", rows);
+    b.putAll("audit", entries);
   });
-
-  // One transaction: a half-applied backfill that still stamped the flag would
-  // be unrepeatable, because the prompt is the only thing that offers to do it.
-  persist("backfillOrderBuyer", () =>
-    db.transaction("rw", db.orders, db.audit, db.meta, async () => {
-      if (rows.length > 0) await db.orders.bulkPut(rows);
-      await db.audit.put(entry);
-      await db.meta.put({ key: BUYER_BACKFILL_KEY, value: true });
-    }),
-  );
-}
-
-// Answer the backfill prompt with "not for these orders". Writes the flag and
-// nothing else, so it is never asked again.
-export function dismissBuyerBackfill(): void {
-  if (!buyerBackfillPending) return;
-  buyerBackfillPending = false;
-  emit();
-  persist("dismissBuyerBackfill", () =>
-    db.meta.put({ key: BUYER_BACKFILL_KEY, value: true }),
-  );
 }
 
 // Same as linkOrderProduct, for the identical orphan case on purchases. Also
@@ -708,12 +532,10 @@ export function linkPurchaseProduct(id: string, productId: string): void {
     label: `${prev.namaProduk}: ditautkan ke produk ${product.namaProduk}`,
     changes: [{ field: "productId", from: prev.productId, to: productId }],
   });
-  persist("linkPurchaseProduct", () =>
-    db.transaction("rw", db.purchases, db.audit, async () => {
-      await db.purchases.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("linkPurchaseProduct", (b) => {
+    b.put("purchases", row);
+    b.put("audit", entry);
+  });
 }
 
 export function deleteOrder(id: string, opts?: DeleteOrderOptions): void {
@@ -803,14 +625,12 @@ export function deleteOrders(ids: Set<string>, opts: DeleteOrderOptions = {}): v
     ),
   ];
 
-  persist("deleteOrders", () =>
-    db.transaction("rw", db.orders, db.purchases, db.stock, db.audit, async () => {
-      await db.orders.bulkPut(orderRows);
-      if (purchaseRows.length > 0) await db.purchases.bulkPut(purchaseRows);
-      if (stockRows.length > 0) await db.stock.bulkPut(stockRows);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("deleteOrders", (b) => {
+    b.putAll("orders", orderRows);
+    if (purchaseRows.length > 0) b.putAll("purchases", purchaseRows);
+    if (stockRows.length > 0) b.putAll("stock", stockRows);
+    b.putAll("audit", entries);
+  });
 }
 
 // ---------- Timestamp-aware purchase (Beli Stock) mutations ----------
@@ -892,13 +712,11 @@ export function addPurchase(
 
   if (movements.length > 0) stock = [...stock, ...movements];
   emit();
-  persist("addPurchase", () =>
-    db.transaction("rw", db.purchases, db.stock, db.audit, async () => {
-      await db.purchases.put(filled);
-      if (movements.length > 0) await db.stock.bulkPut(movements);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("addPurchase", (b) => {
+    b.put("purchases", filled);
+    if (movements.length > 0) b.putAll("stock", movements);
+    b.putAll("audit", entries);
+  });
 }
 
 export function deletePurchase(id: string): void {
@@ -930,13 +748,11 @@ export function deletePurchases(ids: Set<string>): void {
     }),
   );
 
-  persist("deletePurchases", () =>
-    db.transaction("rw", db.purchases, db.stock, db.audit, async () => {
-      await db.purchases.bulkPut(purchaseRows);
-      if (stockRows.length > 0) await db.stock.bulkPut(stockRows);
-      await db.audit.bulkPut(entries);
-    }),
-  );
+  persist("deletePurchases", (b) => {
+    b.putAll("purchases", purchaseRows);
+    if (stockRows.length > 0) b.putAll("stock", stockRows);
+    b.putAll("audit", entries);
+  });
 }
 
 // ---------- Stock mutations ----------
@@ -953,12 +769,10 @@ export function addMovement(m: StockMovement): void {
   emit();
 
   const entry = auditRow(row, products);
-  persist("addMovement", () =>
-    db.transaction("rw", db.stock, db.audit, async () => {
-      await db.stock.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("addMovement", (b) => {
+    b.put("stock", row);
+    b.put("audit", entry);
+  });
 }
 
 export function deleteMovement(id: string): void {
@@ -978,12 +792,10 @@ export function deleteMovement(id: string): void {
     action: "delete",
     label: `Pergerakan stok ${name} dihapus`,
   });
-  persist("deleteMovement", () =>
-    db.transaction("rw", db.stock, db.audit, async () => {
-      await db.stock.put(row);
-      await db.audit.put(entry);
-    }),
-  );
+  persist("deleteMovement", (b) => {
+    b.put("stock", row);
+    b.put("audit", entry);
+  });
 }
 
 export function getProducts(): Product[] {

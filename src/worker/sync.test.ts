@@ -159,3 +159,33 @@ describe("push ignores attribution in the body", () => {
     expect(sql.match(/createdBy/g)).toHaveLength(4); // insert list, COALESCE x3
   });
 });
+
+describe("push stamps the cursor with the server clock", () => {
+  const sent = { ...storedProduct({ konversi: [] }), updatedAt: "2020-01-01T00:00:00.000Z" };
+
+  it("overrides a device's updatedAt, so a slow clock cannot hide a row from pulls", async () => {
+    const { db, recorded } = fakeDb({});
+    await handlePush(db, { tables: { products: [sent] } }, "verified@example.com");
+
+    const upsert = recorded.find((r) => r.sql.startsWith("INSERT INTO products"))!;
+    const at = upsert.values[10]; // products.columns[10] is updatedAt
+    expect(at).not.toBe("2020-01-01T00:00:00.000Z");
+    expect(Date.parse(String(at))).toBeGreaterThan(Date.parse("2026-01-01"));
+  });
+
+  it("only ever adds types, never replaces the table", async () => {
+    const { db, recorded } = fakeDb({});
+    await handlePush(db, { tables: { types: [{ nama: "Bar" }] } }, "verified@example.com");
+    expect(recorded.some((r) => r.sql.startsWith("DELETE"))).toBe(false);
+  });
+});
+
+describe("pull reports the time it started", () => {
+  it("takes serverTime before reading, so a row committed meanwhile is never skipped", async () => {
+    const before = Date.now();
+    const { db } = fakeDb({});
+    const res = await handlePull(db, new URL("https://x/api/sync/pull"));
+    const body = (await res.json()) as { serverTime: string };
+    expect(Date.parse(body.serverTime)).toBeGreaterThanOrEqual(before);
+  });
+});

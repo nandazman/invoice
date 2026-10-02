@@ -1,70 +1,31 @@
 import { useState, type ComponentType, type SVGProps } from "react";
-import {
-  useSyncStatus,
-  syncNow,
-  discardLocalChanges,
-  type SyncStatus,
-} from "../lib/sync/client";
-import { TABLES } from "../lib/sync/tables";
-import { formatAngka, formatDateTimeID } from "../lib/format";
-import { describeCounts, type Unsynced } from "../lib/rescue";
-import {
-  AlertIcon,
-  CloudCheckIcon,
-  CloudIcon,
-  CloudOffIcon,
-  DeviceIcon,
-} from "./icons";
-import { Button, PrimaryButton, DangerButton } from "./Button";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { useSyncStatus, syncNow, dismissError, type SyncStatus } from "../lib/sync/client";
+import { formatDateTimeID } from "../lib/format";
+import { AlertIcon, CloudIcon, CloudOffIcon } from "./icons";
+import { Button, PrimaryButton } from "./Button";
 import { Modal } from "./Modal";
-import { Stat } from "./Stat";
-import { thClass, tdClass } from "./DataTable";
 
-// The sync affordance in the sidebar. It is a CHIP first and a button second:
-// a bare "Sinkronisasi" button says nothing about whether sync is actually
-// working, while "3 menunggu" answers the question you have before you
-// click. The click is only there for the rarer follow-up — the detail, and the
-// two actions that force things.
+// What the sidebar says about the connection. D1 is the only copy of the data,
+// so there is no "synced / not synced" state to report any more: a change either
+// reached the server or it was undone in front of the user. The chip therefore
+// stays silent while all is well and speaks only when there is something to know.
 //
-// Pulling stays automatic (the 60s poll and the visibility listener in
-// client.ts). Nothing here is the mechanism by which sync happens, and the copy
-// below is careful never to imply otherwise.
-
-
-// Indonesian names for the wire table names in tables.ts. Kept out of that file
-// on purpose — it is compiled by the Worker too, and the Worker has no UI.
-const TABLE_LABEL: Record<string, string> = {
-  products: "Produk",
-  orders: "Pesanan",
-  purchases: "Pembelian",
-  stock: "Stok",
-  buyers: "Pembeli",
-  templates: "Template",
-  audit: "Riwayat",
-  types: "Tipe",
-};
-
-function tableLabel(name: string): string {
-  return TABLE_LABEL[name] ?? name;
-}
+//   menyimpan…  a change is on its way (a second or less)
+//   gagal       a change was refused and has been undone — click for the reason
+//   offline     the browser has no connection; saving will fail until it returns
+//   tidak segar the last refresh failed; what is on screen may be a minute old
 
 interface Chip {
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
   label: string;
-  // Colour tracks severity, not state: only the two things worth acting on —
-  // a failure and being offline — are warm.
   tone: string;
 }
 
-// Ordered worst-first. A failed sync outranks a backlog, because the backlog is
-// usually the CONSEQUENCE of the failure and reporting only the count would
-// read as "just wait a moment" when waiting will not help.
-function chipOf(status: SyncStatus): Chip {
+function chipOf(status: SyncStatus): Chip | null {
   if (status.error) {
     return {
       Icon: AlertIcon,
-      label: "gagal",
+      label: "gagal menyimpan",
       tone: "border-negative-line bg-negative-soft text-negative-text hover:bg-negative-soft-strong",
     };
   }
@@ -75,59 +36,37 @@ function chipOf(status: SyncStatus): Chip {
       tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
-  if (status.busy) {
+  if (status.saving > 0) {
     return {
       Icon: CloudIcon,
-      label: "menyinkronkan…",
+      label: "menyimpan…",
       tone: "border-line bg-surface text-faint hover:bg-surface-hover",
     };
   }
-  // Before the backlog, because for this account there IS no backlog: the
-  // pending rows are not waiting their turn, they are staying put. "3 menunggu"
-  // would promise a drain that is never coming.
-  if (!status.canPush) {
+  if (status.pollError) {
     return {
-      Icon: DeviceIcon,
-      label:
-        status.pendingTotal > 0
-          ? `${formatAngka(status.pendingTotal)} lokal`
-          : "lokal saja",
-      // Slate, not amber: this is a setting someone chose, not a fault.
-      tone: "border-line bg-surface-sunken text-muted hover:bg-surface-hover",
-    };
-  }
-  if (status.pendingTotal > 0) {
-    return {
-      Icon: CloudIcon,
-      label: `${formatAngka(status.pendingTotal)} menunggu`,
+      Icon: AlertIcon,
+      label: "tidak segar",
       tone: "border-warn-line bg-warn-soft text-warn-text hover:bg-warn-soft-strong",
     };
   }
-  return {
-    Icon: CloudCheckIcon,
-    label: "tersinkron",
-    tone: "border-ok-line bg-ok-soft text-ok-text hover:bg-ok-soft-strong",
-  };
+  return null;
 }
 
 export function SyncChip({ collapsed }: { collapsed: boolean }) {
   const status = useSyncStatus();
   const [open, setOpen] = useState(false);
 
-  // The GitHub Pages copy has no Worker behind it, so there is no sync to have
-  // a status about. Showing a permanently grey chip there would be inventing a
-  // problem the user cannot fix.
   if (!status.available) return null;
-
   const chip = chipOf(status);
-  const title = `Sinkronisasi: ${chip.label}`;
+  if (!chip) return null;
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title={title}
-        aria-label={title}
+        title={chip.label}
+        aria-label={chip.label}
         className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold cursor-pointer transition-colors ${
           chip.tone
         } ${collapsed ? "justify-center px-0" : ""}`}
@@ -136,294 +75,75 @@ export function SyncChip({ collapsed }: { collapsed: boolean }) {
         {!collapsed && <span className="truncate">{chip.label}</span>}
       </button>
 
-      {open && <SyncPanel status={status} onClose={() => setOpen(false)} />}
+      {open && <StatusPanel status={status} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-// ---------- the panel ----------
-
-type ActionKey = "sync" | "discard";
-
-function SyncPanel({
+function StatusPanel({
   status,
   onClose,
 }: {
   status: SyncStatus;
   onClose: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Which action is waiting for confirmation. One slot, not one flag per
-  // button: only ever one dialog is on screen.
-  const [confirming, setConfirming] = useState<ActionKey | null>(null);
-  // "Buang perubahan lokal" is rare and destructive, so it starts folded away.
-  // It still lives here rather than on the admin page, because the person who
-  // needs it is whoever is looking at a stuck backlog — not necessarily an
-  // admin.
-  const [advanced, setAdvanced] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const rows = TABLES.map((t) => ({
-    name: t.name,
-    count: status.pending[t.name] ?? 0,
-  })).filter((r) => r.count > 0);
-
-  // Every action shares one runner so a thrown error can never leave the panel
-  // silently unchanged — `busy` comes from the client, not from local state.
-  async function run(fn: () => Promise<unknown>, ok: (r: unknown) => string) {
-    setError(null);
-    setNote(null);
+  async function refresh() {
+    setRefreshing(true);
     try {
-      setNote(ok(await fn()));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await syncNow();
+    } finally {
+      setRefreshing(false);
     }
   }
 
-  // Confirmation is a dialog, never window.confirm(): a native confirm freezes
-  // the entire page while it is up — no re-render, no status tick — which is
-  // exactly wrong for a panel whose whole job is reporting live state.
-  function confirmed() {
-    const key = confirming;
-    setConfirming(null);
-    if (key === "sync") void run(syncNow, () => "Sinkronisasi selesai.");
-    else if (key === "discard")
-      // Names the rescue file in the success message. A download that lands in
-      // the browser's folder without anything saying so is a file nobody keeps.
-      void run(discardLocalChanges, (r) => {
-        const saved = (r as Unsynced).total;
-        return saved > 0
-          ? `Perubahan lokal dibuang dan data diambil ulang dari cloud. ${formatAngka(saved)} baris yang belum tersimpan di cloud sudah diunduh lebih dulu sebagai berkas invoice-unsynced-…json — simpan berkas itu.`
-          : "Perubahan lokal dibuang dan data diambil ulang dari cloud. Tidak ada baris yang belum tersinkron, jadi tidak ada yang hilang.";
-      });
-  }
-
-  const diverging = status.pendingTotal;
-  // Per-table names for the discard confirmation. Computed here rather than in
-  // the dialog so it stays a plain string the JSX just prints.
-  const breakdown = describeCounts(status.pending);
-  // The whole panel changes voice on this: half the copy below promises that
-  // changes are on their way to the cloud, and for a local-only account every
-  // one of those sentences is false.
-  const localOnly = !status.canPush;
-
   return (
-    // Three bands, not one scrolling column: the title and the two actions stay
-    // put while only the detail between them scrolls. On a narrow window the
-    // old single column pushed "Sinkronkan sekarang" and Lanjutan below the
-    // fold, which hid the two things the panel exists to offer.
     <Modal
       onClose={onClose}
-      className="bg-surface rounded-xl w-full max-w-lg border border-line flex flex-col overflow-hidden"
+      className="bg-surface rounded-xl w-full max-w-md border border-line p-5"
     >
-      <div className="shrink-0 px-5 pt-5 pb-3 border-b border-line">
-        <h2 className="text-lg font-bold mb-1">Sinkronisasi</h2>
-        <p className="text-sm text-faint">
-          {localOnly
-            ? "Akun ini disetel menyimpan di perangkat sendiri saja. Data terbaru dari cloud tetap masuk seperti biasa, tapi apa pun yang Anda catat di sini tidak dikirim ke sana dan tidak terlihat oleh orang lain."
-            : "Sinkronisasi berjalan sendiri: setiap perubahan dikirim otomatis, dan data terbaru diambil berkala. Halaman ini hanya untuk melihat kondisinya — dan memaksanya kalau sedang buru-buru."}
-        </p>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-      {localOnly && (
-        <p className="mb-4 text-sm text-muted bg-surface-sunken border border-line rounded-lg px-3 py-2">
-          <strong>Catatan penting.</strong> Karena tidak ada salinan di cloud,
-          data yang hanya ada di perangkat ini akan hilang kalau riwayat
-          browser dibersihkan atau perangkatnya diganti. Pakai “Backup semua” di
-          menu kiri secara berkala. Kalau seharusnya ikut terkirim, minta admin
-          mengaktifkan “Kirim ke cloud” untuk akun ini.
-        </p>
-      )}
-
-      {/* Grid, not flex-wrap: four stats in a narrow panel wrapped one per row
-          and made the panel twice as tall as it needed to be. Pairs at every
-          width, three across once there is room. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 mb-4">
-        <Stat
-          label="Koneksi"
-          value={status.online ? "Online" : "Offline"}
-          className={status.online ? "text-ok-text" : "text-warn"}
-        />
-        <Stat
-          label={localOnly ? "Hanya di perangkat ini" : "Menunggu dikirim"}
-          value={`${formatAngka(status.pendingTotal)} baris`}
-          className={
-            localOnly ? "" : status.pendingTotal > 0 ? "text-warn" : ""
-          }
-        />
-        {/* Kept as-is for a local-only account rather than blanked: if the flag
-            was turned off after some pushes, this timestamp is the cutoff —
-            everything up to here is in the cloud, everything since is not. */}
-        <Stat
-          label="Terakhir dikirim"
-          value={status.lastPushAt ? formatDateTimeID(status.lastPushAt) : "—"}
-        />
-        <Stat
-          label="Terakhir diambil"
-          value={status.lastPullAt ? formatDateTimeID(status.lastPullAt) : "—"}
-        />
-      </div>
-
-      {status.pendingTotal > 0 && (
-        <>
-          <p className="mb-2 text-sm text-faint">
-            {localOnly
-              ? "Baris berikut tersimpan di perangkat ini saja. Selama “Kirim ke cloud” mati, jumlahnya akan terus bertambah — ini bukan antrean yang sedang menunggu, melainkan selisih dengan isi cloud."
-              : "Baris berikut sudah tersimpan di perangkat ini dan menunggu giliran dikirim ke cloud."}
-          </p>
-          <div className="overflow-x-auto mb-4">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={thClass}>Tabel</th>
-                  <th className={`${thClass} text-right`}>Baris</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.name} className="hover:bg-surface-sunken">
-                    <td className={tdClass}>{tableLabel(r.name)}</td>
-                    <td className={`${tdClass} text-right tabular-nums`}>
-                      {formatAngka(r.count)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {status.pendingTotal === 0 && (
-        <p className="mb-4 text-sm text-faint">
-          {localOnly
-            ? "Belum ada perubahan yang dicatat di perangkat ini sejak terakhir disamakan dengan cloud."
-            : "Semua data di perangkat ini sudah sama dengan cloud."}
-        </p>
-      )}
+      <h2 className="text-lg font-bold mb-2">Koneksi ke server</h2>
 
       {status.error && (
-        <p className="mb-4 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
-          Sinkronisasi terakhir gagal: {status.error}
+        <p className="mb-3 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
+          {status.error}
+        </p>
+      )}
+      {!status.online && (
+        <p className="mb-3 text-sm text-warn-text bg-warn-soft border border-warn-line rounded-lg px-3 py-2">
+          Tidak ada koneksi internet. Data tersimpan di server, bukan di
+          perangkat ini, jadi perubahan baru baru bisa disimpan setelah koneksi
+          kembali.
+        </p>
+      )}
+      {status.pollError && status.online && (
+        <p className="mb-3 text-sm text-warn-text bg-warn-soft border border-warn-line rounded-lg px-3 py-2">
+          Pembaruan terakhir gagal: {status.pollError}
         </p>
       )}
 
-      <div className="pt-3 border-t border-line">
-        <button
-          onClick={() => setAdvanced((a) => !a)}
-          aria-expanded={advanced}
-          className="flex items-center gap-1 text-xs font-semibold text-faint hover:text-muted cursor-pointer"
-        >
-          <span className="text-[10px] w-3 inline-block">
-            {advanced ? "▾" : "▸"}
-          </span>
-          Lanjutan
-        </button>
-        {advanced && (
-          <div className="mt-3">
-            <p className="text-sm text-faint mb-2">
-              {localOnly
-                ? "Untuk keadaan yang tidak biasa saja: kalau Anda rela membuang semua catatan yang hanya ada di perangkat ini demi menyamakan isinya dengan cloud. Karena akun ini tidak mengirim apa pun ke cloud, yang dibuang tidak bisa diambil kembali dari sana."
-                : "Untuk keadaan yang tidak biasa saja: kalau baris di perangkat ini menolak terkirim dan Anda rela membuangnya demi menyamakan isi dengan cloud."}
-            </p>
-            <DangerButton
-              onClick={() => setConfirming("discard")}
-              disabled={status.busy}
-            >
-              Buang perubahan lokal
-            </DangerButton>
-          </div>
+      <p className="mb-4 text-sm text-faint">
+        Terakhir diperbarui:{" "}
+        {status.lastPullAt ? formatDateTimeID(status.lastPullAt) : "—"}. Data
+        diambil otomatis tiap menit dan saat Anda kembali ke tab ini.
+      </p>
+
+      <div className="flex justify-end gap-2">
+        {status.error && (
+          <Button
+            onClick={() => {
+              dismissError();
+              onClose();
+            }}
+          >
+            Tutup pesan
+          </Button>
         )}
-      </div>
-
-      {note && (
-        <p className="mt-3 text-sm text-ok-text bg-ok-soft border border-ok-line rounded-lg px-3 py-2">
-          {note}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 text-sm font-semibold text-negative-text bg-negative-soft border border-negative-line rounded-lg px-3 py-2">
-          {error}
-        </p>
-      )}
-      </div>
-
-      <div className="shrink-0 flex gap-2 items-center border-t border-line px-5 py-3">
-        {/* Still offered when local-only, because the pull half is unaffected
-            and getting fresh data is exactly what this account still wants.
-            Only the label changes, so the button never claims to send. */}
-        <PrimaryButton
-          className="whitespace-nowrap"
-          onClick={() => setConfirming("sync")}
-          disabled={status.busy}
-        >
-          {localOnly ? "Ambil data terbaru" : "Sinkronkan sekarang"}
+        <PrimaryButton onClick={() => void refresh()} disabled={refreshing}>
+          {refreshing ? "Memuat…" : "Muat ulang data"}
         </PrimaryButton>
-        {status.busy && (
-          <span className="text-sm text-faint">Sedang berjalan…</span>
-        )}
-        <Button className="ml-auto whitespace-nowrap" onClick={onClose}>
-          Tutup
-        </Button>
       </div>
-
-      {confirming === "sync" && (
-        <ConfirmDialog
-          title={localOnly ? "Ambil data terbaru?" : "Sinkronkan sekarang?"}
-          confirmLabel={localOnly ? "Ya, ambil data" : "Ya, sinkronkan"}
-          onConfirm={confirmed}
-          onClose={() => setConfirming(null)}
-        >
-          {/* The order here is the order `syncNow` actually runs in: pull
-              first, then push. It matters to someone deciding whether to press
-              this — a pull that arrives first is the half that could surprise
-              them, and describing it backwards made this dialog a worse
-              promise than the code keeps. */}
-          <p>
-            {localOnly
-              ? "Data terbaru dari cloud diambil ke perangkat ini. Tidak ada yang dikirim ke arah sebaliknya — akun ini disetel menyimpan di perangkat sendiri saja."
-              : "Data terbaru dari cloud diambil ke perangkat ini, lalu perubahan yang tersimpan di sini dikirim ke cloud. Ini persis sinkronisasi yang biasanya jalan sendiri — tombolnya hanya mempercepat."}
-          </p>
-          <p>
-            Tidak ada yang dihapus, dan baris yang Anda ubah di sini tidak
-            ditimpa oleh versi cloud.
-          </p>
-        </ConfirmDialog>
-      )}
-
-      {confirming === "discard" && (
-        <ConfirmDialog
-          danger
-          title="Buang semua perubahan lokal?"
-          confirmLabel="Ya, buang perubahan lokal"
-          onConfirm={confirmed}
-          onClose={() => setConfirming(null)}
-        >
-          <p className="font-semibold text-danger-text">
-            {diverging > 0
-              ? `${formatAngka(diverging)} baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus.`
-              : "Semua baris yang hanya ada di perangkat ini dan belum tersimpan di cloud akan dihapus."}
-          </p>
-          {/* The breakdown, not just the total. "47 baris" and "47 Pesanan"
-              are the same number and a completely different decision. */}
-          {breakdown && <p className="font-semibold text-danger-text">{breakdown}.</p>}
-          <p>
-            Setelah itu seluruh data diambil ulang dari cloud, jadi isi
-            perangkat ini akan sama persis dengan isi cloud.
-          </p>
-          <p className="font-semibold">
-            Sebelum menghapus, baris-baris itu diunduh dulu sebagai berkas{" "}
-            <code>invoice-unsynced-…json</code>. Simpan berkas itu: isinya satu-
-            satunya salinan yang tersisa, dan memulihkannya perlu dikerjakan
-            manual. Kalau unduhannya gagal, penghapusan ikut dibatalkan.
-          </p>
-          <p>
-            Yang sudah tersimpan di cloud aman: tindakan ini tidak menghapus apa
-            pun di sana, dan tidak menyentuh perangkat orang lain.
-          </p>
-        </ConfirmDialog>
-      )}
     </Modal>
   );
 }

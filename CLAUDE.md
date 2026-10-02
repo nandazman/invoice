@@ -19,20 +19,20 @@ Key routing rules:
 
 ## Data safety
 
-Six orders were lost on 2026-09-07. Full write-up and the rules that came out of
-it: `docs/2026-09-23/data-loss-rules.md`. The short form:
+Six orders were lost on 2026-09-07 (write-up: `docs/2026-09-23/data-loss-rules.md`).
+Since 2026-10-02 D1 is the only copy of the data (`docs/2026-10-02/d1-only-plan.md`),
+which removed that failure class: the browser keeps nothing durable. The rules
+that remain:
 
-- **Never add a whole-table `clear()` on a synced table** without exporting the
-  unsynced rows first. The existing ones are `store.ts` `setOrders`/`setProducts`
-  /`setPurchases`/`setStock`/`setBuyers` and `client.ts` `discardLocalChanges`.
-  There is no outbox, so a cleared row that never pushed leaves no tombstone, no
-  audit entry, and nothing to recover from.
 - **A destructive confirmation must state the row count**, not just the danger.
 - **Apply D1 migrations before deploying** a client that names the new column —
   `migrations/0004_order_modal.sql` explains why. `deploy:cf` does not do this
   for you.
-- **Export before hand-written SQL against remote D1** (`bun run d1:export`,
-  keep it in `backup/`).
+- **Export before hand-written SQL against remote D1**, and before every deploy
+  that changes the schema or the write path (`bun run d1:export`, keep it in
+  `backup/`).
+- **Every mutation goes through `persist()`** (`src/lib/db.ts`) with all the rows
+  it changes in ONE batch — the change and its audit entry must land together.
 
 ## Design System
 Always read DESIGN.md before making any visual or UI decisions.
