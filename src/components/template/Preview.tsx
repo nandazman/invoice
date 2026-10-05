@@ -105,10 +105,16 @@ export function Preview({
   // No items table → nothing to flow; render one fixed page.
   if (!itemsEl) {
     const sorted = [...template.elements].sort((a, b) => a.z - b.z);
+    // No items table to anchor the flow, but custom tables still grow with their
+    // rows and push whatever sits below them.
+    const grow: Record<string, number> = {};
+    for (const el of customEls) grow[el.id] = (customH[el.id] ?? el.h) - el.h;
+    const fixedShifts = footerShifts(sorted, grow);
     return (
       <div ref={wrapRef} className={fit ? `w-full ${className}` : className}>
+        {customMeasure}
         <Sheet fit={fit} s={s}>
-          <FixedPage template={template} data={data} sorted={sorted} />
+          <FixedPage template={template} data={data} sorted={sorted} shifts={fixedShifts} />
         </Sheet>
       </div>
     );
@@ -286,10 +292,12 @@ function FixedPage({
   template,
   data,
   sorted,
+  shifts,
 }: {
   template: Template;
   data: InvoiceData;
   sorted: TemplateElement[];
+  shifts: Record<string, number>;
 }) {
   return (
     <div className="invoice-doc relative bg-surface" style={{ width: PAGE_W, height: PAGE_H, overflow: "hidden" }}>
@@ -299,7 +307,7 @@ function FixedPage({
           className={el.type === "custom" ? "absolute" : "absolute overflow-hidden"}
           style={{
             left: el.x,
-            top: el.y,
+            top: Math.max(0, el.y + (shifts[el.id] ?? 0)),
             width: el.w,
             ...(el.type === "custom" ? {} : { height: el.h }),
             zIndex: el.z,
