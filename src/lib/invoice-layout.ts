@@ -79,7 +79,11 @@ export function footerShifts(
     for (const o of footer) {
       if (o.id === el.id) continue;
       const overlapsX = el.x < o.x + o.w && el.x + el.w > o.x;
-      if (el.y > o.y && overlapsX) shift += grow[o.id] ?? 0;
+      if (el.y > o.y && overlapsX) {
+        // An element whose top sits inside the designed box lands right after the
+        // table's real end (gap clamped at 0, like footerTop does for the items).
+        shift += (grow[o.id] ?? 0) + Math.max(0, o.y + o.h - el.y);
+      }
     }
     out[el.id] = shift;
   }

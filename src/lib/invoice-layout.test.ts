@@ -159,7 +159,8 @@ describe("footerShifts", () => {
     expect(footerShifts([custom, total], { c: -60 }).t).toBe(-60);
   });
   it("also pushes an element whose top sits inside the table's designed box", () => {
-    expect(footerShifts([custom, inside], { c: 90 }).i).toBe(90);
+    // box 520..580, element top 540 → 90 growth + 40 still inside the box
+    expect(footerShifts([custom, inside], { c: 90 }).i).toBe(130);
   });
   it("leaves elements beside the table (no horizontal overlap) alone", () => {
     expect(footerShifts([custom, beside], { c: 90 }).b).toBe(0);
