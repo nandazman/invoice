@@ -5,7 +5,13 @@ import type { InvoiceData, FieldType, CustomRow } from "../lib/template-types";
 import { fieldKey, customTablesTotal } from "../lib/template-types";
 import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
-import { formatRupiah, formatAngka, formatTanggalID, sumRupiah, uid } from "../lib/format";
+import {
+  formatRupiah,
+  formatAngka,
+  formatTanggalID,
+  sumRupiah,
+  uid,
+} from "../lib/format";
 import { useStagedHandoff } from "../lib/stageHandoff";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
@@ -17,12 +23,7 @@ import { Select } from "../components/Select";
 import { Field } from "../components/Field";
 import { Button, PrimaryButton, DangerButton } from "../components/Button";
 import { thClass, tdClass } from "../components/DataTable";
-import {
-  StagedPhoneList,
-  ExpandAllButton,
-  useExpandAll,
-} from "./stagedRows";
-
+import { StagedPhoneList, ExpandAllButton, useExpandAll } from "./stagedRows";
 
 export function InvoicePage() {
   const orders = useOrders();
@@ -30,19 +31,24 @@ export function InvoicePage() {
   const templates = useTemplates();
 
   const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
-  const template = templates.find((t) => t.id === templateId) ?? templates[0] ?? null;
+  const template =
+    templates.find((t) => t.id === templateId) ?? templates[0] ?? null;
 
   // Dynamic fields come from the template's field elements: collect unique
   // definitions by title (same title placed twice shares one input).
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   // Custom-table rows, keyed by the template element's id. Per-invoice only.
   const [tables, setTables] = useState<Record<string, CustomRow[]>>({});
+  const hasItems = !!template?.elements.some((el) => el.type === "items");
   const customEls = useMemo(
     () => (template?.elements ?? []).filter((el) => el.type === "custom"),
     [template],
   );
   const fieldDefs = useMemo(() => {
-    const seen = new Map<string, { label: string; type: FieldType; options: string[] }>();
+    const seen = new Map<
+      string,
+      { label: string; type: FieldType; options: string[] }
+    >();
     for (const el of template?.elements ?? []) {
       if (el.type !== "field") continue;
       const label = (el.fieldLabel ?? "").trim();
@@ -89,7 +95,9 @@ export function InvoicePage() {
   }
   function toggleAll() {
     setSelectedRows((prev) =>
-      prev.size === staged.length ? new Set() : new Set(staged.map((s) => s.id)),
+      prev.size === staged.length
+        ? new Set()
+        : new Set(staged.map((s) => s.id)),
     );
   }
   function removeSelected() {
@@ -132,7 +140,9 @@ export function InvoicePage() {
   return (
     <div>
       <div className="flex items-center gap-2 flex-wrap mb-4 no-print">
-        <h1 className="hidden md:block text-2xl font-bold mr-2">Buat Invoice</h1>
+        <h1 className="hidden md:block text-2xl font-bold mr-2">
+          Buat Invoice
+        </h1>
         <Select
           value={template.id}
           onChange={(e) => setTemplateId(e.target.value)}
@@ -144,16 +154,18 @@ export function InvoicePage() {
             </option>
           ))}
         </Select>
-        <Button
-          className="ml-auto"
-          onClick={() => setCopyOpen(true)}
-          disabled={staged.length === 0}
-        >
-          Salin teks
-        </Button>
+        {hasItems && (
+          <Button
+            onClick={() => setCopyOpen(true)}
+            disabled={staged.length === 0}
+          >
+            Salin teks
+          </Button>
+        )}
         <PrimaryButton
+          className={hasItems ? "" : "ml-auto"}
           onClick={() => window.print()}
-          disabled={staged.length === 0}
+          disabled={hasItems && staged.length === 0}
         >
           Cetak / PDF
         </PrimaryButton>
@@ -164,14 +176,9 @@ export function InvoicePage() {
           practice — so the two panes stack and each gets the full width. */}
       <div className="flex flex-col md:flex-row gap-4 md:items-start no-print">
         <div className="w-full md:w-80 shrink-0 space-y-4">
-          <Panel>
-            <h3 className="font-bold text-sm text-body mb-2">Data Invoice</h3>
-            {fieldDefs.length === 0 ? (
-              <p className="text-xs text-faint">
-                Template ini belum punya field. Tambahkan elemen <b>Field</b> di
-                halaman Desain Template.
-              </p>
-            ) : (
+          {fieldDefs.length > 0 && (
+            <Panel>
+              <h3 className="font-bold text-sm text-body mb-2">Data Invoice</h3>
               <div className="space-y-2">
                 {fieldDefs.map((f) => {
                   const key = fieldKey(f.label);
@@ -181,7 +188,10 @@ export function InvoicePage() {
                   return (
                     <Field key={key} label={f.label}>
                       {f.type === "select" ? (
-                        <Select value={val} onChange={(e) => set(e.target.value)}>
+                        <Select
+                          value={val}
+                          onChange={(e) => set(e.target.value)}
+                        >
                           <option value="">— pilih —</option>
                           {f.options.map((o) => (
                             <option key={o} value={o}>
@@ -206,8 +216,8 @@ export function InvoicePage() {
                   );
                 })}
               </div>
-            )}
-          </Panel>
+            </Panel>
+          )}
 
           {customEls.map((el) => {
             const cols = el.customColumns ?? [];
@@ -221,7 +231,11 @@ export function InvoicePage() {
                   {rows.map((row) => (
                     <div key={row.id} className="flex items-end gap-1">
                       {cols.map((c) => (
-                        <Field key={c.id} label={c.label} className="flex-1 min-w-0">
+                        <Field
+                          key={c.id}
+                          label={c.label}
+                          className="flex-1 min-w-0"
+                        >
                           <Input
                             type={c.kind === "text" ? "text" : "number"}
                             value={row.cells[c.id] ?? ""}
@@ -229,7 +243,13 @@ export function InvoicePage() {
                               patchRows(el.id, (rs) =>
                                 rs.map((r) =>
                                   r.id === row.id
-                                    ? { ...r, cells: { ...r.cells, [c.id]: e.target.value } }
+                                    ? {
+                                        ...r,
+                                        cells: {
+                                          ...r.cells,
+                                          [c.id]: e.target.value,
+                                        },
+                                      }
                                     : r,
                                 ),
                               )
@@ -240,7 +260,11 @@ export function InvoicePage() {
                       <DangerButton
                         size="sm"
                         aria-label="Hapus baris"
-                        onClick={() => patchRows(el.id, (rs) => rs.filter((r) => r.id !== row.id))}
+                        onClick={() =>
+                          patchRows(el.id, (rs) =>
+                            rs.filter((r) => r.id !== row.id),
+                          )
+                        }
                       >
                         ✕
                       </DangerButton>
@@ -249,7 +273,10 @@ export function InvoicePage() {
                   <Button
                     size="sm"
                     onClick={() =>
-                      patchRows(el.id, (rs) => [...rs, { id: uid(), cells: {} }])
+                      patchRows(el.id, (rs) => [
+                        ...rs,
+                        { id: uid(), cells: {} },
+                      ])
                     }
                   >
                     + Baris
@@ -259,103 +286,123 @@ export function InvoicePage() {
             );
           })}
 
-          <OrderFilterBar filter={filter} showPresets={false} />
+          {hasItems && (
+            <>
+              <OrderFilterBar filter={filter} showPresets={false} />
 
-          <Panel>
-            <h3 className="font-bold text-sm text-body mb-2">Pilih Item Pesanan</h3>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={appendFiltered} className="flex-1">
-                Tambah sesuai filter ({filter.filtered.length})
-              </Button>
-              <Button size="sm" onClick={replaceFiltered} className="flex-1">
-                Ganti semua
-              </Button>
-            </div>
-          </Panel>
+              <Panel>
+                <h3 className="font-bold text-sm text-body mb-2">
+                  Pilih Item Pesanan
+                </h3>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={appendFiltered} className="flex-1">
+                    Tambah sesuai filter ({filter.filtered.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={replaceFiltered}
+                    className="flex-1"
+                  >
+                    Ganti semua
+                  </Button>
+                </div>
+              </Panel>
 
-          <Panel>
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-body">{formatRupiah(total)}</span>
-              <span className="text-xs text-faint">{staged.length} item</span>
-            </div>
-            {staged.length > 0 && (
-              <div className="mb-2 flex items-center gap-2">
-                <DangerButton
-                  size="sm"
-                  onClick={removeSelected}
-                  disabled={selectedRows.size === 0}
-                >
-                  Hapus terpilih ({selectedRows.size})
-                </DangerButton>
-                <span className="flex-1" />
-                <ExpandAllButton
-                  anyOpen={exp.open.size > 0}
-                  onClick={exp.toggleAll}
-                />
-              </div>
-            )}
-            {staged.length === 0 ? (
-              <p className="text-xs text-faint text-center py-3">Belum ada item.</p>
-            ) : (
-              <>
-              <StagedPhoneList
-                className="-mx-4 max-h-96 overflow-y-auto"
-                rows={stagedSorted}
-                selected={selectedRows}
-                open={exp.open}
-                onToggleSelected={toggleRow}
-                onToggleOpen={exp.toggle}
-                onToggleAll={toggleAll}
-                details={(it) => [
-                  ["Tanggal", formatTanggalID(it.tanggal)],
-                  ["Kuantitas", formatAngka(it.kuantitas)],
-                  ["Harga Satuan", formatRupiah(it.hargaSatuan)],
-                  ["Total", formatRupiah(it.totalHarga)],
-                ]}
-              />
-              <div className="overflow-x-auto max-h-72 overflow-y-auto hidden md:block">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr>
-                      <th className={`${thClass} w-8`}>
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.size === staged.length}
-                          onChange={toggleAll}
-                          aria-label="Pilih semua item"
-                        />
-                      </th>
-                      <th className={thClass}>Produk</th>
-                      <th className={`${thClass} text-right`}>Qty</th>
-                      <th className={`${thClass} text-right`}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stagedSorted.map((it) => (
-                      <tr key={it.id} className="hover:bg-surface-sunken">
-                        <td className={tdClass}>
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(it.id)}
-                            onChange={() => toggleRow(it.id)}
-                            aria-label={`Pilih ${it.namaProduk}`}
-                          />
-                        </td>
-                        <td className={tdClass}>{it.namaProduk}</td>
-                        <td className={`${tdClass} text-right tabular-nums`}>
-                          {formatAngka(it.kuantitas)}
-                        </td>
-                        <td className={`${tdClass} text-right tabular-nums`}>
-                          {formatRupiah(it.totalHarga)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              </>
-            )}
-          </Panel>
+              <Panel>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-body">
+                    {formatRupiah(total)}
+                  </span>
+                  <span className="text-xs text-faint">
+                    {staged.length} item
+                  </span>
+                </div>
+                {staged.length > 0 && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <DangerButton
+                      size="sm"
+                      onClick={removeSelected}
+                      disabled={selectedRows.size === 0}
+                    >
+                      Hapus terpilih ({selectedRows.size})
+                    </DangerButton>
+                    <span className="flex-1" />
+                    <ExpandAllButton
+                      anyOpen={exp.open.size > 0}
+                      onClick={exp.toggleAll}
+                    />
+                  </div>
+                )}
+                {staged.length === 0 ? (
+                  <p className="text-xs text-faint text-center py-3">
+                    Belum ada item.
+                  </p>
+                ) : (
+                  <>
+                    <StagedPhoneList
+                      className="-mx-4 max-h-96 overflow-y-auto"
+                      rows={stagedSorted}
+                      selected={selectedRows}
+                      open={exp.open}
+                      onToggleSelected={toggleRow}
+                      onToggleOpen={exp.toggle}
+                      onToggleAll={toggleAll}
+                      details={(it) => [
+                        ["Tanggal", formatTanggalID(it.tanggal)],
+                        ["Kuantitas", formatAngka(it.kuantitas)],
+                        ["Harga Satuan", formatRupiah(it.hargaSatuan)],
+                        ["Total", formatRupiah(it.totalHarga)],
+                      ]}
+                    />
+                    <div className="overflow-x-auto max-h-72 overflow-y-auto hidden md:block">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr>
+                            <th className={`${thClass} w-8`}>
+                              <input
+                                type="checkbox"
+                                checked={selectedRows.size === staged.length}
+                                onChange={toggleAll}
+                                aria-label="Pilih semua item"
+                              />
+                            </th>
+                            <th className={thClass}>Produk</th>
+                            <th className={`${thClass} text-right`}>Qty</th>
+                            <th className={`${thClass} text-right`}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stagedSorted.map((it) => (
+                            <tr key={it.id} className="hover:bg-surface-sunken">
+                              <td className={tdClass}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRows.has(it.id)}
+                                  onChange={() => toggleRow(it.id)}
+                                  aria-label={`Pilih ${it.namaProduk}`}
+                                />
+                              </td>
+                              <td className={tdClass}>{it.namaProduk}</td>
+                              <td
+                                className={`${tdClass} text-right tabular-nums`}
+                              >
+                                {formatAngka(it.kuantitas)}
+                              </td>
+                              <td
+                                className={`${tdClass} text-right tabular-nums`}
+                              >
+                                {formatRupiah(it.totalHarga)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </Panel>
+            </>
+          )}
         </div>
 
         <div className="flex-1 min-w-0 bg-surface-hover rounded-xl p-4">
