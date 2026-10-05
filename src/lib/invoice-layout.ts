@@ -65,8 +65,10 @@ export function footerTop(el: TemplateElement, itemsBottom: number): number {
 // A custom table grows with its rows, so footer elements below it must move.
 // `grow` maps element id → (rendered height − designed height). Returns each
 // footer element's vertical shift: the sum of growth of every grown element
-// that sits entirely above it (its top is at/after that element's designed
-// bottom). May be negative (empty table collapses its slot).
+// that starts above it and overlaps it horizontally. Like the items table, a
+// custom table pushes everything below its top edge, even when its designed box
+// was too short to clear it; elements beside it (no horizontal overlap) stay
+// put. May be negative (an empty table collapses its slot).
 export function footerShifts(
   footer: TemplateElement[],
   grow: Record<string, number>,
@@ -76,7 +78,8 @@ export function footerShifts(
     let shift = 0;
     for (const o of footer) {
       if (o.id === el.id) continue;
-      if (el.y >= o.y + o.h) shift += grow[o.id] ?? 0;
+      const overlapsX = el.x < o.x + o.w && el.x + el.w > o.x;
+      if (el.y > o.y && overlapsX) shift += grow[o.id] ?? 0;
     }
     out[el.id] = shift;
   }

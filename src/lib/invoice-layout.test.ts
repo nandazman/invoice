@@ -147,9 +147,10 @@ describe("paginateInvoice", () => {
 });
 
 describe("footerShifts", () => {
-  const custom = el({ id: "c", type: "custom", y: 520, h: 60 }); // 520..580
+  const custom = el({ id: "c", type: "custom", x: 0, w: 400, y: 520, h: 60 }); // 520..580
   const total = el({ id: "t", type: "total", y: 600, h: 30 });
-  const beside = el({ id: "b", y: 530, h: 20 }); // starts inside the custom box
+  const inside = el({ id: "i", y: 540, h: 20 }); // top sits inside the custom box
+  const beside = el({ id: "b", x: 500, w: 100, y: 540, h: 20 }); // next to a narrow table
 
   it("pushes elements below a grown table down by the growth", () => {
     expect(footerShifts([custom, total], { c: 90 })).toEqual({ c: 0, t: 90 });
@@ -157,7 +158,10 @@ describe("footerShifts", () => {
   it("pulls them up when the table is empty (negative growth)", () => {
     expect(footerShifts([custom, total], { c: -60 }).t).toBe(-60);
   });
-  it("leaves elements that overlap the table's box alone", () => {
+  it("also pushes an element whose top sits inside the table's designed box", () => {
+    expect(footerShifts([custom, inside], { c: 90 }).i).toBe(90);
+  });
+  it("leaves elements beside the table (no horizontal overlap) alone", () => {
     expect(footerShifts([custom, beside], { c: 90 }).b).toBe(0);
   });
 });
