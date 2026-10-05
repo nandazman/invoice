@@ -149,7 +149,9 @@ export function ElementContent({
     if (rows.length === 0 || cols.length === 0) return null;
     const right = (k: string) => k !== "text";
     const show = (k: string, v: string | undefined) => {
-      if (v === undefined || v === "") return "";
+      // A non-breaking space keeps a blank cell's text line, so an empty row is
+      // as tall as a filled one instead of collapsing to its padding.
+      if (v === undefined || v === "") return " ";
       const n = Number(v);
       if (k === "amount") return Number.isFinite(n) ? formatRupiah(n) : v;
       if (k === "number") return Number.isFinite(n) ? formatAngka(n) : v;
