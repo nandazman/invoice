@@ -24,6 +24,7 @@ export type ElementType =
   | "logo" // renders template.business.logo
   | "field"
   | "items"
+  | "custom" // free-form table filled in on Buat Invoice (discount, free, ...)
   | "total"
   | "line";
 
@@ -79,6 +80,54 @@ export interface ItemColumn {
   visible: boolean;
 }
 
+// A custom table's column. "amount" cells are rupiah and are summed into the
+// invoice TOTAL (negative = discount, 0 = free); "number" is display-only.
+export type CustomColumnKind = "text" | "number" | "amount";
+
+export interface CustomColumn {
+  id: string;
+  label: string;
+  kind: CustomColumnKind;
+}
+
+export const CUSTOM_KIND_LABELS: Record<CustomColumnKind, string> = {
+  text: "Teks",
+  number: "Angka",
+  amount: "Rupiah (masuk Total)",
+};
+
+// One row typed on Buat Invoice; cells keyed by CustomColumn.id.
+export interface CustomRow {
+  id: string;
+  cells: Record<string, string>;
+}
+
+export function defaultCustomColumns(): CustomColumn[] {
+  return [
+    { id: "keterangan", label: "Keterangan", kind: "text" },
+    { id: "jumlah", label: "Jumlah", kind: "amount" },
+  ];
+}
+
+// Sum of every "amount" cell across all custom tables of a template.
+export function customTablesTotal(
+  elements: TemplateElement[],
+  tables: Record<string, CustomRow[]>,
+): number {
+  let sum = 0;
+  for (const el of elements) {
+    if (el.type !== "custom") continue;
+    const amountCols = (el.customColumns ?? []).filter((c) => c.kind === "amount");
+    for (const row of tables[el.id] ?? []) {
+      for (const c of amountCols) {
+        const n = Number(row.cells[c.id]);
+        if (Number.isFinite(n)) sum += n;
+      }
+    }
+  }
+  return sum;
+}
+
 export interface TemplateElement {
   id: string;
   type: ElementType;
@@ -94,6 +143,8 @@ export interface TemplateElement {
   fieldType?: FieldType; // field data type
   fieldOptions?: string[]; // choices when fieldType === "select"
   columns?: ItemColumn[]; // items table
+  tableTitle?: string; // custom table caption
+  customColumns?: CustomColumn[]; // custom table
 }
 
 export interface Template extends Attribution {
@@ -110,8 +161,9 @@ export interface Template extends Attribution {
 // Data injected into a template at generation time.
 export interface InvoiceData {
   items: OrderItem[];
-  total: number;
+  total: number; // items + custom-table amounts
   fields: Record<string, string>; // field values, keyed by fieldKey(title)
+  tables: Record<string, CustomRow[]>; // custom-table rows, keyed by element id
 }
 
 export function defaultStyle(): TextStyle {

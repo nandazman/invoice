@@ -6,6 +6,7 @@ import {
   LOGO_MAX_H,
   defaultStyle,
   defaultColumns,
+  defaultCustomColumns,
 } from "../lib/template-types";
 import {
   useTemplates,
@@ -210,6 +211,12 @@ export function TemplatePage() {
       base.h = 200;
       base.columns = defaultColumns();
     }
+    if (type === "custom") {
+      base.w = PAGE_W - 120;
+      base.h = 60;
+      base.tableTitle = "Tabel Kustom";
+      base.customColumns = defaultCustomColumns();
+    }
     if (type === "total") {
       base.w = 280;
       base.style = { ...defaultStyle(), fontWeight: 700, fontSize: 16, align: "right" };
@@ -348,6 +355,7 @@ export function TemplatePage() {
         </Button>
         <Button size="sm" onClick={() => addElement("field")}>+ Field</Button>
         <Button size="sm" onClick={() => addElement("items")}>+ Item Pesanan</Button>
+        <Button size="sm" onClick={() => addElement("custom")}>+ Tabel Kustom</Button>
         <Button size="sm" onClick={() => addElement("total")}>+ Total</Button>
         <Button size="sm" onClick={() => addElement("line")}>+ Garis</Button>
       </div>

@@ -1,5 +1,7 @@
 import type { ChangeEvent } from "react";
 import type {
+  CustomColumn,
+  CustomColumnKind,
   FieldType,
   Template,
   TemplateElement,
@@ -10,7 +12,9 @@ import {
   LOGO_FIT_MAX,
   PHOTO_MAX,
   FIELD_TYPE_LABELS,
+  CUSTOM_KIND_LABELS,
 } from "../../lib/template-types";
+import { uid } from "../../lib/format";
 import { downscaleImage, imageSize } from "../../lib/image";
 import { Input } from "../Input";
 import { Select } from "../Select";
@@ -453,6 +457,73 @@ export function Inspector({
             ))}
           </div>
         </Field>
+      )}
+
+      {el.type === "custom" && (
+        <>
+          <Field label="Judul tabel">
+            <Input
+              value={el.tableTitle ?? ""}
+              onChange={(e) => onElementChange(el.id, { tableTitle: e.target.value })}
+              placeholder="mis. Diskon & Bonus"
+            />
+          </Field>
+          <Field label="Kolom">
+            <div className="space-y-2">
+              {(el.customColumns ?? []).map((c, i) => {
+                const patch = (p: Partial<CustomColumn>) => {
+                  const cols = [...(el.customColumns ?? [])];
+                  cols[i] = { ...c, ...p };
+                  onElementChange(el.id, { customColumns: cols });
+                };
+                return (
+                  <div key={c.id} className="flex items-center gap-1">
+                    <Input value={c.label} onChange={(e) => patch({ label: e.target.value })} />
+                    <Select
+                      value={c.kind}
+                      onChange={(e) => patch({ kind: e.target.value as CustomColumnKind })}
+                      className="w-auto"
+                    >
+                      {(Object.keys(CUSTOM_KIND_LABELS) as CustomColumnKind[]).map((k) => (
+                        <option key={k} value={k}>
+                          {CUSTOM_KIND_LABELS[k]}
+                        </option>
+                      ))}
+                    </Select>
+                    <DangerGhostButton
+                      onClick={() =>
+                        onElementChange(el.id, {
+                          customColumns: (el.customColumns ?? []).filter((_, j) => j !== i),
+                        })
+                      }
+                      aria-label={`Hapus kolom ${c.label}`}
+                    >
+                      <TrashIcon />
+                    </DangerGhostButton>
+                  </div>
+                );
+              })}
+              <Button
+                size="sm"
+                onClick={() =>
+                  onElementChange(el.id, {
+                    customColumns: [
+                      ...(el.customColumns ?? []),
+                      { id: uid(), label: "Kolom", kind: "text" },
+                    ],
+                  })
+                }
+              >
+                + Kolom
+              </Button>
+            </div>
+          </Field>
+          <p className="text-[11px] text-faint">
+            Barisnya diisi di halaman <b>Buat Invoice</b>. Kolom <b>Rupiah</b>{" "}
+            dijumlahkan ke TOTAL (isi negatif untuk diskon, 0 untuk gratis).
+            Letakkan tabel ini di bawah tabel Item Pesanan.
+          </p>
+        </>
       )}
 
       {el.type !== "image" && el.type !== "logo" && el.type !== "line" && (

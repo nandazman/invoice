@@ -140,6 +140,67 @@ export function ElementContent({
     );
   }
 
+  if (el.type === "custom") {
+    const cols = el.customColumns ?? [];
+    // Editor shows a sample row; an invoice with no rows hides the table.
+    const rows = data
+      ? (data.tables?.[el.id] ?? [])
+      : [{ id: "sample", cells: Object.fromEntries(cols.map((c) => [c.id, c.kind === "text" ? "Contoh" : "0"])) }];
+    if (rows.length === 0 || cols.length === 0) return null;
+    const right = (k: string) => k !== "text";
+    const show = (k: string, v: string | undefined) => {
+      if (v === undefined || v === "") return "";
+      const n = Number(v);
+      if (k === "amount") return Number.isFinite(n) ? formatRupiah(n) : v;
+      if (k === "number") return Number.isFinite(n) ? formatAngka(n) : v;
+      return v;
+    };
+    return (
+      <table style={{ ...css, width: "100%", borderCollapse: "collapse" }} className="tabular-nums">
+        {el.tableTitle && (
+          <caption style={{ textAlign: "left", fontWeight: 700, padding: "4px 6px" }}>
+            {el.tableTitle}
+          </caption>
+        )}
+        <thead>
+          <tr>
+            {cols.map((c) => (
+              <th
+                key={c.id}
+                style={{
+                  textAlign: right(c.kind) ? "right" : "left",
+                  borderBottom: "2px solid #334155",
+                  padding: "4px 6px",
+                  fontWeight: 700,
+                }}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              {cols.map((c) => (
+                <td
+                  key={c.id}
+                  style={{
+                    textAlign: right(c.kind) ? "right" : "left",
+                    borderBottom: "1px solid #e2e8f0",
+                    padding: "4px 6px",
+                  }}
+                >
+                  {show(c.kind, row.cells[c.id])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
   if (el.type === "items") {
     const cols = (el.columns ?? []).filter((c) => c.visible);
     const rows = data ? data.items : SAMPLE_ROWS;

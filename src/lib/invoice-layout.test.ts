@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { splitZones, footerTop, paginateInvoice } from "./invoice-layout";
-import { defaultStyle } from "./template-types";
-import type { TemplateElement } from "./template-types";
+import { splitZones, footerTop, footerShifts, paginateInvoice } from "./invoice-layout";
+import { defaultStyle, customTablesTotal, defaultCustomColumns } from "./template-types";
+import type { TemplateElement, CustomRow } from "./template-types";
 
 function el(over: Partial<TemplateElement> & { id: string }): TemplateElement {
   return {
@@ -143,5 +143,39 @@ describe("paginateInvoice", () => {
   it("always advances even if a row is taller than the page", () => {
     const pages = paginateInvoice([2000, 2000], base);
     expect(pages.filter((p) => p.end > p.start)).toHaveLength(2);
+  });
+});
+
+describe("footerShifts", () => {
+  const custom = el({ id: "c", type: "custom", y: 520, h: 60 }); // 520..580
+  const total = el({ id: "t", type: "total", y: 600, h: 30 });
+  const beside = el({ id: "b", y: 530, h: 20 }); // starts inside the custom box
+
+  it("pushes elements below a grown table down by the growth", () => {
+    expect(footerShifts([custom, total], { c: 90 })).toEqual({ c: 0, t: 90 });
+  });
+  it("pulls them up when the table is empty (negative growth)", () => {
+    expect(footerShifts([custom, total], { c: -60 }).t).toBe(-60);
+  });
+  it("leaves elements that overlap the table's box alone", () => {
+    expect(footerShifts([custom, beside], { c: 90 }).b).toBe(0);
+  });
+});
+
+describe("customTablesTotal", () => {
+  const table = el({ id: "c", type: "custom", customColumns: defaultCustomColumns() });
+  it("sums amount cells, negatives and blanks included", () => {
+    const rows: Record<string, CustomRow[]> = {
+      c: [
+        { id: "1", cells: { keterangan: "Diskon", jumlah: "-5000" } },
+        { id: "2", cells: { keterangan: "Ongkir", jumlah: "2000" } },
+        { id: "3", cells: { keterangan: "Gratis" } },
+      ],
+    };
+    expect(customTablesTotal([table], rows)).toBe(-3000);
+  });
+  it("ignores non-amount columns and other element types", () => {
+    const text = el({ id: "c", type: "custom", customColumns: [{ id: "k", label: "K", kind: "number" }] });
+    expect(customTablesTotal([text, el({ id: "x" })], { c: [{ id: "1", cells: { k: "9" } }] })).toBe(0);
   });
 });

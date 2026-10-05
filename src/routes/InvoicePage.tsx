@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrderItem } from "../lib/types";
-import type { InvoiceData, FieldType } from "../lib/template-types";
-import { fieldKey } from "../lib/template-types";
+import type { InvoiceData, FieldType, CustomRow } from "../lib/template-types";
+import { fieldKey, customTablesTotal } from "../lib/template-types";
 import { useOrders, useProducts } from "../lib/store";
 import { useTemplates } from "../lib/template-store";
-import { formatRupiah, formatAngka, formatTanggalID, sumRupiah } from "../lib/format";
+import { formatRupiah, formatAngka, formatTanggalID, sumRupiah, uid } from "../lib/format";
 import { useStagedHandoff } from "../lib/stageHandoff";
 import { useOrderFilter } from "../lib/useOrderFilter";
 import { Preview } from "../components/template/Preview";
@@ -35,6 +35,12 @@ export function InvoicePage() {
   // Dynamic fields come from the template's field elements: collect unique
   // definitions by title (same title placed twice shares one input).
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  // Custom-table rows, keyed by the template element's id. Per-invoice only.
+  const [tables, setTables] = useState<Record<string, CustomRow[]>>({});
+  const customEls = useMemo(
+    () => (template?.elements ?? []).filter((el) => el.type === "custom"),
+    [template],
+  );
   const fieldDefs = useMemo(() => {
     const seen = new Map<string, { label: string; type: FieldType; options: string[] }>();
     for (const el of template?.elements ?? []) {
@@ -95,13 +101,20 @@ export function InvoicePage() {
     () => [...staged].sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
     [staged],
   );
-  const total = sumRupiah(staged.map((i) => i.totalHarga));
+  const itemsTotal = sumRupiah(staged.map((i) => i.totalHarga));
+  const extra = customTablesTotal(template?.elements ?? [], tables);
+  const total = itemsTotal + extra;
 
   const data: InvoiceData = {
     items: stagedSorted,
     total,
     fields: fieldValues,
+    tables,
   };
+
+  function patchRows(elId: string, fn: (rows: CustomRow[]) => CustomRow[]) {
+    setTables((prev) => ({ ...prev, [elId]: fn(prev[elId] ?? []) }));
+  }
 
   if (!template) {
     return (
@@ -195,6 +208,56 @@ export function InvoicePage() {
               </div>
             )}
           </Panel>
+
+          {customEls.map((el) => {
+            const cols = el.customColumns ?? [];
+            const rows = tables[el.id] ?? [];
+            return (
+              <Panel key={el.id}>
+                <h3 className="font-bold text-sm text-body mb-2">
+                  {el.tableTitle || "Tabel Kustom"}
+                </h3>
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <div key={row.id} className="flex items-end gap-1">
+                      {cols.map((c) => (
+                        <Field key={c.id} label={c.label} className="flex-1 min-w-0">
+                          <Input
+                            type={c.kind === "text" ? "text" : "number"}
+                            value={row.cells[c.id] ?? ""}
+                            onChange={(e) =>
+                              patchRows(el.id, (rs) =>
+                                rs.map((r) =>
+                                  r.id === row.id
+                                    ? { ...r, cells: { ...r.cells, [c.id]: e.target.value } }
+                                    : r,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      ))}
+                      <DangerButton
+                        size="sm"
+                        aria-label="Hapus baris"
+                        onClick={() => patchRows(el.id, (rs) => rs.filter((r) => r.id !== row.id))}
+                      >
+                        ✕
+                      </DangerButton>
+                    </div>
+                  ))}
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      patchRows(el.id, (rs) => [...rs, { id: uid(), cells: {} }])
+                    }
+                  >
+                    + Baris
+                  </Button>
+                </div>
+              </Panel>
+            );
+          })}
 
           <OrderFilterBar filter={filter} showPresets={false} />
 

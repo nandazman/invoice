@@ -4,6 +4,7 @@ import { PAGE_W, PAGE_H } from "../../lib/template-types";
 import {
   splitZones,
   footerTop,
+  footerShifts,
   paginateInvoice,
   CONT_TOP_PAD,
   type PageSlice,
@@ -31,8 +32,30 @@ export function Preview({
   const [scale, setScale] = useState(1);
   const [rowHeights, setRowHeights] = useState<number[]>([]);
   const [theadH, setTheadH] = useState(0);
+  const [customH, setCustomH] = useState<Record<string, number>>({});
 
   const itemsEl = template.elements.find((el) => el.type === "items");
+  const customEls = template.elements.filter((el) => el.type === "custom");
+
+  // Custom tables have no fixed height — measure each at its designed width.
+  const customRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = customRef.current;
+    if (!node) return;
+    const measure = () => {
+      const next: Record<string, number> = {};
+      for (const c of node.querySelectorAll<HTMLElement>("[data-cid]")) {
+        next[c.dataset.cid!] = c.getBoundingClientRect().height;
+      }
+      setCustomH((prev) =>
+        JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [data.tables, template]);
 
   // Measure the fully-rendered item table (all rows, 1:1) so we can compute page
   // breaks. Runs off-screen; re-measures whenever the data or template change.
@@ -65,6 +88,20 @@ export function Preview({
 
   const s = fit ? scale : 1;
 
+  const customMeasure = (
+    <div
+      aria-hidden
+      ref={customRef}
+      style={{ position: "absolute", left: -100000, top: 0, visibility: "hidden", pointerEvents: "none" }}
+    >
+      {customEls.map((el) => (
+        <div key={el.id} data-cid={el.id} style={{ width: el.w }}>
+          <ElementContent el={el} template={template} data={data} />
+        </div>
+      ))}
+    </div>
+  );
+
   // No items table → nothing to flow; render one fixed page.
   if (!itemsEl) {
     const sorted = [...template.elements].sort((a, b) => a.z - b.z);
@@ -78,15 +115,30 @@ export function Preview({
   }
 
   const zones = splitZones(template.elements, itemsEl);
+  const grow: Record<string, number> = {};
+  for (const el of zones.footer) {
+    if (el.type === "custom") grow[el.id] = (customH[el.id] ?? el.h) - el.h;
+  }
+  const shifts = footerShifts(zones.footer, grow);
+  const footerHeight = zones.footer.reduce(
+    (max, el) =>
+      Math.max(
+        max,
+        footerTop(el, zones.itemsBottom) + (shifts[el.id] ?? 0) +
+          (el.type === "custom" ? (customH[el.id] ?? el.h) : el.h),
+      ),
+    0,
+  );
   const pages = paginateInvoice(rowHeights, {
     pageHeight: PAGE_H,
     headerHeight: zones.headerHeight,
-    footerHeight: zones.footerHeight,
+    footerHeight,
     theadHeight: theadH,
   });
 
   return (
     <div ref={wrapRef} className={fit ? `w-full ${className}` : className}>
+      {customMeasure}
       {/* Hidden measuring copy of the full item table (1:1). */}
       <div
         aria-hidden
@@ -113,6 +165,7 @@ export function Preview({
             page={page}
             rowHeights={rowHeights}
             theadH={theadH}
+            shifts={shifts}
           />
         </Sheet>
       ))}
@@ -161,6 +214,7 @@ function PageContent({
   page,
   rowHeights,
   theadH,
+  shifts,
 }: {
   template: Template;
   data: InvoiceData;
@@ -169,6 +223,7 @@ function PageContent({
   page: PageSlice;
   rowHeights: number[];
   theadH: number;
+  shifts: Record<string, number>;
 }) {
   const tableTop = page.header ? zones.headerHeight : CONT_TOP_PAD;
   const hasRows = page.end > page.start;
@@ -184,8 +239,14 @@ function PageContent({
         zones.header.map((el) => (
           <div
             key={el.id}
-            className="absolute overflow-hidden"
-            style={{ left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z }}
+            className={el.type === "custom" ? "absolute" : "absolute overflow-hidden"}
+            style={{
+              left: el.x,
+              top: el.y,
+              width: el.w,
+              ...(el.type === "custom" ? {} : { height: el.h }),
+              zIndex: el.z,
+            }}
           >
             <ElementContent el={el} template={template} data={data} />
           </div>
@@ -201,12 +262,15 @@ function PageContent({
         zones.footer.map((el) => (
           <div
             key={el.id}
-            className="absolute overflow-hidden"
+            className={el.type === "custom" ? "absolute" : "absolute overflow-hidden"}
             style={{
               left: el.x,
-              top: listEndY + footerTop(el, zones.itemsBottom),
+              top: Math.max(
+                listEndY,
+                listEndY + footerTop(el, zones.itemsBottom) + (shifts[el.id] ?? 0),
+              ),
               width: el.w,
-              height: el.h,
+              ...(el.type === "custom" ? {} : { height: el.h }),
               zIndex: el.z,
             }}
           >
@@ -232,8 +296,14 @@ function FixedPage({
       {sorted.map((el) => (
         <div
           key={el.id}
-          className="absolute overflow-hidden"
-          style={{ left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z }}
+          className={el.type === "custom" ? "absolute" : "absolute overflow-hidden"}
+          style={{
+            left: el.x,
+            top: el.y,
+            width: el.w,
+            ...(el.type === "custom" ? {} : { height: el.h }),
+            zIndex: el.z,
+          }}
         >
           <ElementContent el={el} template={template} data={data} />
         </div>

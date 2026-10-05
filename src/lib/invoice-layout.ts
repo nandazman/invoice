@@ -62,6 +62,27 @@ export function footerTop(el: TemplateElement, itemsBottom: number): number {
   return Math.max(0, el.y - itemsBottom);
 }
 
+// A custom table grows with its rows, so footer elements below it must move.
+// `grow` maps element id → (rendered height − designed height). Returns each
+// footer element's vertical shift: the sum of growth of every grown element
+// that sits entirely above it (its top is at/after that element's designed
+// bottom). May be negative (empty table collapses its slot).
+export function footerShifts(
+  footer: TemplateElement[],
+  grow: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const el of footer) {
+    let shift = 0;
+    for (const o of footer) {
+      if (o.id === el.id) continue;
+      if (el.y >= o.y + o.h) shift += grow[o.id] ?? 0;
+    }
+    out[el.id] = shift;
+  }
+  return out;
+}
+
 // ---------- Measured pagination (WYSIWYG) ----------
 // We compute page breaks ourselves from measured row heights so the on-screen
 // preview and the printed PDF render the *same* discrete A4 pages.
